@@ -36,6 +36,6 @@ gif = base64.b64decode((root / "Resources/Branding/BloomBoxSleepingKirby.gif.b64
 assert gif[:6] == b"GIF89a"
 assert gif[-1:] == b";"
 assert len(gif) > 5000
-assert gif.count(b"\\x21\\xf9\\x04") >= 6, "Expected six animated frames"
+assert gif.count(bytes([0x21, 0xf9, 0x04])) >= 6, "Expected six animated frames"
 
 print("PASS: progress is real, minimum 5s on success, gifts persist, GIF is bundled")
