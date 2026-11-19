@@ -15,6 +15,7 @@ struct BloomBoxHomeScreen: View {
     let openTab: (LCTabIdentifier) -> Void
     let installInProgress: Bool
     let installProgress: Double
+    let installCompleted: Bool
     let secondaryInstance: Bool
     var launchWithJIT: ((LCAppModel) -> Void)? = nil
     var openGameBox: () -> Void = {}
@@ -107,6 +108,23 @@ struct BloomBoxHomeScreen: View {
     @State private var miniatureWidgetPhoto: UIImage?
     @State private var desktopSettings = false
     @State private var editing = false
+    // Recorded only for successful new guest installs. Existing icons stay unchanged.
+    @AppStorage("BloomBoxPendingGiftKeysV1", store: LiveContainerPreferencesAdapter.defaults)
+    private var giftKeysJSON = "[]"
+    private var unopenedGiftKeys: Set<String> {
+        Set((try? JSONDecoder().decode([String].self, from: Data(giftKeysJSON.utf8))) ?? [])
+    }
+    private func revealGift(_ key: String) {
+        var pending = unopenedGiftKeys
+        guard pending.remove(key) != nil else { return }
+        if let data = try? JSONEncoder().encode(Array(pending).sorted()),
+           let text = String(data: data, encoding: .utf8) {
+            withAnimation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.65)) {
+                giftKeysJSON = text
+            }
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        }
+    }
     @State private var showWidgetGallery = false
     @State private var selectedWidgetID: String?
     @AppStorage("ManzanaPageWidgets", store: LiveContainerPreferencesAdapter.defaults) private var pageWidgetsJSON = "{}"
@@ -319,8 +337,11 @@ struct BloomBoxHomeScreen: View {
                 .allowsHitTesting(!searching)
                 .accessibilityHidden(searching)
                 if installInProgress {
-                    BloomBoxHomeInstallationNotice(progress: installProgress)
+                    BloomBoxHomeInstallationNotice(progress: installProgress,
+                                                       completed: installCompleted,
+                                                       reduceMotion: reduceMotion)
                         .transition(.opacity)
+                        .zIndex(30)
                 }
                 if aliveEnabled && aliveBooting && aliveStartupPage == page && !reduceMotion {
                     BloomBoxHomeWelcome(message: aliveSplashLine, visible: aliveIntroVisible)
@@ -1191,7 +1212,10 @@ struct BloomBoxHomeScreen: View {
         else if key == Self.appStoreKey { appStorePresented = true }
         else if key == Self.modulesKey { modulesPresented = true }
         else if key == Self.themesKey { themesPresented = true }
-        else if let app = appMap[key] { requestLaunch(app) }
+        else if let app = appMap[key] {
+            if unopenedGiftKeys.contains(key) { revealGift(key) }
+            else { requestLaunch(app) }
+        }
     }
 
     private func pageMiniature(_ index: Int) -> some View {
@@ -2294,13 +2318,20 @@ struct BloomBoxHomeScreen: View {
             } else if [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey, Self.appStoreKey, Self.modulesKey, Self.themesKey].contains(key) {
                 shortcutIcon(key, showLabel: showLabel)
             } else if let app = appMap[key] {
-                LiveBoardHomeIcon(app: app, title: title(key), size: largeIcons ? 76 : 64,
-                                  showLabel: showLabel, dark: darkIcons, editing: editing,
-                                  reduceMotion: reduceMotion, action: {
-                    if editing { return }
-                    requestLaunch(app)
-                })
-                .contextMenu { appMenu(key, app: app) }
+                if unopenedGiftKeys.contains(key) && !editing {
+                    BloomBoxHomeGiftIcon(name: title(key), size: largeIcons ? 76 : 64,
+                                         showLabel: showLabel, reduceMotion: reduceMotion) {
+                        revealGift(key)
+                    }
+                } else {
+                    LiveBoardHomeIcon(app: app, title: title(key), size: largeIcons ? 76 : 64,
+                                      showLabel: showLabel, dark: darkIcons, editing: editing,
+                                      reduceMotion: reduceMotion, action: {
+                        if editing { return }
+                        requestLaunch(app)
+                    })
+                    .contextMenu { appMenu(key, app: app) }
+                }
             }
         }
         .overlay(alignment: .topLeading) {
