@@ -37,6 +37,101 @@ struct AppReplaceOption : Hashable {
     var appToReplace: LCAppModel?
 }
 
+
+private struct BloomBoxReceivedIPA: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
+// Files opens BloomBox first. This is an in-app chooser, not a SpringBoard overlay.
+private struct BloomBoxIPAOpenSheet: View {
+    let fileURL: URL
+    let hasSideStore: Bool
+    let installInBloomBox: () -> Void
+    let openSideStore: () -> Void
+    let dismiss: () -> Void
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack(spacing: 14) {
+                        Image(systemName: "doc.zipper")
+                            .font(.system(size: 32))
+                            .foregroundStyle(.tint)
+                            .frame(width: 54, height: 54)
+                            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(fileURL.lastPathComponent)
+                                .font(.headline)
+                                .lineLimit(2)
+                            Text("Archivo recibido desde Archivos")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    Text("¿Dónde quieres instalar esta aplicación?")
+                        .font(.headline)
+                    Button(action: installInBloomBox) {
+                        Label("Instalar dentro de BloomBox", systemImage: "square.stack.3d.up.fill")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 9)
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    if #available(iOS 16.0, *) {
+                        ShareLink(item: fileURL) {
+                            Label("Instalar con SideStore", systemImage: "square.and.arrow.up")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 9)
+                        }
+                        .buttonStyle(.bordered)
+                        Text("Se abrirá Compartir: selecciona SideStore para importar el IPA.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Button("Abrir SideStore para importar el archivo", action: openSideStore)
+                            .buttonStyle(.bordered)
+                    }
+                    Divider()
+                    Label("SideStore: espacios libres sin verificar", systemImage: "info.circle")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Con una cuenta gratuita normalmente hay un máximo de 3 aplicaciones nativas, incluyendo SideStore. BloomBox no puede leer con seguridad cuántos espacios te quedan: revisa Mis apps en SideStore. El límite de App IDs es diferente.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if hasSideStore {
+                        Button("Abrir SideStore", action: openSideStore)
+                            .font(.subheadline)
+                    }
+                }
+                .padding(20)
+            }
+            .navigationTitle("Instalar IPA")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancelar", action: dismiss)
+                }
+            }
+        }
+        .navigationViewStyle(.stack)
+        .modifier(BloomBoxIPACompactSheet())
+    }
+}
+
+private struct BloomBoxIPACompactSheet: ViewModifier {
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(iOS 16.0, *) {
+            content.presentationDetents([.medium, .large])
+        } else {
+            content
+        }
+    }
+}
+
 struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     @AppStorage("LiveBoardMode", store: LCUtils.appGroupUserDefault) private var liveBoardMode = "ios"
     @AppStorage(BloomBoxProfileStore.activeKey, store: LCUtils.appGroupUserDefault)
@@ -53,6 +148,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     @State var didAppear = false
     // ipa choosing stuff
     @State var choosingIPA = false
+    @State private var receivedIPA: BloomBoxReceivedIPA?
     @State var errorShow = false
     @State var errorInfo = ""
     
@@ -456,6 +552,26 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         }, onDismiss: {
             choosingIPA = false
         })
+        .sheet(item: $receivedIPA) { request in
+            BloomBoxIPAOpenSheet(
+                fileURL: request.url,
+                hasSideStore: UserDefaults.sideStoreExist(),
+                installInBloomBox: {
+                    receivedIPA = nil
+                    Task { await installFromUrl(urlStr: request.url.absoluteString) }
+                },
+                openSideStore: {
+                    receivedIPA = nil
+                    if UserDefaults.sideStoreExist() {
+                        LCUtils.openSideStore(delegate: self)
+                    } else {
+                        errorInfo = "SideStore no está disponible en esta instalación."
+                        errorShow = true
+                    }
+                },
+                dismiss: { receivedIPA = nil }
+            )
+        }
         .alert("lc.appList.installation".loc, isPresented: $installReplaceAlert.show) {
             ForEach(installOptions, id: \.self) { installOption in
                 Button(role: installOption.isReplace ? .destructive : nil, action: {
@@ -1738,7 +1854,12 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     
     func handleURL(url : URL) {
         if url.isFileURL {
-            Task { await installFromUrl(urlStr: url.absoluteString) }
+            if ["ipa", "tipa"].contains(url.pathExtension.lowercased()) {
+                // Never install a file received from Files without asking first.
+                receivedIPA = BloomBoxReceivedIPA(url: url)
+            } else {
+                Task { await installFromUrl(urlStr: url.absoluteString) }
+            }
             return
         }
         
