@@ -334,8 +334,8 @@ struct BloomBoxHomeScreen: View {
                 .tabViewStyle(.page(indexDisplayMode: .never))
                 .blur(radius: openFolder == nil ? 0 : 18)
                 .blur(radius: searching ? 14 : 0)
-                .allowsHitTesting(!searching)
-                .accessibilityHidden(searching)
+                .allowsHitTesting(!searching && !installInProgress)
+                .accessibilityHidden(searching || installInProgress)
                 if installInProgress {
                     BloomBoxHomeInstallationNotice(progress: installProgress,
                                                        completed: installCompleted,
