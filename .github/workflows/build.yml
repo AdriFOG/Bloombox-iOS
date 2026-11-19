@@ -60,6 +60,8 @@ jobs:
           fi
       - name: Test iOS Files IPA destination routing
         run: python3 Tests/ipa-file-routing/test_routing.py
+      - name: Test Kirby installation animation, five-second hold and gift reveal
+        run: python3 Tests/ipa-install-celebration/test_install_celebration.py
       - name: Test independent BloomBox Files engine and legacy data
         run: |
           swiftc LiveContainerSwiftUI/Views/BloomBox/BloomBoxFileStore.swift Tests/manzana-files/main.swift -o "$RUNNER_TEMP/bloombox-files-tests"
