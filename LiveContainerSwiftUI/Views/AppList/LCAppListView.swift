@@ -156,6 +156,11 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     @State var installprogressVisible = false
     @State var installProgressPercentage : Float = 0.0
     @State var installObserver : NSKeyValueObservation?
+    @State private var installationCelebrationVisible = false
+    @State private var installationCelebrationFinished = false
+    @State private var installationActuallySucceeded = false
+    @State private var installationCelebrationStarted = Date.distantPast
+    @State private var installationCelebrationID = UUID()
     
     @State var installOptions: [AppReplaceOption]
     @StateObject var installReplaceAlert = AlertHelper<AppReplaceOption>()
@@ -310,8 +315,9 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                                             else { choosingIPA = true }
                                         },
                                         openTab: { sharedModel.selectedTab = $0 },
-                                        installInProgress: installprogressVisible,
+                                        installInProgress: installationCelebrationVisible,
                                         installProgress: Double(installProgressPercentage),
+                                        installCompleted: installationCelebrationFinished,
                                         secondaryInstance: sharedModel.multiLCStatus == 2,
                                         launchWithJIT: { app in Task { await launchFromLiveBoard(app, forceJIT: true) } },
                                         openGameBox: { liveBoardMode = "gamebox" })
@@ -1166,7 +1172,40 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
 
 
     
+    // Hold the celebration for at least five seconds on successful installs,
+    // but never let the animation replace or fake the real extraction/signing.
+    private func beginInstallationCelebration() {
+        installationCelebrationID = UUID()
+        installationCelebrationStarted = .now
+        installationActuallySucceeded = false
+        installationCelebrationFinished = false
+        installationCelebrationVisible = true
+        // Show the BloomBox desktop, not GameBox or the old installer menu.
+        manageLibrary = false
+        liveBoardMode = "ios"
+    }
+
+    private func finishInstallationCelebration() async {
+        let token = installationCelebrationID
+        guard installationActuallySucceeded else {
+            installationCelebrationVisible = false
+            return
+        }
+        installationCelebrationFinished = true
+        let remaining = max(0, 5 - Date().timeIntervalSince(installationCelebrationStarted))
+        if remaining > 0 {
+            try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+        }
+        guard token == installationCelebrationID else { return }
+        withAnimation(.easeOut(duration: 0.35)) {
+            installationCelebrationVisible = false
+        }
+    }
+
     func startInstallApp(_ fileUrl:URL) async {
+        if self.installprogressVisible { return }
+        beginInstallationCelebration()
+        defer { Task { await finishInstallationCelebration() } }
         do {
             self.installprogressVisible = true
             try await installIpaFile(fileUrl)
@@ -1350,7 +1389,8 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             finalNewApp.spoofSDKVersion = true
         }
         finalNewApp.installationDate = Date.now
-        
+        installationActuallySucceeded = true
+
         DispatchQueue.main.async {
             if let appToReplace {
                 let newAppModel = LCAppModel(appInfo: finalNewApp, delegate: self)
@@ -1366,7 +1406,20 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             } else {
                 let newAppModel = LCAppModel(appInfo: finalNewApp, delegate: self)
                 sharedModel.apps.append(newAppModel)
-                
+
+                // Only freshly installed guest apps become gifts. Record the
+                // stable launcher key, not the filename or mutable display name.
+                let defaults = LCUtils.appGroupUserDefault
+                let stored = defaults.string(forKey: "BloomBoxPendingGiftKeysV1") ?? "[]"
+                var keys = (try? JSONDecoder().decode([String].self,
+                    from: Data(stored.utf8))) ?? []
+                let key = LiveContainerHomeAdapter.key(newAppModel)
+                if !keys.contains(key) { keys.append(key) }
+                if let encoded = try? JSONEncoder().encode(Array(keys.suffix(60))),
+                   let json = String(data: encoded, encoding: .utf8) {
+                    defaults.set(json, forKey: "BloomBoxPendingGiftKeysV1")
+                }
+
                 // add url schemes
                 if let urlSchemes = finalNewApp.urlSchemes(), urlSchemes.count > 0 {
                     UserDefaults.lcShared().mutableArrayValue(forKey: "LCGuestURLSchemes")
@@ -1481,9 +1534,11 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             return
         }
         
+        beginInstallationCelebration()
         self.installprogressVisible = true
         defer {
             self.installprogressVisible = false
+            Task { await finishInstallationCelebration() }
         }
         
         if installUrl.isFileURL {
