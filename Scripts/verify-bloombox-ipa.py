@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Validate the BloomBox+SideStore IPA, including the ActivityKit extension."""
 import hashlib
+import base64
 import plistlib
 import sys
 import zipfile
@@ -45,6 +46,13 @@ with zipfile.ZipFile(ipa) as archive:
             raise SystemExit("BloomBox starter theme bytes changed: " + theme)
         if not archive.read(preview).startswith(bytes.fromhex("ffd8ff")):
             raise SystemExit("BloomBox starter theme preview is not JPEG: " + theme)
+
+    gif_path = app + "BloomBoxSleepingKirby.gif"
+    if gif_path not in entries:
+        raise SystemExit("BloomBox IPA is missing the sleeping Kirby animation")
+    expected_gif = base64.b64decode(Path("Resources/Branding/BloomBoxSleepingKirby.gif.b64").read_text().strip(), validate=True)
+    if archive.read(gif_path) != expected_gif:
+        raise SystemExit("BloomBox sleeping Kirby animation changed during packaging")
 
     host = plistlib.loads(archive.read(app + "Info.plist"))
     ext = plistlib.loads(archive.read(widget + "Info.plist"))
