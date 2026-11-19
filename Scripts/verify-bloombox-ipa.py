@@ -48,6 +48,24 @@ with zipfile.ZipFile(ipa) as archive:
 
     host = plistlib.loads(archive.read(app + "Info.plist"))
     ext = plistlib.loads(archive.read(widget + "Info.plist"))
+    # Opening an IPA in Files must survive Xcode packaging and post-branding.
+    file_types = {
+        uti
+        for declaration in host.get("CFBundleDocumentTypes", [])
+        for uti in declaration.get("LSItemContentTypes", [])
+    }
+    imported = {
+        item.get("UTTypeIdentifier"): item
+        for item in host.get("UTImportedTypeDeclarations", [])
+    }
+    for uti, extension in (
+        ("com.bloombox.ipa-archive", "ipa"),
+        ("com.bloombox.tipa-archive", "tipa"),
+    ):
+        if uti not in file_types:
+            raise SystemExit(f"Packaged BloomBox is not registered to open {extension} from Files")
+        if extension not in imported.get(uti, {}).get("UTTypeTagSpecification", {}).get("public.filename-extension", []):
+            raise SystemExit(f"Packaged BloomBox lost its {extension} imported type")
     if host.get("CFBundleName") != "BloomBox" or host.get("CFBundleDisplayName") != "BloomBox":
         raise SystemExit("Wrong app! Latest BloomBox display name missing from final IPA")
     if host.get("NSSupportsLiveActivities") is not True:
