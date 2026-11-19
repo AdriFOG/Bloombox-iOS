@@ -963,3 +963,7 @@
 "Abrir SideStore para importar el archivo" = "Open SideStore to import the file";
 "SideStore: espacios libres sin verificar" = "SideStore: available slots not verified";
 "Con una cuenta gratuita normalmente hay un máximo de 3 aplicaciones nativas, incluyendo SideStore. BloomBox no puede leer con seguridad cuántos espacios te quedan: revisa Mis apps en SideStore. El límite de App IDs es diferente." = "A free Apple account typically allows up to 3 natively installed apps, including SideStore. BloomBox cannot reliably read your remaining slots: check My Apps in SideStore. The App ID limit is separate.";
+"Instalando..." = "Installing...";
+"¡Instalada!" = "Installed!";
+"Preparando tu nueva app..." = "Preparing your new app...";
+"¡Tu regalo ya está en el escritorio!" = "Your gift is ready on the home screen!";
