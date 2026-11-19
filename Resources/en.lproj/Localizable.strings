@@ -954,3 +954,12 @@
 "Configurar" = "Configure";
 
 "Abrir app instalada" = "Open installed app";
+
+"Archivo recibido desde Archivos" = "File received from Files";
+"¿Dónde quieres instalar esta aplicación?" = "Where do you want to install this app?";
+"Instalar dentro de BloomBox" = "Install in BloomBox";
+"Instalar con SideStore" = "Install with SideStore";
+"Se abrirá Compartir: selecciona SideStore para importar el IPA." = "The Share sheet will open: choose SideStore to import the IPA.";
+"Abrir SideStore para importar el archivo" = "Open SideStore to import the file";
+"SideStore: espacios libres sin verificar" = "SideStore: available slots not verified";
+"Con una cuenta gratuita normalmente hay un máximo de 3 aplicaciones nativas, incluyendo SideStore. BloomBox no puede leer con seguridad cuántos espacios te quedan: revisa Mis apps en SideStore. El límite de App IDs es diferente." = "A free Apple account typically allows up to 3 natively installed apps, including SideStore. BloomBox cannot reliably read your remaining slots: check My Apps in SideStore. The App ID limit is separate.";
