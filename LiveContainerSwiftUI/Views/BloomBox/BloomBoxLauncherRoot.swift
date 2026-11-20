@@ -95,6 +95,12 @@ struct BloomBoxLauncherRootView: View {
                             icon: "square.on.square", value: "hybrid")
                         launcherOption(title: "iOS Home", detail: BloomBoxL10n.t("Escritorio, apps y widgets."),
                                        icon: "square.grid.3x3.fill", value: "ios")
+                        launcherOption(
+                            title: "Nova · Android",
+                            detail: BloomBoxL10n.isEnglish
+                                ? "Android-style desktop, app drawer, folders, gestures and customization."
+                                : "Escritorio estilo Android, cajón, carpetas, gestos y personalización.",
+                            icon: "square.grid.4x3.fill", value: "nova")
                         if #available(iOS 16.0, *) {
                             launcherOption(title: "GameBox v2", detail: BloomBoxL10n.t("Interfaz de consola con carátulas, fondos y cristal."),
                                            icon: "gamecontroller.fill", value: "gamebox")
