@@ -418,7 +418,9 @@ struct BloomBoxHomeScreen: View {
                                 .foregroundStyle(.secondary)
                             Button(englishUI ? "Hide, keep starting" : "Ocultar, seguir iniciando") {
                                 huskStartingGame = nil
-                                AppSceneViewController.bloomBoxEndStartup(forContainer: game.containerFolder)
+                                if #available(iOS 16.1, *) {
+                                    AppSceneViewController.bloomBoxEndStartup(forContainer: game.containerFolder)
+                                }
                             }
                             .font(.caption)
                             .padding(.top, 4)
@@ -1368,6 +1370,7 @@ struct BloomBoxHomeScreen: View {
     // The LiveProcess scene can be a little later than the PID callback,
     // especially when the debugger is attaching. Retry only the delivery,
     // never spawn Husk a second time.
+    @available(iOS 16.1, *)
     @MainActor private func deliverHuskGameLink(_ game: HuskGame) async throws -> Bool {
         let deadline = Date().addingTimeInterval(5)
         repeat {
@@ -1387,7 +1390,9 @@ struct BloomBoxHomeScreen: View {
         huskLaunchingKey = game.key
         Task { @MainActor in
             defer {
-                AppSceneViewController.bloomBoxEndStartup(forContainer: game.containerFolder)
+                if #available(iOS 16.1, *) {
+                    AppSceneViewController.bloomBoxEndStartup(forContainer: game.containerFolder)
+                }
                 if huskLaunchingKey == game.key { huskLaunchingKey = nil }
             }
             let appKey = host.appInfo.relativeBundlePath ?? ""
