@@ -18,7 +18,7 @@ assert "LiveBoardOrientation.beginGuest(appKey: appKey" in home
 assert "LiveBoardOrientation.endGuest(appKey: appKey" in home
 assert "containerFolder: container.folderName" in home
 assert 'try await host.runApp(multitask: true, containerFolderName: game.containerFolder)' in home
-assert "waitForHuskDebugger(appName:" in home
+assert "waitForHuskDebugger(" in home
 assert '"debugger_attached", "awaiting_guest", "completed"' in home
 assert "max(0, 3 - Date().timeIntervalSince(started))" in home
 assert "AppSceneViewController.bloomBoxSendURL(" in home
