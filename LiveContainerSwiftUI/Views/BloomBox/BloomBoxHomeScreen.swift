@@ -1300,8 +1300,14 @@ struct BloomBoxHomeScreen: View {
     }
     private func openHuskGame(_ game: HuskGame, mode: String) {
         guard let host = husk, huskGames.contains(where: { $0.key == game.key }) else { return }
-        Task {
+        Task { @MainActor in
+            let appKey = host.appInfo.relativeBundlePath ?? ""
+            let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+                .flatMap { $0.windows }.first { $0.isKeyWindow }
             do {
+                // Husk reads orientation from settings.json, but the enclosing
+                // BloomBox Home is portrait-locked. Set BOTH masks before the
+                // hosted guest scene is created, then restore Home on exit.
                 let url = game.directory.appendingPathComponent("settings.json")
                 var settings: [String: Any] = [:]
                 if FileManager.default.fileExists(atPath: url.path) {
@@ -1310,10 +1316,19 @@ struct BloomBoxHomeScreen: View {
                     }
                     settings = saved
                 }
+                guard mode == "portrait" || mode == "landscape" else {
+                    throw "Selecciona una orientación para abrir el juego."
+                }
                 settings["orientation"] = mode
                 try JSONSerialization.data(withJSONObject: settings).write(to: url, options: .atomic)
+                LiveBoardOrientation.beginGuest(appKey: appKey,
+                    mask: mode == "landscape" ? .landscape : .portrait, window: window)
+                try await Task.sleep(nanoseconds: 250_000_000)
                 try await host.runApp(urlStr: game.launchURL.absoluteString)
-            } catch { huskError = error.localizedDescription }
+            } catch {
+                LiveBoardOrientation.endGuest(appKey: appKey, window: window)
+                huskError = error.localizedDescription
+            }
         }
     }
     @ViewBuilder private func huskMenu(_ game: HuskGame) -> some View {
