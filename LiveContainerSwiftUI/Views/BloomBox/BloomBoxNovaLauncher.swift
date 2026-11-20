@@ -49,6 +49,7 @@ struct BloomBoxNovaLauncher: View {
     @State private var uninstallConfirmation = false
     @State private var launchingKey: String?
     @State private var wallpaper: UIImage?
+    @State private var customWallpaper: UIImage?
     @FocusState private var searchFocused: Bool
 
     private func t(_ spanish: String, _ englishText: String) -> String {
@@ -224,7 +225,12 @@ struct BloomBoxNovaLauncher: View {
             persistence.set(savedWorkspaces, forKey: "BloomBoxNovaWorkspaceV1")
         }
         .sheet(isPresented: $settingsOpen) {
-            BloomBoxNovaSettingsView(layout: $workspace, availableKeys: keys, english: english)
+            BloomBoxNovaSettingsView(
+                layout: $workspace,
+                availableKeys: keys,
+                english: english,
+                chooseWallpaper: saveCustomWallpaper,
+                removeWallpaper: deleteCustomWallpaper)
         }
         .sheet(isPresented: Binding(
             get: { folderOpen != nil },
@@ -268,7 +274,12 @@ struct BloomBoxNovaLauncher: View {
                          Color(red: 0.12, green: 0.06, blue: 0.21),
                          Color(red: 0.025, green: 0.04, blue: 0.08)],
                 startPoint: .topLeading, endPoint: .bottomTrailing)
-            if workspace.useHomeWallpaper, let wallpaper {
+            if workspace.useCustomWallpaper, let customWallpaper {
+                Image(uiImage: customWallpaper)
+                    .resizable()
+                    .scaledToFill()
+                    .overlay(Color.black.opacity(0.24))
+            } else if workspace.useHomeWallpaper, let wallpaper {
                 Image(uiImage: wallpaper)
                     .resizable()
                     .scaledToFill()
@@ -803,6 +814,46 @@ struct BloomBoxNovaLauncher: View {
             .appendingPathComponent("LiveBoard", isDirectory: true)
             .appendingPathComponent("wallpaper.jpg")
         wallpaper = UIImage(contentsOfFile: wallpaperURL.path)
+        customWallpaper = UIImage(contentsOfFile: customWallpaperURL.path)
+    }
+
+    private var customWallpaperURL: URL {
+        let safeProfile = String(profileID.filter {
+            $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-")
+        }.prefix(72))
+        return FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("BloomBox/NovaWallpapers", isDirectory: true)
+            .appendingPathComponent((safeProfile.isEmpty ? "primary" : safeProfile) + ".jpg")
+    }
+
+    private func saveCustomWallpaper(_ image: UIImage) {
+        let longest = max(image.size.width, image.size.height, 1)
+        let factor = min(1.0, 1600.0 / longest)
+        let size = CGSize(width: max(1, image.size.width * factor),
+                          height: max(1, image.size.height * factor))
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let data = UIGraphicsImageRenderer(size: size, format: format)
+            .jpegData(withCompressionQuality: 0.83) { _ in
+                image.draw(in: CGRect(origin: .zero, size: size))
+            }
+        do {
+            try FileManager.default.createDirectory(
+                at: customWallpaperURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true)
+            try data.write(to: customWallpaperURL, options: .atomic)
+            customWallpaper = UIImage(data: data)
+            workspace.useCustomWallpaper = true
+        } catch {
+            NSLog("[BloomBox Nova] Wallpaper save failed: %@", error.localizedDescription)
+        }
+    }
+
+    private func deleteCustomWallpaper() {
+        try? FileManager.default.removeItem(at: customWallpaperURL)
+        customWallpaper = nil
+        workspace.useCustomWallpaper = false
     }
 
     private func acceptDrop(_ providers: [NSItemProvider],
