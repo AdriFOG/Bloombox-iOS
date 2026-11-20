@@ -1405,7 +1405,7 @@ struct BloomBoxHomeScreen: View {
                 LiveBoardOrientation.beginGuest(appKey: appKey,
                     mask: mode == "landscape" ? .landscape : .portrait, window: window)
 
-                let defaults = LCUtils.appGroupUserDefault
+                let defaults = LiveContainerPreferencesAdapter.defaults
                 let jitPolicy = BloomBoxJITGuestPolicy.mode(for: appKey, defaults: defaults)
                 let wantsJIT = BloomBoxJITGuestPolicy.wantsJIT(
                     automatic: host.appInfo.isJITNeeded || host.appInfo.is32bit,
