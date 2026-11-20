@@ -83,6 +83,7 @@ enum BloomBoxWidgetMedia {
 /// The result is cached by imported media path, so moving widgets is cheap.
 enum BloomBoxWidgetGlowPalette {
     private static let thumbnailCache = NSCache<NSString, UIColor>()
+    private static let pending = NSCache<NSString, NSNumber>()
     private static let mint = UIColor(red: 0.38, green: 0.96, blue: 0.78, alpha: 1)
 
     static func color(_ preset: String?, for widget: BloomBoxPlacedWidget) -> Color {
@@ -108,17 +109,22 @@ enum BloomBoxWidgetGlowPalette {
             }
         }
         guard widget.kind == "media",
-              let url = BloomBoxWidgetMedia.url(for: widget.mediaName),
-              FileManager.default.fileExists(atPath: url.path) else {
+              let url = BloomBoxWidgetMedia.url(for: widget.mediaName) else {
             return Color(uiColor: mint)
         }
         let key = url.path as NSString
         if let previous = thumbnailCache.object(forKey: key) {
             return Color(uiColor: previous)
         }
-        let accent = sampleMediaColor(url) ?? mint
-        thumbnailCache.setObject(accent, forKey: key)
-        return Color(uiColor: accent)
+        if pending.object(forKey: key) == nil {
+            pending.setObject(NSNumber(value: true), forKey: key)
+            DispatchQueue.global(qos: .utility).async {
+                let accent = sampleMediaColor(url) ?? mint
+                thumbnailCache.setObject(accent, forKey: key)
+                pending.removeObject(forKey: key)
+            }
+        }
+        return Color(uiColor: mint)
     }
 
     private static func sampleMediaColor(_ url: URL) -> UIColor? {
@@ -346,10 +352,11 @@ struct BloomBoxGridWidgetView: View {
     var clockAccentColor: Color? = nil
     @AppStorage("ManzanaNote", store: LCUtils.appGroupUserDefault) private var note = ""
     @Environment(\.scenePhase) private var scenePhase
+    @ObservedObject private var performance = BloomBoxPerformanceBudget.shared
 
     var body: some View {
         ZStack {
-            if widget.glass {
+            if widget.glass && performance.allowsGlass {
                 RoundedRectangle(cornerRadius: 19).fill(.ultraThinMaterial)
             } else {
                 RoundedRectangle(cornerRadius: 19).fill(Color.clear)
@@ -365,18 +372,15 @@ struct BloomBoxGridWidgetView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                         .padding(12)
                 default:
-                    if let file = BloomBoxWidgetMedia.url(for: widget.mediaName),
-                       FileManager.default.fileExists(atPath: file.path) {
-                        if file.pathExtension.lowercased() == "gif" {
+                    if let file = BloomBoxWidgetMedia.url(for: widget.mediaName) {
+                        if file.pathExtension.lowercased() == "gif" ||
+                            file.pathExtension.lowercased() == "mp4" {
                             BloomBoxAnimatedWallpaper(url: file, fit: !widget.fill,
-                                paused: scenePhase != .active || !active,
-                                clearBackground: true)
-                        } else if let image = UIImage(contentsOfFile: file.path) {
-                            Image(uiImage: image)
-                                .resizable()
-                                .aspectRatio(contentMode: widget.fill ? .fill : .fit)
+                                paused: scenePhase != .active || !active || !performance.allowsVideo,
+                                clearBackground: file.pathExtension.lowercased() == "gif")
                         } else {
-                            Image(systemName: "photo.badge.exclamationmark")
+                            BloomBoxDownsampledImage(url: file, fit: !widget.fill,
+                                maxPixelSize: Int(max(width, height) * UIScreen.main.scale))
                         }
                     } else {
                         VStack(spacing: 5) {
@@ -401,7 +405,7 @@ struct BloomBoxGridWidgetView: View {
         .contentShape(RoundedRectangle(cornerRadius: 19))
         .clipShape(RoundedRectangle(cornerRadius: 19))
         .overlay {
-            if widget.glass {
+            if widget.glass && performance.allowsGlass {
                 RoundedRectangle(cornerRadius: 19)
                     .strokeBorder(.white.opacity(0.2), lineWidth: 0.7)
             }
