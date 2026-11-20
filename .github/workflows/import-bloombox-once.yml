@@ -36,11 +36,9 @@ jobs:
             exit 1
           fi
 
-          # Prevent the migrated legacy workflow from auto-publishing v1.0.0
-          # when the new repository's main branch is built in the future.
-          git rm -f -- .github/workflows/first-release.yml
-          SAFE_TREE="$(git write-tree)"
-
+          # The GitHub Actions token can write source code but cannot
+          # create/modify any workflow files. Import source first, then add
+          # the build/check workflows using the direct GitHub connection.
           git remote add destination "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git fetch --no-tags destination main
           DEST_HEAD="$(git rev-parse FETCH_HEAD)"
@@ -49,11 +47,17 @@ jobs:
             exit 1
           fi
 
+          # Preserve the already committed bootstrap workflow unchanged so
+          # the push does not touch any .github/workflows/* path at all.
+          git rm -rf -- .github/workflows
+          git checkout "$DEST_HEAD" -- .github/workflows/import-bloombox-once.yml
+          SAFE_TREE="$(git write-tree)"
+
           export GIT_AUTHOR_NAME="BloomBox Migration"
           export GIT_AUTHOR_EMAIL="noreply@github.com"
           export GIT_COMMITTER_NAME="BloomBox Migration"
           export GIT_COMMITTER_EMAIL="noreply@github.com"
-          NEW_COMMIT="$(printf '%s\n' 'Import verified BloomBox source and full Git history (no release)' '' 'Preserves the old BloomBox history and the new repository initial commit.' 'Legacy automatic first-release workflow disabled for migration safety.' | git commit-tree "$SAFE_TREE" -p "$SOURCE_HEAD" -p "$DEST_HEAD")"
+          NEW_COMMIT="$(printf '%s\n' 'Import verified BloomBox source and full Git history (no release)' '' 'Preserves the old BloomBox history and the new repository initial commit.' 'Legacy automatic release workflows are intentionally excluded from the working tree.' | git commit-tree "$SAFE_TREE" -p "$SOURCE_HEAD" -p "$DEST_HEAD")"
           git push destination "$NEW_COMMIT:refs/heads/main"
           echo "Imported source from $SOURCE_HEAD as merge commit $NEW_COMMIT"
           echo "GitHub Actions will not automatically release this version."
