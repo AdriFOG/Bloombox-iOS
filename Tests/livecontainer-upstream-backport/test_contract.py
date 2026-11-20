@@ -31,6 +31,12 @@ contains("LiveContainerSwiftUI/Views/LCAltStoreSourcesView.swift", "func loadSou
 project = source("LiveContainer.xcodeproj/project.pbxproj")
 assert "BackgroundTasks.m," in project
 assert project.count("1768BBF030A9B61D0037D5C8 /* LivePlugInSupport */") == 3
-assert "<string>3.0.0</string>" in source("LiveContainer/Info.plist")
+# Keep host and widget synchronized across future releases; never hard-code an old version.
+import plistlib
+host = plistlib.loads((ROOT / "LiveContainer/Info.plist").read_bytes())
+widget = plistlib.loads((ROOT / "ManzanaExpiryWidget/Info.plist").read_bytes())
+assert host["CFBundleShortVersionString"] == widget["CFBundleShortVersionString"], "Host/widget marketing versions differ"
+assert str(host["CFBundleVersion"]) == str(widget["CFBundleVersion"]), "Host/widget build numbers differ"
+assert host["CFBundleShortVersionString"] and host["CFBundleVersion"], "Missing version metadata"
 assert "helperProcessesSupport = YES" not in source("LiveContainerSwiftUI/Models/LCAppInfo.m"), "Helper processing must stay opt-in"
-print("PASS: BloomBox 3.0 upstream backport contracts and feature gates")
+print("PASS: BloomBox upstream backport contracts, feature gates and synchronized version")
