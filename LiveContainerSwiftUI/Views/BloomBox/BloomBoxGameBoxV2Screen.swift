@@ -134,6 +134,7 @@ struct BloomBoxGameBoxV2Screen: View {
     private var safeGraphics = false
     @State private var upcomingFeature: String?
     @State private var constrained = false
+    @ObservedObject private var performance = BloomBoxPerformanceBudget.shared
     @State private var batteryPercent: Int?
     @State private var photoPickerPresented = false
     @State private var filesPickerPresented = false
@@ -462,6 +463,10 @@ struct BloomBoxGameBoxV2Screen: View {
             dismissArtworkIntro()
             artwork.clearDecodedCache()
         }
+        .onChange(of: performance.level) { _ in
+            constrained = performance.level >= .serious
+            if constrained { switchFocusPulse = false }
+        }
         .onReceive(NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification)) { _ in
             refreshSystemBudget()
         }
@@ -695,7 +700,8 @@ struct BloomBoxGameBoxV2Screen: View {
             }
             // Low Power Mode only softens animation. It must not hide cached
             // wallpapers or prohibit user-enabled automatic backgrounds.
-            if let app = selectedApp, let image = backdrop(app) {
+            if performance.allowsGlass,
+               let app = selectedApp, let image = backdrop(app) {
                 GeometryReader { geo in
                     Image(uiImage: image)
                         .resizable()
@@ -1662,8 +1668,7 @@ struct BloomBoxGameBoxV2Screen: View {
     }
 
     private func refreshSystemBudget() {
-        let info = ProcessInfo.processInfo
-        constrained = info.isLowPowerModeEnabled ||
-            info.thermalState == .serious || info.thermalState == .critical
+        performance.refresh()
+        constrained = performance.level >= .serious
     }
 }
