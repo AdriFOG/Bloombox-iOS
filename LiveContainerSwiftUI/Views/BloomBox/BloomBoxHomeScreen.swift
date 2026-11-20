@@ -238,7 +238,7 @@ struct BloomBoxHomeScreen: View {
     @State private var huskGames: [HuskGame] = []
     @State private var huskError: String?
     private var husk: LCAppModel? {
-        apps.first { $0.bundleIdentifier == "com.husk.app" && !$0.appInfo.isLocked }
+        sharedModel.apps.first { $0.bundleIdentifier == "com.husk.app" && (!$0.appInfo.isLocked || sharedModel.isHiddenAppUnlocked) }
     }
     private func refreshHuskGames() {
         guard let host = husk else { huskGames = []; return }
@@ -249,6 +249,7 @@ struct BloomBoxHomeScreen: View {
         } else {
             let guestKey = (host.uiIsShared ? "shared/" : "private/") + (host.appInfo.relativeBundlePath ?? "") + "/" + host.bundleIdentifier
             folder = BloomBoxProfileStore.mapping(for: profile.id, appKey: guestKey)
+                ?? host.uiContainers.first(where: { $0.name.hasPrefix("[BloomBox:\(profile.id)]") && $0.appIdentifier == host.bundleIdentifier })?.folderName
         }
         guard let container = host.uiContainers.first(where: { $0.folderName == folder }) else { huskGames = []; return }
         let root = container.containerURL.appendingPathComponent("Documents/TranslationLayer")
@@ -481,6 +482,7 @@ struct BloomBoxHomeScreen: View {
                 refreshNewInstallGift(notification)
             }
             .onReceive(NotificationCenter.default.publisher(for: Notification.Name("BloomBoxHuskLibraryChanged"))) { _ in refreshHuskGames() }
+            .onChange(of: sharedModel.isHiddenAppUnlocked) { _ in refreshHuskGames() }
             .onChange(of: themeActiveID) { _ in refreshHuskGames() }
             .onChange(of: husk?.appInfo.relativeBundlePath) { _ in refreshHuskGames() }
             .alert("Husk", isPresented: Binding(get: { huskError != nil }, set: { if !$0 { huskError = nil } })) {
@@ -1275,6 +1277,12 @@ struct BloomBoxHomeScreen: View {
         else if key == Self.appStoreKey { appStorePresented = true }
         else if key == Self.modulesKey { modulesPresented = true }
         else if key == Self.themesKey { themesPresented = true }
+        else if let game = huskGames.first(where: { $0.key == key }), let host = husk {
+            Task {
+                do { try await host.runApp(urlStr: game.launchURL.absoluteString) }
+                catch { huskError = error.localizedDescription }
+            }
+        }
         else if let app = appMap[key] {
             if unopenedGiftKeys.contains(key) { revealGift(key) }
             else { requestLaunch(app) }
@@ -1463,6 +1471,13 @@ struct BloomBoxHomeScreen: View {
                 .font(.system(size: size * 0.5))
                 .frame(width: size, height: size)
                 .background(Color.cyan, in: RoundedRectangle(cornerRadius: size * 0.23))
+        } else if let game = huskGames.first(where: { $0.key == key }) {
+            if let image = UIImage(contentsOfFile: game.directory.appendingPathComponent("icon.png").path) {
+                Image(uiImage: image).resizable().scaledToFill().frame(width: size, height: size)
+            } else {
+                Image(systemName: "gamecontroller.fill").foregroundStyle(.white)
+                    .frame(width: size, height: size).background(Color.indigo)
+            }
         } else if let app = appMap[key] {
             LiveBoardIconImage(app: app, dark: darkIcons)
                 .frame(width: size, height: size)
@@ -2380,22 +2395,12 @@ struct BloomBoxHomeScreen: View {
                 folderIcon(folder, showLabel: showLabel)
             } else if [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey, Self.appStoreKey, Self.modulesKey, Self.themesKey].contains(key) {
                 shortcutIcon(key, showLabel: showLabel)
-            } else if let game = huskGames.first(where: { $0.key == key }), let host = husk {
-                Button {
-                    guard !editing else { return }
-                    Task {
-                        do { try await host.runApp(urlStr: game.launchURL.absoluteString) }
-                        catch { huskError = error.localizedDescription }
-                    }
-                } label: {
+            } else if let game = huskGames.first(where: { $0.key == key }) {
+                Button { if !editing { launchLibraryKey(key) } } label: {
                     VStack(spacing: 4) {
-                        if let image = UIImage(contentsOfFile: game.directory.appendingPathComponent("icon.png").path) {
-                            Image(uiImage: image).resizable().frame(width: 60, height: 60)
-                                .clipShape(RoundedRectangle(cornerRadius: 14))
-                        } else {
-                            Image(systemName: "gamecontroller.fill").frame(width: 60, height: 60)
-                        }
-                        if showLabel { Text(game.title).font(.caption).lineLimit(1) }
+                        miniatureIcon(key, size: largeIcons ? 76 : 64)
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                        if showLabel { Text(game.title).font(.caption).lineLimit(1).foregroundStyle(.white) }
                     }
                 }.buttonStyle(.plain)
             } else if let app = appMap[key] {
@@ -3181,8 +3186,9 @@ struct BloomBoxHomeScreen: View {
         let needsShortcuts = [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey, Self.appStoreKey, Self.modulesKey, Self.themesKey]
             .filter { !knownKeys.contains($0) }
         // Only installed guest apps not seen before, never icons the user hid.
+        let huskKeys = Set(huskGames.map(\.key))
         let newGuestKeys = hadSavedLayout
-            ? appKeys.filter { appsByKey[$0] != nil && !knownKeys.contains($0) }
+            ? appKeys.filter { (appsByKey[$0] != nil || huskKeys.contains($0)) && !knownKeys.contains($0) }
             : []
         layout.reconcile(appKeys, favorites: favoriteKeys)
         for key in needsShortcuts.reversed() {
@@ -3195,7 +3201,12 @@ struct BloomBoxHomeScreen: View {
             ])
             builtInFolderMigrated = true
         }
-        if !newGuestKeys.isEmpty {
+        let visible = visiblePageIndices
+        let stranded = huskGames.map(\.key).filter { key in
+            guard let index = layout.pages.firstIndex(where: { $0.contains(key) }) else { return false }
+            return !visible.contains(index)
+        }
+        if !newGuestKeys.isEmpty || !stranded.isEmpty {
             let prior = recentLibraryKeys
             let merged = Array(newGuestKeys.reversed()) + prior.filter { !newGuestKeys.contains($0) }
             if let data = try? JSONEncoder().encode(Array(merged.prefix(50))),
@@ -3206,7 +3217,7 @@ struct BloomBoxHomeScreen: View {
             let preferred = (page > 0 && visible.contains(page - 1))
                 ? page - 1 : (visible.first ?? 0)
             if let target = layout.revealNewApps(
-                newGuestKeys, visiblePages: visible, preferredPage: preferred
+                newGuestKeys + stranded, visiblePages: visible, preferredPage: preferred
             ), homeHasAppeared {
                 withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.24)) {
                     page = target + 1
