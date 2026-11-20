@@ -202,9 +202,11 @@ struct BloomBoxLauncherRootView: View {
             }
         }
         .onChange(of: scenePhase) { phase in
-            // A background -> foreground transition is NOT a new launch.
-            // Never replay the greeting when the user minimizes BloomBox.
-            if phase == .background {
+            if phase == .active {
+                // Covers cold launches where onAppear ran before activation.
+                // The process guard prevents repeats after minimizing.
+                showProfileIntro()
+            } else if phase == .background {
                 introProfile = nil
             }
         }
