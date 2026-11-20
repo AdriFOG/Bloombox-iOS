@@ -6,7 +6,7 @@
 import Foundation
 
 /// Persist the preferred experience per BloomBox profile while keeping
-/// LiveBoardMode as a transient on-screen destination (ios/gamebox).
+/// LiveBoardMode as a transient on-screen destination (ios/nova/gamebox).
 /// Existing installations retain their historical iOS Home preference.
 enum BloomBoxLaunchPreferences {
     static let primaryKey = "BloomBoxPrimaryLauncher"
@@ -20,7 +20,7 @@ enum BloomBoxLaunchPreferences {
     static let pendingKey = "BloomBoxGamePendingEntry"
     static let pendingAppKey = "BloomBoxGamePendingApp"
 
-    static let validModes: Set<String> = ["ios", "gamebox", "hybrid"]
+    static let validModes: Set<String> = ["ios", "gamebox", "hybrid", "nova"]
 
     static func savedModes(defaults: UserDefaults) -> [String: String] {
         guard let result = defaults.dictionary(forKey: profileModesKey) as? [String: String]
@@ -35,7 +35,7 @@ enum BloomBoxLaunchPreferences {
     }
 
     static func runtimeMode(for preference: String) -> String {
-        preference == "gamebox" ? "gamebox" : "ios"
+        preference == "gamebox" ? "gamebox" : (preference == "nova" ? "nova" : "ios")
     }
 
     static func setPreferredMode(_ preference: String, profileID: String,
