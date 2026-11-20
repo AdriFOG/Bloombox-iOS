@@ -1418,6 +1418,12 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 if let encoded = try? JSONEncoder().encode(Array(keys.suffix(60))),
                    let json = String(data: encoded, encoding: .utf8) {
                     defaults.set(json, forKey: "BloomBoxPendingGiftKeysV1")
+                    // Refresh the already mounted Home now, instead of waiting
+                    // for SwiftUI to observe UserDefaults or for an app restart.
+                    NotificationCenter.default.post(
+                        name: Notification.Name("BloomBoxNewInstallGiftCreated"),
+                        object: key
+                    )
                 }
 
                 // add url schemes
