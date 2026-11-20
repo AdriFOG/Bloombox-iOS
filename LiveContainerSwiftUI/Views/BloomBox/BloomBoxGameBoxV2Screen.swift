@@ -700,18 +700,19 @@ struct BloomBoxGameBoxV2Screen: View {
             }
             // Low Power Mode only softens animation. It must not hide cached
             // wallpapers or prohibit user-enabled automatic backgrounds.
-            if performance.allowsGlass,
-               let app = selectedApp, let image = backdrop(app) {
-                GeometryReader { geo in
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: geo.size.width, height: geo.size.height)
-                        .clipped()
-                        .blur(radius: constrained ? 4 : (isSwitchTheme ? 14 : 17))
-                        .opacity(isSwitchTheme ? 0.18 : (constrained ? 0.56 : 0.74))
+            if performance.allowsGlass {
+                if let app = selectedApp, let image = backdrop(app) {
+                    GeometryReader { geo in
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: geo.size.width, height: geo.size.height)
+                            .clipped()
+                            .blur(radius: isSwitchTheme ? 14 : 17)
+                            .opacity(isSwitchTheme ? 0.18 : 0.74)
+                    }
+                    .allowsHitTesting(false)
                 }
-                .allowsHitTesting(false)
             }
             LinearGradient(
                 colors: isSwitchTheme
