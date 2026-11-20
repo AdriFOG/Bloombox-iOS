@@ -1974,16 +1974,15 @@ struct BloomBoxHomeScreen: View {
         let cellWidth = (width - 28) / 4
         let pitch = min(editing ? 92 : 99,
                         max(72, (height - (editing ? 69 : 39)) / 6))
-        return homeIconGrid(index, width: width, height: height)
-            .overlay(alignment: .topLeading) {
-                ZStack(alignment: .topLeading) {
-                    ForEach(widgets(on: index)) { widget in
-                        homeWidgetTile(widget, pageIndex: index,
-                                       cellWidth: cellWidth, pitch: pitch)
-                    }
+        return BloomBoxHomePageCanvas(
+            icons: homeIconGrid(index, width: width, height: height),
+            tiles: ZStack(alignment: .topLeading) {
+                ForEach(widgets(on: index)) { widget in
+                    homeWidgetTile(widget, pageIndex: index,
+                                   cellWidth: cellWidth, pitch: pitch)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
+        )
     }
 
     /// Keep each GIF tile in its own SwiftUI expression so the huge Home
@@ -2668,59 +2667,13 @@ struct BloomBoxHomeScreen: View {
     }
 
     private var pageControl: some View {
-        HStack(spacing: 5) {
-            Button { page = 1 } label: { Image(systemName: "house.fill").frame(width: 32, height: 32) }
-                .accessibilityLabel(englishUI ? "Home Screen" : "Pantalla de inicio")
-            Button { beginSearch() } label: {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 12, weight: .semibold)).frame(width: 28, height: 32)
-            }.accessibilityLabel("Search")
-            Rectangle().fill(.white.opacity(0.22)).frame(width: 0.5, height: 12).padding(.trailing, 3)
-            ForEach([0] + visiblePageIndices.map { $0 + 1 }, id: \.self) { index in
-                Button {
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
-                        page = index
-                    }
-                } label: {
-                    Circle().fill(.white.opacity(page == index ? 1 : 0.35))
-                        .frame(width: 6, height: 6)
-                        .frame(width: 27, height: 40)
-                        .contentShape(Rectangle())
-                }
-                .accessibilityLabel(index == 0 ? "Widgets" : (englishUI ? "Page \(index)" : "Página \(index)"))
-                // Do not attach a drop target to navigation buttons; it can
-                // consume taps. Use the widget's "Mover a página" menu instead.
-            }
-            Button {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.4)) {
-                    page = libraryPageIndex
-                }
-            } label: {
-                Image(systemName: "square.grid.2x2.fill")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(page == libraryPageIndex ? 1 : 0.55))
-                    .frame(width: 21, height: 32)
-            }
-            .accessibilityLabel(BloomBoxL10n.t("Biblioteca de apps"))
-            if editing {
-                Button { pageManager = true } label: {
-                    Image(systemName: "rectangle.stack")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(width: 24, height: 32)
-                }.accessibilityLabel("Gestionar páginas")
-                Button { addPage() } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(width: 24, height: 32)
-                }.accessibilityLabel("Añadir página")
-            }
-        }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 8)
-        .frame(height: 40)
-        .liveBoardGlass(radius: 16, interactive: false)
-        .modifier(BloomBoxConditionalBlur(active: openFolder != nil && performance.allowsGlass, radius: 18))
-        .accessibilityIdentifier("home.pages")
+        BloomBoxHomePageControl(
+            page: $page, visiblePages: visiblePageIndices,
+            libraryPageIndex: libraryPageIndex, editing: editing,
+            englishUI: englishUI, reduceMotion: reduceMotion,
+            onSearch: beginSearch, onManage: { pageManager = true },
+            onAddPage: addPage
+        )
     }
 
     @ViewBuilder private func folderIcon(_ folder: BloomBoxHomeLayout.Folder, showLabel: Bool) -> some View {
