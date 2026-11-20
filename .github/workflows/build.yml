@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - fix/gamebox-playnite-fixes-20261119
       - fix/jit-guest-orientation-ios27
       - feature/cinematic-game-mode-ram-jit-gate
       - refactor/remove-gamebox-reserve-slot-20261104
@@ -57,6 +58,10 @@ jobs:
             echo "::error::Obsolete wallpaper references remain in compiled Swift code"
             exit 1
           fi
+      - name: Test iOS Files IPA destination routing
+        run: python3 Tests/ipa-file-routing/test_routing.py
+      - name: Test Kirby installation animation, five-second hold and gift reveal
+        run: python3 Tests/ipa-install-celebration/test_install_celebration.py
       - name: Test independent BloomBox Files engine and legacy data
         run: |
           swiftc LiveContainerSwiftUI/Views/BloomBox/BloomBoxFileStore.swift Tests/manzana-files/main.swift -o "$RUNNER_TEMP/bloombox-files-tests"

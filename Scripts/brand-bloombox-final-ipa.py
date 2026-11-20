@@ -6,6 +6,7 @@ only localized display names and icon PNGs inside the freshly compiled app.
 SideStore remains responsible for final signing on the device.
 """
 import argparse
+import base64
 import os
 import pathlib
 import plistlib
@@ -49,6 +50,13 @@ def brand(ipa: pathlib.Path, assets: pathlib.Path):
     if english_table.count(b" = ") < 700:
         raise ValueError("The BloomBox English localization table is incomplete")
     english_target = ROOT + "en.lproj/Localizable.strings"
+    # Source GIF is stored as text for safe reproduction in GitHub. The
+    # unsigned final IPA must carry the actual original six-frame animation.
+    gif_source = pathlib.Path("Resources/Branding/BloomBoxSleepingKirby.gif.b64")
+    gif_data = base64.b64decode(gif_source.read_text().strip(), validate=True)
+    if not gif_data.startswith((b"GIF89a", b"GIF87a")) or len(gif_data) < 4000:
+        raise ValueError("Missing or invalid BloomBox sleeping Kirby animation")
+    gif_target = ROOT + "BloomBoxSleepingKirby.gif"
     fd, tmp = tempfile.mkstemp(prefix="manzana-build-", suffix=".ipa", dir=str(ipa.parent))
     os.close(fd)
     try:
@@ -68,9 +76,13 @@ def brand(ipa: pathlib.Path, assets: pathlib.Path):
                     data = new_icons[name]
                 elif name == english_target:
                     data = english_table
+                elif name == gif_target:
+                    data = gif_data
                 out.writestr(entry, data)
             if english_target not in names:
                 out.writestr(english_target, english_table)
+            if gif_target not in names:
+                out.writestr(gif_target, gif_data)
         with zipfile.ZipFile(tmp) as check:
             if check.testzip() is not None:
                 raise ValueError("Corrupt branded IPA")
@@ -79,6 +91,8 @@ def brand(ipa: pathlib.Path, assets: pathlib.Path):
                 raise ValueError("BloomBox branding is missing in the IPA")
             if check.read(english_target) != english_table:
                 raise ValueError("Packaged BloomBox English phrases are missing or outdated")
+            if check.read(gif_target) != gif_data:
+                raise ValueError("Missing packaged BloomBox Kirby animated installer GIF")
             if not info.get("NSSupportsLiveActivities"):
                 raise ValueError("ActivityKit disabled in final host Info.plist")
             for name, data in new_icons.items():

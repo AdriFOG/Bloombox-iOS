@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Validate the BloomBox+SideStore IPA, including the ActivityKit extension."""
 import hashlib
+import base64
 import plistlib
 import sys
 import zipfile
@@ -46,8 +47,33 @@ with zipfile.ZipFile(ipa) as archive:
         if not archive.read(preview).startswith(bytes.fromhex("ffd8ff")):
             raise SystemExit("BloomBox starter theme preview is not JPEG: " + theme)
 
+    gif_path = app + "BloomBoxSleepingKirby.gif"
+    if gif_path not in entries:
+        raise SystemExit("BloomBox IPA is missing the sleeping Kirby animation")
+    expected_gif = base64.b64decode(Path("Resources/Branding/BloomBoxSleepingKirby.gif.b64").read_text().strip(), validate=True)
+    if archive.read(gif_path) != expected_gif:
+        raise SystemExit("BloomBox sleeping Kirby animation changed during packaging")
+
     host = plistlib.loads(archive.read(app + "Info.plist"))
     ext = plistlib.loads(archive.read(widget + "Info.plist"))
+    # Opening an IPA in Files must survive Xcode packaging and post-branding.
+    file_types = {
+        uti
+        for declaration in host.get("CFBundleDocumentTypes", [])
+        for uti in declaration.get("LSItemContentTypes", [])
+    }
+    imported = {
+        item.get("UTTypeIdentifier"): item
+        for item in host.get("UTImportedTypeDeclarations", [])
+    }
+    for uti, extension in (
+        ("com.bloombox.ipa-archive", "ipa"),
+        ("com.bloombox.tipa-archive", "tipa"),
+    ):
+        if uti not in file_types:
+            raise SystemExit(f"Packaged BloomBox is not registered to open {extension} from Files")
+        if extension not in imported.get(uti, {}).get("UTTypeTagSpecification", {}).get("public.filename-extension", []):
+            raise SystemExit(f"Packaged BloomBox lost its {extension} imported type")
     if host.get("CFBundleName") != "BloomBox" or host.get("CFBundleDisplayName") != "BloomBox":
         raise SystemExit("Wrong app! Latest BloomBox display name missing from final IPA")
     if host.get("NSSupportsLiveActivities") is not True:

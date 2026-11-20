@@ -2,6 +2,12 @@ import SwiftUI
 import GameController
 import UIKit
 
+/// Reset only when the iOS process is relaunched, not when it resumes from
+/// Files, the app switcher or SpringBoard.
+private enum BloomBoxWelcomeLaunchSession {
+    static var hasShownInitialGreeting = false
+}
+
 /// BloomBox's own mode host. LiveContainer stays mounted for guest/JIT/signing.
 struct BloomBoxLauncherRootView: View {
     @EnvironmentObject private var sharedModel: SharedModel
@@ -197,6 +203,8 @@ struct BloomBoxLauncherRootView: View {
         }
         .onChange(of: scenePhase) { phase in
             if phase == .active {
+                // Covers cold launches where onAppear ran before activation.
+                // The process guard prevents repeats after minimizing.
                 showProfileIntro()
             } else if phase == .background {
                 introProfile = nil
@@ -220,9 +228,12 @@ struct BloomBoxLauncherRootView: View {
         guard ready, wizardCompleted, !showFirstRunWizard, !showRecoveryNotice,
               !showDestination, !showModeSheet,
               UIApplication.shared.applicationState == .active else { return }
-        // onAppear and scenePhase can happen together. One greeting is enough,
-        // but selecting another profile must always show its own greeting.
-        if !force && Date().timeIntervalSince(lastIntroAt) < 2.5 { return }
+        // Once per real process launch. Profile switches explicitly force their
+        // own greeting; reopening the existing process never does.
+        if !force {
+            guard !BloomBoxWelcomeLaunchSession.hasShownInitialGreeting else { return }
+            BloomBoxWelcomeLaunchSession.hasShownInitialGreeting = true
+        }
         lastIntroAt = Date()
         introSequence += 1
         introProfile = BloomBoxProfileStore.active
