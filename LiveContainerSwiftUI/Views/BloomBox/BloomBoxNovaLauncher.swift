@@ -389,8 +389,9 @@ struct BloomBoxNovaLauncher: View {
                                    inDock: Bool = false) -> some View {
         let content = VStack(spacing: inDock ? 0 : 6) {
             icon(key, side: inDock ? min(iconSide, 59) : iconSide)
-                .scaleEffect(launchingKey == key && !reduceMotion ? 1.16 : 1)
-                .opacity(launchingKey == key && workspace.animation == "fade" ? 0.4 : 1)
+                .scaleEffect(launchingKey == key && workspace.animation == "zoom" && !reduceMotion ? 1.17 : 1)
+                .offset(y: launchingKey == key && workspace.animation == "slide" && !reduceMotion ? -25 : 0)
+                .opacity(launchingKey == key && workspace.animation == "fade" ? 0.35 : 1)
             if workspace.showLabels && !inDock {
                 Text(name(for: key))
                     .font(.system(size: workspace.columns == 6 ? 10 : 11,
@@ -552,6 +553,9 @@ struct BloomBoxNovaLauncher: View {
                 .padding(.top, 12)
                 .padding(.bottom, 18)
                 .onTapGesture { closeDrawer() }
+                .gesture(DragGesture(minimumDistance: 14).onEnded { gesture in
+                    if gesture.translation.height > 45 { closeDrawer() }
+                })
             HStack {
                 Text(t("Todas las aplicaciones", "All apps"))
                     .font(.system(size: 22, weight: .bold, design: .rounded))
@@ -761,7 +765,6 @@ struct BloomBoxNovaLauncher: View {
             action()
             return
         }
-        launchingKey = key
         withAnimation(.spring(response: 0.22, dampingFraction: 0.64)) {
             launchingKey = key
         }
