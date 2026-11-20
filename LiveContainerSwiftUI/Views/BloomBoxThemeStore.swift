@@ -103,7 +103,12 @@ enum BloomBoxThemePackage {
                             if let imported = mediaFiles[name] {
                                 widget.mediaName = imported
                             } else {
-                                let imported = try BloomBoxWidgetMedia.importData(source)
+                                // Imported GIFs are now stored as alpha HEVC movies.
+                                // Restore that playable format instead of sending it
+                                // through the image-only decoder.
+                                let imported = try (name as NSString).pathExtension.lowercased() == "mov"
+                                    ? BloomBoxWidgetMedia.importVideoData(source)
+                                    : BloomBoxWidgetMedia.importData(source)
                                 mediaFiles[name] = imported
                                 widget.mediaName = imported
                                 if let file = BloomBoxWidgetMedia.url(for: imported) { created.append(file) }
