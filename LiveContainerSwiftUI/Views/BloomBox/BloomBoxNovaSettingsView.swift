@@ -7,8 +7,11 @@ struct BloomBoxNovaSettingsView: View {
     @Binding var layout: BloomBoxNovaLayout
     let availableKeys: [String]
     let english: Bool
+    let chooseWallpaper: (UIImage) -> Void
+    let removeWallpaper: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var resetConfirmation = false
+    @State private var wallpaperPicker = false
     private func t(_ spanish: String, _ en: String) -> String {
         english ? en : spanish
     }
@@ -74,10 +77,26 @@ struct BloomBoxNovaSettingsView: View {
                 }
 
                 Section(t("Fondo y elementos", "Wallpaper & elements")) {
+                    Button {
+                        wallpaperPicker = true
+                    } label: {
+                        Label(t("Elegir fondo de Fotos", "Choose photo wallpaper"),
+                              systemImage: "photo.on.rectangle.angled")
+                    }
+                    if layout.useCustomWallpaper {
+                        Button(role: .destructive) {
+                            removeWallpaper()
+                            layout.useCustomWallpaper = false
+                        } label: {
+                            Label(t("Eliminar fondo personalizado", "Remove custom wallpaper"),
+                                  systemImage: "trash")
+                        }
+                    }
                     Toggle(isOn: $layout.useHomeWallpaper) {
                         Label(t("Usar fondo del launcher iOS", "Use iOS Home wallpaper"),
                               systemImage: "photo")
                     }
+                    .disabled(layout.useCustomWallpaper)
                     Toggle(isOn: $layout.showClock) {
                         Label(t("Mostrar reloj", "Show clock"), systemImage: "clock")
                     }
@@ -104,6 +123,13 @@ struct BloomBoxNovaSettingsView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(t("Listo", "Done")) { dismiss() }
+                }
+            }
+            .sheet(isPresented: $wallpaperPicker) {
+                BloomBoxNovaWallpaperPicker { image in
+                    chooseWallpaper(image)
+                    layout.useCustomWallpaper = true
+                    wallpaperPicker = false
                 }
             }
             .confirmationDialog(t("¿Restablecer el escritorio Android?", "Reset Android Home?"),
