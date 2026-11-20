@@ -43,6 +43,8 @@ API_AVAILABLE(ios(16.0))
 // Deliver a deep link to an already running hosted guest, without restarting
 // it or requesting JIT a second time. Used by BloomBox's staged Husk launch.
 + (BOOL)bloomBoxSendURL:(NSString *)urlString toContainer:(NSString *)dataUUID;
++ (void)bloomBoxBeginStartupForContainer:(NSString *)dataUUID title:(NSString *)title;
++ (void)bloomBoxEndStartupForContainer:(NSString *)dataUUID;
 - (void)handleStatusBarTapAction:(UIAction *)action;
 - (BOOL)usesHostingControllerAPI;
 @end
