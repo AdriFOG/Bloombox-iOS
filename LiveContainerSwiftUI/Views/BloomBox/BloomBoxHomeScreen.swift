@@ -418,6 +418,7 @@ struct BloomBoxHomeScreen: View {
                                 .foregroundStyle(.secondary)
                             Button(englishUI ? "Hide, keep starting" : "Ocultar, seguir iniciando") {
                                 huskStartingGame = nil
+                                AppSceneViewController.bloomBoxEndStartup(forContainer: game.containerFolder)
                             }
                             .font(.caption)
                             .padding(.top, 4)
