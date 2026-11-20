@@ -58,6 +58,8 @@ jobs:
             echo "::error::Obsolete wallpaper references remain in compiled Swift code"
             exit 1
           fi
+      - name: Validate LiveContainer 3.8.14 selective backport
+        run: python3 Tests/livecontainer-upstream-backport/test_contract.py
       - name: Test iOS Files IPA destination routing
         run: python3 Tests/ipa-file-routing/test_routing.py
       - name: Test Kirby installation animation, five-second hold and gift reveal

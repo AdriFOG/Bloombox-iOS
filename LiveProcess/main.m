@@ -17,6 +17,8 @@
 #import "../LiveContainer/utils.h"
 #import "../LiveContainer/Tweaks/Tweaks.h"
 #import "../SideStoreSupport/XPCServer.h"
+#import "../LiveContainer/LivePlugInSupport/PrivateXPC.h"
+#import "../LiveContainer/LivePlugInSupport/LivePlugInServer.h"
 
 @interface LiveProcessHandler : NSObject<NSExtensionRequestHandling>
 @end
@@ -270,8 +272,23 @@ static void* hook_dlopen(void* dyldApiInstancePtr, const char* path, int mode) {
     }
 }
 
-// Extension entry point
+// Extension entry point. Preserve BloomBox JIT hooks for standard LiveProcess runs;
+// dispatch guest helper processes only when the upstream plug-in service exists.
+extern int LivePlugInMain(int argc, char *argv[], char *envp[], char *apple[]);
 int NSExtensionMain(int argc, char *argv[], char *envp[], char *apple[]) {
+    xpc_object_t properties = launch_copy_extension_properties_for_pid(getpid());
+    if (properties && xpc_get_type(properties) == XPC_TYPE_DICTIONARY) {
+        pid_t expectedHostPID = (pid_t)xpc_dictionary_get_int64(properties, "XPCExtensionHostPID");
+        if (expectedHostPID > 0) {
+            NSString *service = LCLivePlugInServiceName(LCSharedUtils.appGroupID, expectedHostPID);
+            mach_port_t port = MACH_PORT_NULL;
+            kern_return_t status = bootstrap_look_up(bootstrap_port, service.UTF8String, &port);
+            if (status == KERN_SUCCESS && MACH_PORT_VALID(port)) {
+                mach_port_deallocate(mach_task_self(), port);
+                return LivePlugInMain(argc, argv, envp, apple);
+            }
+        }
+    }
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wundeclared-selector"
     method_setImplementation(class_getInstanceMethod(NSClassFromString(@"NSXPCDecoder"), @selector(_validateAllowedClass:forKey:allowingInvocations:)), (IMP)hook_do_nothing);

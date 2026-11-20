@@ -154,6 +154,11 @@ struct LCAppSettingsView: View {
             
             
             Section {
+                Toggle(isOn: $model.uiHelperProcessesSupport) {
+                    Text((Locale.preferredLanguages.first ?? "en").lowercased().hasPrefix("es")
+                         ? "Permitir procesos auxiliares" : "Helper Process Support")
+                }
+                .disabled(model.uiIs32bit)
                 Toggle(isOn: $model.uiIsJITNeeded) {
                     Text("lc.appSettings.launchWithJit".loc)
                 }
@@ -315,6 +320,13 @@ struct LCAppSettingsView: View {
                 }
                 Toggle(isOn: $model.uiFixLocalNotification) {
                     Text("lc.appSettings.fixLocalNotification".loc)
+                }
+                if #available(iOS 26.0, *) {
+                    Toggle(isOn: $model.uiFixBackgroundTaskIdentifiers) {
+                        Text((Locale.preferredLanguages.first ?? "en").lowercased().hasPrefix("es")
+                             ? "Corregir tareas en segundo plano"
+                             : "Fix Background Processing Tasks")
+                    }
                 }
                 Toggle(isOn: $model.uiUseLCBundleId) {
                     Text("lc.appSettings.useLCBundleId".loc)
