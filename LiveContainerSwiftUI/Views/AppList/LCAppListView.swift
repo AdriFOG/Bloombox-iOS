@@ -328,11 +328,37 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     /// actions as iOS Home and GameBox; its layout is isolated per profile.
     private var novaLauncher: some View {
         BloomBoxNovaLauncher(
-            apps: launcherApps,
-            launch: { app in Task { await launchFromLiveBoard(app) } },
-            launchWithJIT: { app in Task { await launchFromLiveBoard(app, forceJIT: true) } },
-            manage: manageLauncherApp,
-            uninstall: uninstallLauncherApp,
+            entries: launcherApps.map { app in
+                BloomBoxNovaEntry(
+                    id: liveBoardAppKey(app),
+                    bundleIdentifier: app.bundleIdentifier,
+                    name: LiveBoardAppCustomization.shared.name(app),
+                    icon: LiveBoardIconStore.image(app, dark: darkModeIcon),
+                    requiresJIT: app.appInfo.isJITNeeded,
+                    canUninstall: !(app.appInfo is BuiltInSideStoreAppInfo) &&
+                        !app.uiIsShared && !app.isAppRunning && !app.isSigningInProgress)
+            },
+            profileID: activeLauncherProfileID,
+            profileName: BloomBoxProfileStore.active.name,
+            accentHex: BloomBoxProfileStore.active.accentHex,
+            english: BloomBoxL10n.isEnglish,
+            persistence: LCUtils.appGroupUserDefault,
+            launch: { key in
+                guard let app = launcherApps.first(where: { liveBoardAppKey($0) == key }) else { return }
+                Task { await launchFromLiveBoard(app) }
+            },
+            launchWithJIT: { key in
+                guard let app = launcherApps.first(where: { liveBoardAppKey($0) == key }) else { return }
+                Task { await launchFromLiveBoard(app, forceJIT: true) }
+            },
+            manage: { key in
+                guard let app = launcherApps.first(where: { liveBoardAppKey($0) == key }) else { return }
+                manageLauncherApp(app)
+            },
+            uninstall: { key in
+                guard let app = launcherApps.first(where: { liveBoardAppKey($0) == key }) else { return }
+                uninstallLauncherApp(app)
+            },
             openInstall: {
                 if sharedModel.multiLCStatus == 2 { manageLibrary = true }
                 else { choosingIPA = true }
