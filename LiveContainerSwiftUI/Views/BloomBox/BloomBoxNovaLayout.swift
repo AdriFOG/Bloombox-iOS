@@ -35,7 +35,7 @@ struct BloomBoxNovaLayout: Codable, Equatable {
     var roundIcons = false
     var drawerList = false
     var drawerSort = "alphabetical"
-    var animation = "zoom"
+    var launchAnimation = "zoom"
 
     static func load(profile: String, from json: String) -> Self {
         guard let data = json.data(using: .utf8),
@@ -63,7 +63,7 @@ struct BloomBoxNovaLayout: Codable, Equatable {
         let valid = Set(keys)
         columns = min(max(columns, 4), 6)
         iconScale = min(max(iconScale, 0.75), 1.20)
-        if !["zoom", "slide", "fade", "none"].contains(animation) { animation = "zoom" }
+        if !["zoom", "slide", "fade", "none"].contains(launchAnimation) { launchAnimation = "zoom" }
         if !["alphabetical", "recent"].contains(drawerSort) { drawerSort = "alphabetical" }
         if pages.isEmpty { pages = [[]] }
         var occupied = Set<String>()
