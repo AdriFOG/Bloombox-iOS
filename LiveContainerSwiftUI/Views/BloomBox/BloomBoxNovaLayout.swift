@@ -31,6 +31,7 @@ struct BloomBoxNovaLayout: Codable, Equatable {
     var showClock = true
     var showSearch = true
     var useHomeWallpaper = true
+    var useCustomWallpaper = false
     var roundIcons = false
     var drawerList = false
     var drawerSort = "alphabetical"
