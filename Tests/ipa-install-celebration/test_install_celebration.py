@@ -50,7 +50,10 @@ assert '2_700_000_000' in visuals
 launcher = (root / "LiveContainerSwiftUI/Views/BloomBox/BloomBoxLauncherRoot.swift").read_text()
 assert 'BloomBoxWelcomeLaunchSession.hasShownInitialGreeting' in launcher
 assert 'if phase == .background {' in launcher
-assert 'if phase == .active {\\n                showProfileIntro()' not in launcher
+assert 'if phase == .active {' in launcher
+assert 'showProfileIntro()' in launcher
+assert 'guard !BloomBoxWelcomeLaunchSession.hasShownInitialGreeting else { return }' in launcher
+assert 'BloomBoxWelcomeLaunchSession.hasShownInitialGreeting = true' in launcher
 assert 'gif_target = ROOT + "BloomBoxSleepingKirby.gif"' in brand
 assert "out.writestr(gif_target, gif_data)" in brand
 gif = base64.b64decode((root / "Resources/Branding/BloomBoxSleepingKirby.gif.b64").read_text().strip(), validate=True)
