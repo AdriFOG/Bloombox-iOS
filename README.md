@@ -6,7 +6,7 @@
 
 A personal home for your apps, widgets and files — with room to experiment.
 
-[**Download BloomBox 3.0**](https://github.com/AdriFOG/Bloombox-iOS/releases/tag/v3.0.0) · [Builds](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml) · [Report an issue](https://github.com/AdriFOG/Bloombox-iOS/issues)
+[**Download BloomBox 3.0.1**](https://github.com/AdriFOG/Bloombox-iOS/releases/tag/v3.0.1) · [Builds](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml) · [Report an issue](https://github.com/AdriFOG/Bloombox-iOS/issues)
 
 [![Build](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-purple.svg)](LICENSE) · [Original-work attribution](LICENSE-ADDITIONAL-TERMS.md)
@@ -81,7 +81,7 @@ Backups do not include the guest IPA, and cloud sessions or device-bound credent
 
 ## Get started
 
-1. Open the [BloomBox 3.0 release](https://github.com/AdriFOG/Bloombox-iOS/releases/tag/v3.0.0) and read the installation notes. Future releases will be published under AdriFOG.
+1. Open the [BloomBox 3.0.1 release](https://github.com/AdriFOG/Bloombox-iOS/releases/tag/v3.0.1) and read the installation notes. Future releases will be published under AdriFOG.
 2. Download **`BloomBox-SideStore-unsigned.ipa`** from that release's assets.
 3. Sign and install it with **SideStore**, retaining all app extensions. The downloaded IPA is unsigned and cannot be installed by opening it alone.
 4. Open BloomBox, import a compatible guest IPA, and make the desktop yours. Open **Modules** when you want to explore advanced features.
