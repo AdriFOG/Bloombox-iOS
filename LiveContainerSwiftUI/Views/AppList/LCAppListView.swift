@@ -773,6 +773,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             return true
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("BloomBoxGuestSceneDidExit"))) { note in
+            BloomBoxPerformanceBudget.shared.guestActive = false
             guard let appKey = note.object as? String else { return }
             let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
                 .flatMap { $0.windows }.first { $0.isKeyWindow }
@@ -1015,6 +1016,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         }
         // Keep the approval associated with the guest until this launch
         // returns or throws, preserving all previous per-app safety checks.
+        BloomBoxPerformanceBudget.shared.guestActive = true
         do {
             if app.appInfo.is32bit { try await ensureBundled32BitRuntime(for: app) }
             if liveBoardMode == "ios" || liveBoardMode == "gamebox" {
@@ -1046,6 +1048,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 try await app.launchFromLibrary(forceJIT: jitOverride)
             }
         } catch {
+            BloomBoxPerformanceBudget.shared.guestActive = false
             LiveBoardOrientation.endGuest(appKey: appKey, window: window)
             if hybridLaunch && hybridRunningGuestKey == appKey {
                 hybridRunningGuestKey = nil
