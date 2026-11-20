@@ -1331,8 +1331,8 @@ struct BloomBoxHomeScreen: View {
     // completion can deadlock Husk and leave the JIT UI spinning indefinitely.
     @MainActor private func waitForHuskDebugger(
         appName: String, startedAt: Date
-    ) async throws {
-        let deadline = Date().addingTimeInterval(30)
+    ) async throws -> Bool {
+        let deadline = Date().addingTimeInterval(8)
         while Date() < deadline {
             try Task.checkCancellation()
             let attempt = BloomBoxJITLogStore.shared.attempts.first {
@@ -1344,7 +1344,7 @@ struct BloomBoxHomeScreen: View {
                     huskStartingNote = englishUI
                         ? "Debugger connected. Starting the game…"
                         : "Depurador conectado. Abriendo el juego…"
-                    return
+                    return true
                 case "failed", "interrupted", "timed_out_attached":
                     throw englishUI
                         ? "The JIT helper failed. Check Modules > JIT and retry."
@@ -1355,9 +1355,12 @@ struct BloomBoxHomeScreen: View {
             }
             try await Task.sleep(nanoseconds: 200_000_000)
         }
-        throw englishUI
-            ? "The JIT debugger did not connect within 30 seconds. Check the pairing and JIT log."
-            : "El depurador JIT no se conectó en 30 segundos. Revisa el emparejamiento y el registro JIT."
+        // This is NOT a JIT-success signal. Keep the helper running and
+        // start the game anyway so guest breakpoints can complete its protocol.
+        huskStartingNote = englishUI
+            ? "JIT is still pending. Starting the game to continue…"
+            : "JIT sigue pendiente. Abriendo el juego para continuar…"
+        return false
     }
 
     // The LiveProcess scene can be a little later than the PID callback,
@@ -1436,7 +1439,13 @@ struct BloomBoxHomeScreen: View {
                     UserDefaults.standard.set(true, forKey: "LCLaunchMultitaskMaximized")
                     UserDefaults.standard.removeObject(forKey: "launchAppUrlScheme")
                     try await host.runApp(multitask: true, containerFolderName: game.containerFolder)
-                    try await waitForHuskDebugger(appName: host.appInfo.displayName(), startedAt: started)
+                    let debuggerConnected = try await waitForHuskDebugger(
+                        appName: host.appInfo.displayName(), startedAt: started)
+                    if !debuggerConnected {
+                        // Never mark JIT completed solely because we sent the
+                        // game link. The real helper remains the source of truth.
+                        NSLog("[BloomBox] Husk debugger not yet confirmed; launching guest game.")
+                    }
                     let remaining = max(0, 3 - Date().timeIntervalSince(started))
                     if remaining > 0 {
                         try await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
