@@ -145,7 +145,7 @@ assert "mode: autoBackgroundMode" in gamebox
 # Under a serious thermal/low-power budget GameBox intentionally omits the
 # expensive backdrop, but keeps the cached artwork available for recovery.
 # Normal and fair states still resolve the chosen title's background.
-assert "if performance.allowsGlass," in gamebox
+assert "if performance.allowsGlass" in gamebox
 assert "let app = selectedApp, let image = backdrop(app)" in gamebox
 assert "if !constrained, let app = selectedApp" not in gamebox
 assert "guard autoBackgrounds, !safeGraphics,\n              let app = selectedApp" in gamebox
