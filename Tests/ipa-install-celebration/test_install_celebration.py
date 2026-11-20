@@ -30,6 +30,27 @@ assert "repeatForever(autoreverses: true)" in visuals
 assert 'Text("\\(Int(amount * 100))%")' in visuals
 assert "BloomBoxHomeGiftIcon" in visuals
 assert "reduceMotion" in visuals
+# Regression checks from the first on-device install test:
+# Same-process updates must create visible gifts without a relaunch.
+assert 'Notification.Name("BloomBoxNewInstallGiftCreated")' in host
+assert 'NotificationCenter.default.post(' in host
+assert 'NotificationCenter.default.publisher(for:' in home
+assert 'refreshNewInstallGift(notification)' in home
+assert 'if giftKeysJSON != current { giftKeysJSON = current }' in home
+# The wizard's per-profile favorite color drives the full progress bar.
+assert 'accentColor: profileAccent' in home
+assert 'let accentColor: Color' in visuals
+assert 'accentColor.opacity(0.55)' in visuals
+assert 'accentColor.opacity(0.20)' in visuals
+# Gift shakes periodically, only while shown, respecting Reduce Motion.
+assert '.task(id: reduceMotion)' in visuals
+assert 'rattling = true' in visuals
+assert '2_700_000_000' in visuals
+# No Welcome replay when the app switcher simply resumes the process.
+launcher = (root / "LiveContainerSwiftUI/Views/BloomBox/BloomBoxLauncherRoot.swift").read_text()
+assert 'BloomBoxWelcomeLaunchSession.hasShownInitialGreeting' in launcher
+assert 'if phase == .background {' in launcher
+assert 'if phase == .active {\\n                showProfileIntro()' not in launcher
 assert 'gif_target = ROOT + "BloomBoxSleepingKirby.gif"' in brand
 assert "out.writestr(gif_target, gif_data)" in brand
 gif = base64.b64decode((root / "Resources/Branding/BloomBoxSleepingKirby.gif.b64").read_text().strip(), validate=True)
