@@ -83,6 +83,13 @@ enum BloomBoxMotionMedia {
             }
             if ext == "gif" {
                 _ = try gifFrames(destination)
+                let converted = destination.deletingPathExtension().appendingPathExtension("mov")
+                if (try? BloomBoxGIFTranscoder.convert(destination, to: converted,
+                                                       preserveAlpha: false)) != nil {
+                    try? fm.removeItem(at: destination)
+                    return converted.lastPathComponent
+                }
+                // Keep the validated original if the device cannot encode HEVC.
             } else {
                 let video = AVURLAsset(url: destination)
                 guard video.isPlayable, !video.tracks(withMediaType: .video).isEmpty,
