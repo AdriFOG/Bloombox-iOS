@@ -142,9 +142,11 @@ assert "Ver origen y atribución" in gamebox
 assert "Buscar fondo en Internet" in gamebox
 assert "Quitar fondo descargado" in gamebox
 assert "mode: autoBackgroundMode" in gamebox
-# Background must render regardless of Low Power Mode (constrained only
-# reduces blur/motion). A prior request cannot starve the next selection.
-assert "if let app = selectedApp, let image = backdrop(app)" in gamebox
+# Under a serious thermal/low-power budget GameBox intentionally omits the
+# expensive backdrop, but keeps the cached artwork available for recovery.
+# Normal and fair states still resolve the chosen title's background.
+assert "if performance.allowsGlass," in gamebox
+assert "let app = selectedApp, let image = backdrop(app)" in gamebox
 assert "if !constrained, let app = selectedApp" not in gamebox
 assert "guard autoBackgrounds, !safeGraphics,\n              let app = selectedApp" in gamebox
 assert "guard autoBackgrounds, !safeGraphics, !constrained" not in gamebox
