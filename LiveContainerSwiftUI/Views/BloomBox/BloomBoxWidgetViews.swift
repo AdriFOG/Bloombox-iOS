@@ -3,6 +3,7 @@ import PhotosUI
 import UniformTypeIdentifiers
 import CryptoKit
 import ImageIO
+import AVFoundation
 
 // BloomBox-owned widget views, media importers and thumbnail effects.
 // The saved JSON layout and widget IDs remain compatible with older builds.
@@ -70,6 +71,28 @@ enum BloomBoxWidgetMedia {
             throw error
         }
     }
+    /// Re-import a trusted-format media video from a theme without decoding it on the UI thread.
+    /// The native AVFoundation parser validates the video before it becomes a widget asset.
+    static func importVideoData(_ data: Data) throws -> String {
+        guard !data.isEmpty, data.count <= 30 * 1_024 * 1_024 else {
+            throw BloomBoxMotionMedia.failure("El video del widget supera 30 MB.")
+        }
+        let name = "widget-" + UUID().uuidString + ".mov"
+        let target = directory.appendingPathComponent(name)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        do {
+            try data.write(to: target, options: .atomic)
+            let asset = AVURLAsset(url: target)
+            guard asset.isPlayable, !asset.tracks(withMediaType: .video).isEmpty else {
+                throw BloomBoxMotionMedia.failure("El video del widget no es válido.")
+            }
+            return name
+        } catch {
+            try? FileManager.default.removeItem(at: target)
+            throw error
+        }
+    }
+
     static func importFile(_ url: URL) throws -> String {
         let access = url.startAccessingSecurityScopedResource()
         defer { if access { url.stopAccessingSecurityScopedResource() } }
