@@ -3,31 +3,37 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
+/// Portable app metadata; the LiveContainer adapter lives in LCAppListView.
+struct BloomBoxNovaEntry: Identifiable {
+    let id: String
+    let bundleIdentifier: String
+    let name: String
+    let icon: UIImage?
+    let requiresJIT: Bool
+    let canUninstall: Bool
+}
+
 /// Android-style workspace, implemented natively for BloomBox.
 /// This is not Nova Launcher source code or an Android runtime.
 struct BloomBoxNovaLauncher: View {
-    let apps: [LCAppModel]
-    let launch: (LCAppModel) -> Void
-    let launchWithJIT: (LCAppModel) -> Void
-    let manage: (LCAppModel) -> Void
-    let uninstall: (LCAppModel) -> Void
+    let entries: [BloomBoxNovaEntry]
+    let profileID: String
+    let profileName: String
+    let accentHex: String
+    let english: Bool
+    let persistence: UserDefaults
+    let launch: (String) -> Void
+    let launchWithJIT: (String) -> Void
+    let manage: (String) -> Void
+    let uninstall: (String) -> Void
     let openInstall: () -> Void
     let openManagement: () -> Void
     let openSettings: () -> Void
     let openInterface: () -> Void
     let openGameBox: () -> Void
 
-    @AppStorage(BloomBoxProfileStore.activeKey, store: LiveContainerPreferencesAdapter.defaults)
-    private var profileID = BloomBoxUserProfile.primaryID
-    @AppStorage("BloomBoxNovaWorkspaceV1", store: LiveContainerPreferencesAdapter.defaults)
-    private var savedWorkspaces = "{}"
-    @AppStorage("BloomBoxPreferredLanguage", store: LiveContainerPreferencesAdapter.defaults)
-    private var preferredLanguage = "system"
-    @AppStorage("darkModeIcon", store: LiveContainerPreferencesAdapter.defaults)
-    private var darkIcons = false
-
+    @State private var savedWorkspaces = "{}"
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ObservedObject private var customizations = LiveBoardAppCustomization.shared
     @State private var workspace = BloomBoxNovaLayout()
     @State private var page = 0
     @State private var drawerOpen = false
@@ -45,28 +51,21 @@ struct BloomBoxNovaLauncher: View {
     @State private var wallpaper: UIImage?
     @FocusState private var searchFocused: Bool
 
-    private var english: Bool {
-        preferredLanguage == "en" || (preferredLanguage == "system" &&
-            !(Locale.preferredLanguages.first ?? "en").lowercased().hasPrefix("es"))
-    }
-
     private func t(_ spanish: String, _ englishText: String) -> String {
         english ? englishText : spanish
     }
 
     private var accent: Color {
-        BloomBoxWizardPalette.color(BloomBoxProfileStore.active.accentHex)
+        BloomBoxWizardPalette.color(accentHex)
     }
 
-    private var appMap: [String: LCAppModel] {
-        var result: [String: LCAppModel] = [:]
-        for app in apps { result[liveBoardAppKey(app)] = app }
-        return result
+    private var appMap: [String: BloomBoxNovaEntry] {
+        Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { current, _ in current })
     }
 
     private var keys: [String] {
         var used = Set<String>()
-        return (apps.map { liveBoardAppKey($0) } + BloomBoxNovaLayout.builtIns)
+        return (entries.map(\.id) + BloomBoxNovaLayout.builtIns)
             .filter { used.insert($0).inserted }
     }
 
@@ -222,9 +221,10 @@ struct BloomBoxNovaLauncher: View {
         .onChange(of: workspace) { value in
             savedWorkspaces = BloomBoxNovaLayout.save(
                 value, profile: profileID, into: savedWorkspaces)
+            persistence.set(savedWorkspaces, forKey: "BloomBoxNovaWorkspaceV1")
         }
         .sheet(isPresented: $settingsOpen) {
-            BloomBoxNovaSettingsView(layout: $workspace)
+            BloomBoxNovaSettingsView(layout: $workspace, availableKeys: keys, english: english)
         }
         .sheet(isPresented: Binding(
             get: { folderOpen != nil },
@@ -251,7 +251,7 @@ struct BloomBoxNovaLauncher: View {
         .confirmationDialog(t("¿Desinstalar esta aplicación?", "Uninstall this app?"),
                             isPresented: $uninstallConfirmation) {
             Button(t("Desinstalar", "Uninstall"), role: .destructive) {
-                if let key = uninstallKey, let app = appMap[key] { uninstall(app) }
+                if let key = uninstallKey, appMap[key] != nil { uninstall(key) }
                 uninstallKey = nil
             }
             Button(t("Cancelar", "Cancel"), role: .cancel) { uninstallKey = nil }
@@ -290,7 +290,7 @@ struct BloomBoxNovaLauncher: View {
                             .monospacedDigit()
                     }
                 }
-                Text(BloomBoxProfileStore.active.name)
+                Text(profileName)
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .foregroundStyle(.white.opacity(0.72))
             }
@@ -422,7 +422,7 @@ struct BloomBoxNovaLauncher: View {
         let shape = RoundedRectangle(cornerRadius: workspace.roundIcons ? side / 2 : side * 0.23,
                                      style: .continuous)
         ZStack {
-            if let app = appMap[key], let picture = BloomBoxIconStore.image(app, dark: darkIcons) {
+            if let picture = appMap[key]?.icon {
                 Image(uiImage: picture)
                     .resizable()
                     .scaledToFill()
@@ -437,7 +437,7 @@ struct BloomBoxNovaLauncher: View {
                     .foregroundStyle(.white)
                     .offset(x: side * 0.32, y: side * 0.33)
             } else {
-                shape.fill(builtInColor(for: key).gradient)
+                shape.fill(builtInColor(for: key))
                 Image(systemName: builtInSymbol(for: key))
                     .font(.system(size: side * 0.44, weight: .semibold))
                     .foregroundStyle(.white)
@@ -465,13 +465,13 @@ struct BloomBoxNovaLauncher: View {
                 activate(key)
             }
             if let app = appMap[key] {
-                if app.appInfo.isJITNeeded {
+                if app.requiresJIT {
                     Button(t("Abrir con JIT", "Launch with JIT"), systemImage: "bolt.fill") {
-                        launchWithJIT(app)
+                        launchWithJIT(key)
                     }
                 }
                 Button(t("Información de app", "App info"), systemImage: "info.circle") {
-                    manage(app)
+                    manage(key)
                 }
             }
             Button(workspace.favorites.contains(key) ? t("Quitar favorito", "Unfavorite")
@@ -519,7 +519,7 @@ struct BloomBoxNovaLauncher: View {
             Button(t("Renombrar acceso", "Rename shortcut"), systemImage: "pencil") {
                 rename(key)
             }
-            if let app = appMap[key], !(app.appInfo is BuiltInSideStoreAppInfo) {
+            if let app = appMap[key], app.canUninstall {
                 Divider()
                 Button(t("Desinstalar", "Uninstall"), systemImage: "trash", role: .destructive) {
                     uninstallKey = key
@@ -622,13 +622,10 @@ struct BloomBoxNovaLauncher: View {
                     .padding(.top, 9)
                 }
             }
-            .scrollDismissesKeyboard(.interactively)
             .frame(maxHeight: .infinity)
         }
         .foregroundStyle(.white)
-        .background(.ultraThickMaterial,
-                    in: UnevenRoundedRectangle(topLeadingRadius: 30,
-                                               topTrailingRadius: 30))
+        .background(.ultraThickMaterial, in: RoundedRectangle(cornerRadius: 30))
         .ignoresSafeArea(edges: .bottom)
     }
 
@@ -671,7 +668,7 @@ struct BloomBoxNovaLauncher: View {
                                 }
                                 if let app = appMap[key] {
                                     Button(t("Información", "App info"),
-                                           systemImage: "info.circle") { manage(app) }
+                                           systemImage: "info.circle") { manage(key) }
                                 }
                             }
                         }
@@ -698,7 +695,7 @@ struct BloomBoxNovaLauncher: View {
     private func name(for key: String) -> String {
         if let alias = workspace.aliases[key] { return alias }
         if let folder = workspace.folders.first(where: { $0.id == key }) { return folder.name }
-        if let app = appMap[key] { return customizations.name(app) }
+        if let app = appMap[key] { return app.name }
         switch key {
         case "nova:install": return t("Instalar IPA", "Install IPA")
         case "nova:gamebox": return "GameBox"
@@ -745,7 +742,7 @@ struct BloomBoxNovaLauncher: View {
             case "nova:settings": openSettings()
             case "nova:interface": openInterface()
             default:
-                if let app = appMap[key] { launch(app) }
+                if appMap[key] != nil { launch(key) }
             }
         }
         closeDrawer()
@@ -796,6 +793,7 @@ struct BloomBoxNovaLauncher: View {
     }
 
     private func reload() {
+        savedWorkspaces = persistence.string(forKey: "BloomBoxNovaWorkspaceV1") ?? "{}"
         let restored = BloomBoxNovaLayout.load(profile: profileID, from: savedWorkspaces)
         workspace = restored
         workspace.reconcile(available: keys)
