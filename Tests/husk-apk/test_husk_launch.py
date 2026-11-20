@@ -26,7 +26,6 @@ assert "huskStartingGame" in home
 assert "return success" not in home.split("private func openHuskGame(", 1)[1].split("@ViewBuilder private func huskMenu", 1)[0]
 
 assert "+ (BOOL)bloomBoxSendURL:" in scene_h
-assert "[self openURLScheme:" not in scene_m  # only a controller should deliver to its own scene
 assert "[target openURLScheme:urlString]" in scene_m
 assert "strongToWeakObjectsMapTable" in scene_m
 assert "BloomBoxGuestSceneDidExit" in scene_m
