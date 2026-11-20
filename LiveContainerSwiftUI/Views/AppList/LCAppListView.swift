@@ -323,6 +323,27 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                                         openGameBox: { liveBoardMode = "gamebox" })
     }
 
+
+    /// Native Android-style launcher. Uses exactly the same LiveContainer host
+    /// actions as iOS Home and GameBox; its layout is isolated per profile.
+    private var novaLauncher: some View {
+        BloomBoxNovaLauncher(
+            apps: launcherApps,
+            launch: { app in Task { await launchFromLiveBoard(app) } },
+            launchWithJIT: { app in Task { await launchFromLiveBoard(app, forceJIT: true) } },
+            manage: manageLauncherApp,
+            uninstall: uninstallLauncherApp,
+            openInstall: {
+                if sharedModel.multiLCStatus == 2 { manageLibrary = true }
+                else { choosingIPA = true }
+            },
+            openManagement: { manageLibrary = true },
+            openSettings: { sharedModel.selectedTab = .settings },
+            openInterface: openInterface,
+            openGameBox: { liveBoardMode = "gamebox" }
+        )
+    }
+
     // GameBox only owns presentation. Every action reuses the live host launch,
     // preflight, compatibility, guest orientation and app-management paths.
     @available(iOS 16.0, *)
@@ -351,7 +372,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 guard let app = guests.first(where: { liveBoardAppKey($0) == key }) else { return }
                 manageLauncherApp(app)
             },
-            backToHome: { liveBoardMode = "ios" },
+            backToHome: { liveBoardMode = BloomBoxLaunchPreferences.runtimeMode(for: preferredExperience) },
             openInterface: openInterface,
             openManagement: { manageLibrary = true },
             openInstall: {
@@ -376,6 +397,8 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     }
                 } else if !manageLibrary && liveBoardMode == "reserved" {
                     reservedSection
+                } else if !manageLibrary && liveBoardMode == "nova" {
+                    novaLauncher
                 } else if !manageLibrary {
                     iosLauncher
                 } else {
@@ -1017,7 +1040,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         // returns or throws, preserving all previous per-app safety checks.
         do {
             if app.appInfo.is32bit { try await ensureBundled32BitRuntime(for: app) }
-            if liveBoardMode == "ios" || liveBoardMode == "gamebox" {
+            if liveBoardMode == "ios" || liveBoardMode == "nova" || liveBoardMode == "gamebox" {
                 // Run a private guest in its original host process, before
                 // any virtual-window-only iOS/Classic Mode restrictions.
                 if !app.uiIsShared &&
@@ -1180,9 +1203,9 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         installationActuallySucceeded = false
         installationCelebrationFinished = false
         installationCelebrationVisible = true
-        // Show the BloomBox desktop, not GameBox or the old installer menu.
+        // Return to the profile workspace, not a different launcher.
         manageLibrary = false
-        liveBoardMode = "ios"
+        liveBoardMode = BloomBoxLaunchPreferences.runtimeMode(for: preferredExperience)
     }
 
     private func finishInstallationCelebration() async {
