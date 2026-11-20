@@ -234,9 +234,12 @@ struct BloomBoxHomeScreen: View {
         let key: String
         let title: String
         let directory: URL
+        let containerFolder: String
         let launchURL: URL
     }
     @State private var huskGames: [HuskGame] = []
+    @State private var huskStartingGame: HuskGame?
+    @State private var huskStartingNote = ""
     @State private var orientationGame: HuskGame?
     @State private var askForThisLaunch = false
     @State private var huskError: String?
@@ -268,7 +271,8 @@ struct BloomBoxHomeScreen: View {
             link.queryItems = [URLQueryItem(name: "unique_identifier", value: id)]
             guard let url = link.url else { return nil }
             let label = try? String(contentsOf: directory.appendingPathComponent("label.txt"), encoding: .utf8)
-            return HuskGame(key: "husk/" + container.folderName + "/" + id, title: label ?? id, directory: directory, launchURL: url)
+            return HuskGame(key: "husk/" + container.folderName + "/" + id, title: label ?? id,
+                            directory: directory, containerFolder: container.folderName, launchURL: url)
         }.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
     }
 
@@ -389,8 +393,8 @@ struct BloomBoxHomeScreen: View {
                 .tabViewStyle(.page(indexDisplayMode: .never))
                 .blur(radius: openFolder == nil ? 0 : 18)
                 .blur(radius: searching ? 14 : 0)
-                .allowsHitTesting(!searching && !installInProgress)
-                .accessibilityHidden(searching || installInProgress)
+                .allowsHitTesting(!searching && !installInProgress && huskStartingGame == nil)
+                .accessibilityHidden(searching || installInProgress || huskStartingGame != nil)
                 if installInProgress {
                     BloomBoxHomeInstallationNotice(progress: installProgress,
                                                        completed: installCompleted,
@@ -398,6 +402,30 @@ struct BloomBoxHomeScreen: View {
                                                        accentColor: profileAccent)
                         .transition(.opacity)
                         .zIndex(30)
+                }
+                if let game = huskStartingGame {
+                    ZStack {
+                        Color.black.opacity(0.62).ignoresSafeArea()
+                        VStack(spacing: 16) {
+                            Image(systemName: "bolt.horizontal.circle.fill")
+                                .font(.system(size: 54)).foregroundStyle(profileAccent)
+                            Text(englishUI ? "Starting \(game.title)" : "Iniciando \(game.title)")
+                                .font(.title2.bold()).multilineTextAlignment(.center)
+                            ProgressView().tint(profileAccent).scaleEffect(1.25)
+                            Text(huskStartingNote)
+                                .font(.subheadline).multilineTextAlignment(.center)
+                                .foregroundStyle(.secondary)
+                            Button(englishUI ? "Hide, keep starting" : "Ocultar, seguir iniciando") {
+                                huskStartingGame = nil
+                            }
+                            .font(.caption)
+                            .padding(.top, 4)
+                        }
+                        .padding(28).frame(maxWidth: 310)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 30))
+                    }
+                    .zIndex(40)
+                    .transition(.opacity)
                 }
                 if aliveEnabled && aliveBooting && aliveStartupPage == page && !reduceMotion {
                     BloomBoxHomeWelcome(message: aliveSplashLine, visible: aliveIntroVisible)
@@ -1298,16 +1326,53 @@ struct BloomBoxHomeScreen: View {
         default: return englishUI ? "Hybrid · ask every time" : "Híbrido · preguntar siempre"
         }
     }
+    // The JIT helper may be waiting for a breakpoint from the game. Wait for
+    // debugger attachment, NOT full JIT completion: delaying gameplay until
+    // completion can deadlock Husk and leave the JIT UI spinning indefinitely.
+    @MainActor private func waitForHuskDebugger(
+        appName: String, startedAt: Date
+    ) async throws {
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline {
+            try Task.checkCancellation()
+            let attempt = BloomBoxJITLogStore.shared.attempts.first {
+                $0.appName == appName && $0.createdAt >= startedAt.addingTimeInterval(-1)
+            }
+            if let attempt {
+                switch attempt.status {
+                case "debugger_attached", "awaiting_guest", "completed":
+                    huskStartingNote = englishUI
+                        ? "Debugger connected. Starting the game…"
+                        : "Depurador conectado. Abriendo el juego…"
+                    return
+                case "failed", "interrupted", "timed_out_attached":
+                    throw englishUI
+                        ? "The JIT helper failed. Check Modules > JIT and retry."
+                        : "El JIT falló. Revisa Módulos > JIT y vuelve a intentarlo."
+                default:
+                    break
+                }
+            }
+            try await Task.sleep(nanoseconds: 200_000_000)
+        }
+        throw englishUI
+            ? "The JIT debugger did not connect within 30 seconds. Check the pairing and JIT log."
+            : "El depurador JIT no se conectó en 30 segundos. Revisa el emparejamiento y el registro JIT."
+    }
+
     private func openHuskGame(_ game: HuskGame, mode: String) {
-        guard let host = husk, huskGames.contains(where: { $0.key == game.key }) else { return }
+        guard let host = husk, huskGames.contains(where: { $0.key == game.key }),
+              huskStartingGame == nil else { return }
         Task { @MainActor in
             let appKey = host.appInfo.relativeBundlePath ?? ""
             let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
                 .flatMap { $0.windows }.first { $0.isKeyWindow }
+            let started = Date()
+            huskStartingGame = game
+            huskStartingNote = englishUI ? "Preparing Husk…" : "Preparando Husk…"
             do {
-                // Husk reads orientation from settings.json, but the enclosing
-                // BloomBox Home is portrait-locked. Set BOTH masks before the
-                // hosted guest scene is created, then restore Home on exit.
+                // Husk reads its own settings.json; the enclosing BloomBox scene
+                // needs the same mask or its portrait lock wins on iPhone.
                 let url = game.directory.appendingPathComponent("settings.json")
                 var settings: [String: Any] = [:]
                 if FileManager.default.fileExists(atPath: url.path) {
@@ -1323,11 +1388,66 @@ struct BloomBoxHomeScreen: View {
                 try JSONSerialization.data(withJSONObject: settings).write(to: url, options: .atomic)
                 LiveBoardOrientation.beginGuest(appKey: appKey,
                     mask: mode == "landscape" ? .landscape : .portrait, window: window)
+
+                let defaults = LCUtils.appGroupUserDefault
+                let jitPolicy = BloomBoxJITGuestPolicy.mode(for: appKey, defaults: defaults)
+                let wantsJIT = BloomBoxJITGuestPolicy.wantsJIT(
+                    automatic: host.appInfo.isJITNeeded || host.appInfo.is32bit,
+                    forced: nil, mode: jitPolicy)
+                let builtInEnabled = defaults.object(forKey: "BloomBoxJITMainEnabled") == nil ||
+                    defaults.bool(forKey: "BloomBoxJITMainEnabled")
+                let stagedJIT = wantsJIT && builtInEnabled &&
+                    defaults.integer(forKey: "LCJITEnablerType") == JITEnablerType.BuiltIn.rawValue
+
+                // Give UIKit a layout pass before LiveProcess builds its guest
+                // scene; otherwise an iPhone can create it as portrait forever.
                 try await Task.sleep(nanoseconds: 250_000_000)
-                try await host.runApp(urlStr: game.launchURL.absoluteString)
+
+                if #available(iOS 16.1, *), MultitaskManager.isUsing(container: game.containerFolder) {
+                    // Husk is already running. Forward the game link into its
+                    // existing scene without launching another JIT session.
+                    guard AppSceneViewController.bloomBoxSendURL(
+                        game.launchURL.absoluteString, toContainer: game.containerFolder) else {
+                        throw englishUI ? "Husk is busy. Close its existing window and retry."
+                            : "Husk está ocupado. Cierra su ventana y vuelve a intentarlo."
+                    }
+                } else if stagedJIT, #available(iOS 16.1, *) {
+                    huskStartingNote = englishUI ? "Starting the JIT debugger…" : "Activando el depurador JIT…"
+                    // Start Husk WITHOUT the game link so the debugger can
+                    // attach first. Then forward the link on the first attach
+                    // marker: some Husk JIT scripts finish only after gameplay.
+                    defaults.set(MultitaskMode.virtualWindow.rawValue, forKey: "LCMultitaskMode")
+                    defaults.set(true, forKey: "LCMaxOneAppOnStage")
+                    UserDefaults.standard.set(true, forKey: "LCLaunchMultitaskMaximized")
+                    UserDefaults.standard.removeObject(forKey: "launchAppUrlScheme")
+                    try await host.runApp(multitask: true, containerFolderName: game.containerFolder)
+                    try await waitForHuskDebugger(appName: host.appInfo.displayName(), startedAt: started)
+                    let remaining = max(0, 3 - Date().timeIntervalSince(started))
+                    if remaining > 0 {
+                        try await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+                    }
+                    guard AppSceneViewController.bloomBoxSendURL(
+                        game.launchURL.absoluteString, toContainer: game.containerFolder) else {
+                        throw englishUI ? "Husk did not expose its running game scene. Close Husk and retry."
+                            : "No se encontró la ventana activa de Husk. Ciérralo y vuelve a intentarlo."
+                    }
+                    // The JIT helper continues waiting for the GAME's memory
+                    // breakpoint. Its later success/failure still owns the log.
+                } else {
+                    // External JIT providers do not offer a reliable local
+                    // attachment signal. Preserve the existing launch path.
+                    try await host.runApp(urlStr: game.launchURL.absoluteString)
+                }
+                let remaining = max(0, 3 - Date().timeIntervalSince(started))
+                if remaining > 0 {
+                    try await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+                }
             } catch {
                 LiveBoardOrientation.endGuest(appKey: appKey, window: window)
                 huskError = error.localizedDescription
+            }
+            if huskStartingGame?.key == game.key {
+                withAnimation(.easeOut(duration: 0.28)) { huskStartingGame = nil }
             }
         }
     }
