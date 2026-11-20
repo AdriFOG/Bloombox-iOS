@@ -211,9 +211,20 @@ private struct BloomBoxClockFace: View {
     private var style: String { widget.clockStyle ?? "minimal" }
     private var tiny: Bool { widget.columns == 1 || widget.rows == 1 }
 
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            let components = Calendar.current.dateComponents([.hour, .minute, .second], from: context.date)
+    @ObservedObject private var performance = BloomBoxPerformanceBudget.shared
+
+    @ViewBuilder var body: some View {
+        if performance.level == .critical {
+            clockFace(at: Date())
+        } else {
+            TimelineView(.periodic(from: .now, by: performance.level == .nominal ? 1 : 60)) { context in
+                clockFace(at: context.date)
+            }
+        }
+    }
+
+    private func clockFace(at date: Date) -> some View {
+            let components = Calendar.current.dateComponents([.hour, .minute, .second], from: date)
             let hour = components.hour ?? 0
             let minute = components.minute ?? 0
             let second = components.second ?? 0
@@ -222,19 +233,18 @@ private struct BloomBoxClockFace: View {
             Group {
                 switch style {
                 case "flip":
-                    flipFace(value: value, date: context.date)
+                    flipFace(value: value, date: date)
                 case "analog":
                     analogFace(hour: hour, minute: minute, second: second)
                 case "pixel":
                     pixelFace(value: value, second: second)
                 default:
-                    minimalFace(value: value, date: context.date)
+                    minimalFace(value: value, date: date)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .foregroundStyle(tint)
             .accessibilityLabel("Hora: \(value)")
-        }
     }
 
     private func minimalFace(value: String, date: Date) -> some View {
@@ -364,10 +374,12 @@ struct BloomBoxGridWidgetView: View {
 
     var body: some View {
         ZStack {
-            if widget.glass && performance.allowsGlass {
-                RoundedRectangle(cornerRadius: 19).fill(.ultraThinMaterial)
-            } else {
-                RoundedRectangle(cornerRadius: 19).fill(Color.clear)
+            if widget.glass {
+                if performance.allowsGlass {
+                    RoundedRectangle(cornerRadius: 19).fill(.ultraThinMaterial)
+                } else {
+                    RoundedRectangle(cornerRadius: 19).fill(Color(white: 0.13))
+                }
             }
             Group {
                 switch widget.kind {
@@ -383,9 +395,18 @@ struct BloomBoxGridWidgetView: View {
                     if let file = BloomBoxWidgetMedia.url(for: widget.mediaName) {
                         if file.pathExtension.lowercased() == "gif" ||
                             file.pathExtension.lowercased() == "mov" {
-                            BloomBoxAnimatedWallpaper(url: file, fit: !widget.fill,
-                                paused: scenePhase != .active || !active || !performance.allowsVideo,
-                                clearBackground: true)
+                            if performance.useDarkWallpaper {
+                                Color(white: 0.08)
+                            } else if performance.allowsVideo && scenePhase == .active && active {
+                                BloomBoxAnimatedWallpaper(url: file, fit: !widget.fill,
+                                    paused: false, clearBackground: true)
+                            } else {
+                                // A static decoded poster avoids allocating AVPlayer/GIF
+                                // animations while the guest is active or the phone is warm.
+                                BloomBoxStaticVideoPoster(url: file, fit: !widget.fill,
+                                    maxPixelSize: Int(max(width, height) * UIScreen.main.scale),
+                                    clearBackground: true)
+                            }
                         } else {
                             BloomBoxDownsampledImage(url: file, fit: !widget.fill,
                                 maxPixelSize: Int(max(width, height) * UIScreen.main.scale))
