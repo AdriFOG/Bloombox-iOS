@@ -389,9 +389,9 @@ struct BloomBoxNovaLauncher: View {
                                    inDock: Bool = false) -> some View {
         let content = VStack(spacing: inDock ? 0 : 6) {
             icon(key, side: inDock ? min(iconSide, 59) : iconSide)
-                .scaleEffect(launchingKey == key && workspace.animation == "zoom" && !reduceMotion ? 1.17 : 1)
-                .offset(y: launchingKey == key && workspace.animation == "slide" && !reduceMotion ? -25 : 0)
-                .opacity(launchingKey == key && workspace.animation == "fade" ? 0.35 : 1)
+                .scaleEffect(launchingKey == key && workspace.launchAnimation == "zoom" && !reduceMotion ? 1.17 : 1)
+                .offset(y: launchingKey == key && workspace.launchAnimation == "slide" && !reduceMotion ? -25 : 0)
+                .opacity(launchingKey == key && workspace.launchAnimation == "fade" ? 0.35 : 1)
             if workspace.showLabels && !inDock {
                 Text(name(for: key))
                     .font(.system(size: workspace.columns == 6 ? 10 : 11,
@@ -761,7 +761,7 @@ struct BloomBoxNovaLauncher: View {
             }
         }
         closeDrawer()
-        if reduceMotion || workspace.animation == "none" {
+        if reduceMotion || workspace.launchAnimation == "none" {
             action()
             return
         }
