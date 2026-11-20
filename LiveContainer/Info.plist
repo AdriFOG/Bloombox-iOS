@@ -17,6 +17,15 @@
 	<key>UTImportedTypeDeclarations</key>
 	<array>
 		<dict>
+			<key>UTTypeIdentifier</key><string>com.android.package-archive</string>
+			<key>UTTypeDescription</key><string>Android APK</string>
+			<key>UTTypeConformsTo</key><array><string>public.archive</string></array>
+			<key>UTTypeTagSpecification</key><dict>
+				<key>public.filename-extension</key><array><string>apk</string></array>
+				<key>public.mime-type</key><string>application/vnd.android.package-archive</string>
+			</dict>
+		</dict>
+		<dict>
 			<key>UTTypeIdentifier</key>
 			<string>com.bloombox.ipa-archive</string>
 			<key>UTTypeDescription</key>
@@ -45,6 +54,11 @@
 	</array>
 	<key>CFBundleDocumentTypes</key>
 	<array>
+		<dict>
+			<key>CFBundleTypeName</key><string>Android APK</string>
+			<key>LSHandlerRank</key><string>Alternate</string>
+			<key>LSItemContentTypes</key><array><string>com.android.package-archive</string></array>
+		</dict>
 		<dict>
 			<key>CFBundleTypeName</key>
 			<string>IPA Apps</string>

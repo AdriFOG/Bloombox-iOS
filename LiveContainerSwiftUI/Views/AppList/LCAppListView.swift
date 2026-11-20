@@ -559,6 +559,24 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             choosingIPA = false
         })
         .sheet(item: $receivedIPA) { request in
+            if request.url.pathExtension.lowercased() == "apk" {
+                let husk = sharedModel.apps.first { $0.bundleIdentifier == "com.husk.app" }
+                let en = BloomBoxL10n.isEnglish
+                VStack(spacing: 20) {
+                    Text(request.url.lastPathComponent).font(.headline)
+                    Text(en ? "Android powered by Husk · Leviidev" : "Motor Android de Husk · Leviidev")
+                    if let husk {
+                        Button(en ? "Install with Husk" : "Instalar con Husk") {
+                            receivedIPA = nil
+                            Task { await importAPK(request.url, host: husk) }
+                        }.buttonStyle(.borderedProminent)
+                    } else {
+                        Text(en ? "Install the official Husk IPA in BloomBox, then reopen this APK." : "Instala el IPA oficial de Husk en BloomBox y vuelve a abrir este APK.")
+                        Link("Husk · GitHub", destination: URL(string: "https://github.com/Leviidev/Husk/releases")!)
+                    }
+                    Button(en ? "Cancel" : "Cancelar") { receivedIPA = nil }
+                }.padding()
+            } else {
             BloomBoxIPAOpenSheet(
                 fileURL: request.url,
                 hasSideStore: UserDefaults.sideStoreExist(),
@@ -577,6 +595,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 },
                 dismiss: { receivedIPA = nil }
             )
+            }
         }
         .alert("lc.appList.installation".loc, isPresented: $installReplaceAlert.show) {
             ForEach(installOptions, id: \.self) { installOption in
@@ -1915,9 +1934,31 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         UIPasteboard.general.string = errorInfo
     }
     
+    @MainActor private func importAPK(_ url: URL, host: LCAppModel) async {
+        do {
+            if host.appInfo.isLocked && !sharedModel.isHiddenAppUnlocked {
+                guard try await LCUtils.authenticateUser() else { return }
+            }
+            let copy = try await Task.detached(priority: .userInitiated) {
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                let folder = FileManager.default.temporaryDirectory
+                    .appendingPathComponent(UUID().uuidString, isDirectory: true)
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                let target = folder.appendingPathComponent(url.lastPathComponent)
+                try FileManager.default.copyItem(at: url, to: target)
+                return target
+            }.value
+            try await host.runApp(urlStr: copy.absoluteString)
+        } catch {
+            errorInfo = error.localizedDescription
+            errorShow = true
+        }
+    }
+
     func handleURL(url : URL) {
         if url.isFileURL {
-            if ["ipa", "tipa"].contains(url.pathExtension.lowercased()) {
+            if ["ipa", "tipa", "apk"].contains(url.pathExtension.lowercased()) {
                 // Never install a file received from Files without asking first.
                 receivedIPA = BloomBoxReceivedIPA(url: url)
             } else {

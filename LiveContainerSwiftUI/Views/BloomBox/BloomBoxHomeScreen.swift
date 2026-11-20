@@ -229,8 +229,47 @@ struct BloomBoxHomeScreen: View {
     ]
     private enum DesktopAction { case edit, widgets, pages, icons, customize, interface }
 
+    private struct HuskGame {
+        let key: String
+        let title: String
+        let directory: URL
+        let launchURL: URL
+    }
+    @State private var huskGames: [HuskGame] = []
+    @State private var huskError: String?
+    private var husk: LCAppModel? {
+        apps.first { $0.bundleIdentifier == "com.husk.app" && !$0.appInfo.isLocked }
+    }
+    private func refreshHuskGames() {
+        guard let host = husk else { huskGames = []; return }
+        let profile = BloomBoxProfileStore.active
+        let folder: String?
+        if profile.id == BloomBoxUserProfile.primaryID {
+            folder = host.uiDefaultDataFolder ?? host.appInfo.dataUUID ?? host.uiContainers.first?.folderName
+        } else {
+            let guestKey = (host.uiIsShared ? "shared/" : "private/") + (host.appInfo.relativeBundlePath ?? "") + "/" + host.bundleIdentifier
+            folder = BloomBoxProfileStore.mapping(for: profile.id, appKey: guestKey)
+        }
+        guard let container = host.uiContainers.first(where: { $0.folderName == folder }) else { huskGames = []; return }
+        let root = container.containerURL.appendingPathComponent("Documents/TranslationLayer")
+        let fm = FileManager.default
+        let directories = (try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        huskGames = directories.compactMap { directory -> HuskGame? in
+            guard let names = try? fm.contentsOfDirectory(atPath: directory.path),
+                  names.contains(where: { $0.lowercased().hasSuffix(".apk") }) else { return nil }
+            let id = directory.lastPathComponent
+            var link = URLComponents()
+            link.scheme = "husk"
+            link.host = "open_app"
+            link.queryItems = [URLQueryItem(name: "unique_identifier", value: id)]
+            guard let url = link.url else { return nil }
+            let label = try? String(contentsOf: directory.appendingPathComponent("label.txt"), encoding: .utf8)
+            return HuskGame(key: "husk/" + container.folderName + "/" + id, title: label ?? id, directory: directory, launchURL: url)
+        }.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+    }
+
     private var appKeys: [String] {
-        LiveContainerHomeAdapter.visibleKeys(apps)
+        LiveContainerHomeAdapter.visibleKeys(apps) + huskGames.map(\.key)
             + [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey, Self.appStoreKey, Self.modulesKey, Self.themesKey]
     }
     private var appMap: [String: LCAppModel] {
@@ -420,7 +459,7 @@ struct BloomBoxHomeScreen: View {
             })
             .onChange(of: scenePhase) { phase in
                 stopAlivePlayfulness()
-                if phase == .active { ramPlus.refresh() }
+                if phase == .active { ramPlus.refresh(); refreshHuskGames() }
                 if phase == .active, #available(iOS 16.2, *) {
                     Task { await ManzanaExpiryReminderCenter.shared.synchronize() }
                 }
@@ -441,6 +480,11 @@ struct BloomBoxHomeScreen: View {
                 Notification.Name("BloomBoxNewInstallGiftCreated"))) { notification in
                 refreshNewInstallGift(notification)
             }
+            .onChange(of: themeActiveID) { _ in refreshHuskGames() }
+            .onChange(of: husk?.appInfo.relativeBundlePath) { _ in refreshHuskGames() }
+            .alert("Husk", isPresented: Binding(get: { huskError != nil }, set: { if !$0 { huskError = nil } })) {
+                Button("OK") { huskError = nil }
+            } message: { Text(huskError ?? "") }
             .onChange(of: appKeys) { _ in reconcile() }
             .onChange(of: layout) {
                 savedLayout = $0.encoded
@@ -454,6 +498,7 @@ struct BloomBoxHomeScreen: View {
                 })
             }
             .onAppear {
+                refreshHuskGames()
                 ramPlus.refresh()
                 Task { await tweakCatalog.refreshIfNeeded() }
                 // Only a genuinely fresh Home receives the owner's Kirby preset.
@@ -2334,6 +2379,24 @@ struct BloomBoxHomeScreen: View {
                 folderIcon(folder, showLabel: showLabel)
             } else if [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey, Self.appStoreKey, Self.modulesKey, Self.themesKey].contains(key) {
                 shortcutIcon(key, showLabel: showLabel)
+            } else if let game = huskGames.first(where: { $0.key == key }), let host = husk {
+                Button {
+                    guard !editing else { return }
+                    Task {
+                        do { try await host.runApp(urlStr: game.launchURL.absoluteString) }
+                        catch { huskError = error.localizedDescription }
+                    }
+                } label: {
+                    VStack(spacing: 4) {
+                        if let image = UIImage(contentsOfFile: game.directory.appendingPathComponent("icon.png").path) {
+                            Image(uiImage: image).resizable().frame(width: 60, height: 60)
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                        } else {
+                            Image(systemName: "gamecontroller.fill").frame(width: 60, height: 60)
+                        }
+                        if showLabel { Text(game.title).font(.caption).lineLimit(1) }
+                    }
+                }.buttonStyle(.plain)
             } else if let app = appMap[key] {
                 if unopenedGiftKeys.contains(key) && !editing {
                     BloomBoxHomeGiftIcon(name: title(key), size: largeIcons ? 76 : 64,
@@ -3153,6 +3216,7 @@ struct BloomBoxHomeScreen: View {
     }
     private func title(_ key: String, appsByKey: [String: LCAppModel]? = nil) -> String {
         if key == Self.sideStoreKey { return "SideStore" }
+        if let game = huskGames.first(where: { $0.key == key }) { return game.title }
         if key == Self.installKey { return "Instalar app" }
         if key == Self.tweakStoreKey { return "Tweak Store" }
         if key == Self.appStoreKey { return "App Store" }
