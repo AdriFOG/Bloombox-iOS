@@ -139,24 +139,34 @@ struct BloomBoxWidgetInteraction<MenuContent: View>: ViewModifier {
     }
 }
 
-// Living Widgets 1.0: independent, low-cost motion with no timers when offscreen.
+// Living widgets move using repeatForever animations committed to Core Animation,
+// not a 30 FPS TimelineView that re-evaluates SwiftUI body on every frame.
 struct BloomBoxLivingMotion: ViewModifier {
     let mode: String
     let speed: Double
     let travel: Double
     let enabled: Bool
+    @State private var xForward = false
+    @State private var yForward = false
 
-    func body(content: Content) -> some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !enabled || mode == "none")) { timeline in
-            let t = timeline.date.timeIntervalSinceReferenceDate
-            let frequency = 0.15 + max(0, min(100, speed)) / 100.0 * 0.75
-            let phase = t * frequency * .pi * 2
+    @ViewBuilder func body(content: Content) -> some View {
+        if enabled && mode != "none" {
             let distance = CGFloat(max(0, min(100, travel))) * 0.65
-            let dx: CGFloat = mode == "horizontal" ? CGFloat(sin(phase)) * distance :
-                mode == "wander" ? CGFloat(sin(phase * 0.63)) * distance : 0
-            let dy: CGFloat = mode == "float" ? CGFloat(sin(phase)) * distance * 0.45 :
-                mode == "wander" ? CGFloat(cos(phase * 0.79)) * distance * 0.35 : 0
-            content.offset(x: enabled ? dx : 0, y: enabled ? dy : 0)
+            let duration = 0.5 / (0.15 + max(0, min(100, speed)) / 100 * 0.75)
+            let xDistance = (mode == "horizontal" || mode == "wander") ? distance : 0
+            let yDistance = mode == "float" ? distance * 0.45 :
+                mode == "wander" ? distance * 0.35 : 0
+            content
+                .offset(x: xForward ? xDistance : -xDistance)
+                .animation(.easeInOut(duration: duration * (mode == "wander" ? 1.59 : 1))
+                    .repeatForever(autoreverses: true), value: xForward)
+                .offset(y: yForward ? yDistance : -yDistance)
+                .animation(.easeInOut(duration: duration * (mode == "wander" ? 1.27 : 1))
+                    .repeatForever(autoreverses: true), value: yForward)
+                .onAppear { xForward = true; yForward = true }
+                .onDisappear { xForward = false; yForward = false }
+        } else {
+            content
         }
     }
 }
