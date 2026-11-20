@@ -676,8 +676,15 @@ struct BloomBoxGameBoxV2Screen: View {
             }
             .padding(14)
             .frame(width: min(max(240, width - 30), 420))
-            .background(.ultraThinMaterial,
-                        in: RoundedRectangle(cornerRadius: 29, style: .continuous))
+            .background {
+                if performance.allowsGlass {
+                    RoundedRectangle(cornerRadius: 29, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                } else {
+                    RoundedRectangle(cornerRadius: 29, style: .continuous)
+                        .fill(Color(white: 0.13))
+                }
+            }
             .overlay(RoundedRectangle(cornerRadius: 29, style: .continuous)
                 .strokeBorder(.white.opacity(0.25), lineWidth: 1))
             .shadow(color: .black.opacity(0.33), radius: 24, y: 12)
@@ -689,7 +696,9 @@ struct BloomBoxGameBoxV2Screen: View {
 
     private var consoleBackground: some View {
         ZStack {
-            if isSwitchTheme {
+            if performance.useDarkWallpaper {
+                Color(white: 0.08)
+            } else if isSwitchTheme {
                 playniteSwitch.style?.background ?? Color(red: 0.18, green: 0.18, blue: 0.18)
             } else {
                 LinearGradient(
