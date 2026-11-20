@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - feature/nova-android-launcher
       - fix/gamebox-playnite-fixes-20261119
       - fix/jit-guest-orientation-ios27
       - feature/cinematic-game-mode-ram-jit-gate
@@ -96,6 +97,10 @@ jobs:
         run: |
           swiftc LiveContainerSwiftUI/Views/BloomBox/BloomBoxIntegrationContracts.swift Tests/integration-contracts/main.swift -o "$RUNNER_TEMP/bloombox-integration-tests"
           "$RUNNER_TEMP/bloombox-integration-tests"
+      - name: Test Nova launcher profile layouts and workspace safety
+        run: |
+          swiftc LiveContainerSwiftUI/Views/BloomBox/BloomBoxNovaLayout.swift Tests/nova-layout/main.swift -o "$RUNNER_TEMP/bloombox-nova-layout-tests"
+          "$RUNNER_TEMP/bloombox-nova-layout-tests"
       - name: Test BloomBox Home app-policy persistence and localized search
         run: |
           swiftc LiveContainerSwiftUI/Views/BloomBox/BloomBoxHomeAppPolicy.swift Tests/home-app-policy/main.swift -o "$RUNNER_TEMP/bloombox-home-app-policy-tests"
