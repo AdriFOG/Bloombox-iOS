@@ -655,3 +655,58 @@ jobs:
             - Unofficial fan-made themes are not affiliated with their referenced game creators.
 
             **Commit:** ${{ github.sha }}
+
+  release__v300:
+    name: Publish BloomBox v3.0.0
+    if: >-
+      ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'release: BloomBox v3.0.0') }}
+    needs: [build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exact tested source
+        uses: actions/checkout@v6
+      - name: Download tested unsigned BloomBox IPA
+        uses: actions/download-artifact@v8
+        with:
+          name: BloomBox-SideStore-unsigned.ipa
+          path: release
+      - name: Validate IPA identity, version and extension
+        run: |
+          set -euo pipefail
+          test -s release/BloomBox-SideStore-unsigned.ipa
+          python3 - <<'PY'
+          import plistlib
+          from zipfile import ZipFile
+          ipa="release/BloomBox-SideStore-unsigned.ipa"
+          with ZipFile(ipa) as z:
+              if z.testzip() is not None:
+                  raise SystemExit("Damaged IPA archive")
+              host=plistlib.loads(z.read("Payload/LiveContainer.app/Info.plist"))
+              if host.get("CFBundleShortVersionString") != "3.0.0":
+                  raise SystemExit("Not BloomBox v3.0.0")
+              if str(host.get("CFBundleVersion")) != "30000":
+                  raise SystemExit("Incorrect BloomBox build number")
+              ext=plistlib.loads(z.read("Payload/LiveContainer.app/PlugIns/ManzanaExpiryWidget.appex/Info.plist"))
+              if str(ext.get("CFBundleVersion")) != str(host.get("CFBundleVersion")):
+                  raise SystemExit("Widget version does not match host")
+              print("Verified BloomBox 3.0.0, build 30000 and matching widget")
+          PY
+          (cd release && sha256sum BloomBox-SideStore-unsigned.ipa > SHA256SUMS.txt)
+      - name: Publish first BloomBox 3.0 release on AdriFOG
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v3.0.0
+          name: "BloomBox 3.0 — Home, GameBox, Profiles & JIT"
+          target_commitish: ${{ github.sha }}
+          draft: false
+          prerelease: false
+          make_latest: true
+          generate_release_notes: false
+          fail_on_unmatched_files: true
+          files: |
+            release/BloomBox-SideStore-unsigned.ipa
+            release/SHA256SUMS.txt
+          body_path: docs/BloomBox-3.0.0-Release-Notes.md
+

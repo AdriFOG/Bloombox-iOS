@@ -6,7 +6,7 @@
 
 A personal home for your apps, widgets and files — with room to experiment.
 
-[**Development builds**](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml) · [Project history](https://github.com/AdriFOG/Bloombox-iOS/commits/main/) · [Report an issue](https://github.com/AdriFOG/Bloombox-iOS/issues)
+[**Download BloomBox 3.0**](https://github.com/AdriFOG/Bloombox-iOS/releases/tag/v3.0.0) · [Builds](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml) · [Report an issue](https://github.com/AdriFOG/Bloombox-iOS/issues)
 
 [![Build](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-purple.svg)](LICENSE) · [Original-work attribution](LICENSE-ADDITIONAL-TERMS.md)
@@ -17,7 +17,7 @@ A personal home for your apps, widgets and files — with room to experiment.
 
 Its home screen lives **inside the app**; it does not replace the iOS Home Screen. Experimental features are clearly identified below so you can choose what to try.
 
-## BloomBox 2.0 · A closer look
+## BloomBox 3.0 · A closer look
 
 <table>
 <tr>
@@ -59,7 +59,7 @@ RAM+ requests Apple's Increased Memory Limit capability and checks whether it is
 
 Activation and reinstallation are separate steps. SideStore must preserve the permission when signing; Apple approval alone does not activate it in the running app. RAM+ does not add physical RAM or enable JIT.
 
-The v1.3.0 reinstall flow can fail to locate or accept a matching IPA. A [latest-release installer fix is being developed separately](https://github.com/adri23rep-stack/BloomBox/tree/fix/ramplus-latest-release-installer); it is not part of v1.3.0. See the [RAM+ implementation and validation notes](docs/BloomBox-RAMPlus.md) for the current flow and fallback details.
+Earlier versions of the RAM+ reinstall flow could fail to locate or accept a matching IPA. Preserve your installation and read release notes before attempting a reinstall. See the [RAM+ implementation and validation notes](docs/BloomBox-RAMPlus.md) for the current flow and fallback details.
 
 ### JIT · built-in setup, guest-specific testing
 
@@ -81,7 +81,7 @@ Backups do not include the guest IPA, and cloud sessions or device-bound credent
 
 ## Get started
 
-1. Open [Releases](https://github.com/adri23rep-stack/BloomBox/releases) and choose the newest **BloomBox app release** appropriate for you. Read its notes; other assets, such as tweak releases, are separate.
+1. Open the [BloomBox 3.0 release](https://github.com/AdriFOG/Bloombox-iOS/releases/tag/v3.0.0) and read the installation notes. Future releases will be published under AdriFOG.
 2. Download **`BloomBox-SideStore-unsigned.ipa`** from that release's assets.
 3. Sign and install it with **SideStore**, retaining all app extensions. The downloaded IPA is unsigned and cannot be installed by opening it alone.
 4. Open BloomBox, import a compatible guest IPA, and make the desktop yours. Open **Modules** when you want to explore advanced features.
@@ -106,7 +106,7 @@ BloomBox keeps some legacy data keys for app updates, signing compatibility and 
 
 **Where can I check progress?**
 
-[Releases](https://github.com/adri23rep-stack/BloomBox/releases) show published changes, [Actions](https://github.com/AdriFOG/Bloombox-iOS/actions) shows build results, and [Issues](https://github.com/AdriFOG/Bloombox-iOS/issues) tracks reports. Experimental branches should not be assumed to be included in a release.
+[Releases](https://github.com/AdriFOG/Bloombox-iOS/releases) show published changes, [Actions](https://github.com/AdriFOG/Bloombox-iOS/actions) shows build results, and [Issues](https://github.com/AdriFOG/Bloombox-iOS/issues) tracks reports. Experimental branches should not be assumed to be included in a release.
 
 ## Help BloomBox grow
 
