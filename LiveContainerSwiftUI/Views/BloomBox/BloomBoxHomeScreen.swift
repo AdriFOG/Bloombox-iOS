@@ -115,7 +115,9 @@ struct BloomBoxHomeScreen: View {
         Set((try? JSONDecoder().decode([String].self, from: Data(giftKeysJSON.utf8))) ?? [])
     }
     private func refreshNewInstallGift(_ notification: Notification) {
-        guard let key = notification.object as? String, appMap[key] != nil else { return }
+        // The model and the notification can be published in the same SwiftUI
+        // update pass. Never drop the event just because appMap is still stale.
+        guard notification.object is String else { return }
         // An external UserDefaults.set does not always refresh @AppStorage in
         // the currently mounted Home view. Explicitly update its SwiftUI state
         // before the overlay disappears, without requiring an app restart.
