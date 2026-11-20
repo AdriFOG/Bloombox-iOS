@@ -47,6 +47,7 @@ private struct BloomBoxReceivedIPA: Identifiable {
 private struct BloomBoxIPAOpenSheet: View {
     let fileURL: URL
     let hasSideStore: Bool
+    let isPreparingSideStoreIPA: Bool
     let installInBloomBox: () -> Void
     let openSideStore: () -> Void
     let dismiss: () -> Void
@@ -76,25 +77,38 @@ private struct BloomBoxIPAOpenSheet: View {
                     Button(action: installInBloomBox) {
                         Label("Instalar dentro de BloomBox", systemImage: "square.stack.3d.up.fill")
                             .font(.headline)
+                            .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 9)
                     }
                     .buttonStyle(.borderedProminent)
+                    .disabled(isPreparingSideStoreIPA)
 
-                    if #available(iOS 16.0, *) {
-                        ShareLink(item: fileURL) {
+                    if hasSideStore {
+                        Button(action: openSideStore) {
                             Label("Instalar con SideStore", systemImage: "square.and.arrow.up")
                                 .font(.headline)
+                                .foregroundStyle(.primary)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 9)
                         }
                         .buttonStyle(.bordered)
-                        Text("Se abrirá Compartir: selecciona SideStore para importar el IPA.")
+                        .disabled(isPreparingSideStoreIPA)
+                        Text("BloomBox enviará el IPA directamente al SideStore integrado, sin abrir el menú Compartir.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
-                        Button("Abrir SideStore para importar el archivo", action: openSideStore)
-                            .buttonStyle(.bordered)
+                        Text("SideStore integrado no está disponible en esta instalación.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if isPreparingSideStoreIPA {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                            Text("Preparando IPA para SideStore…")
+                                .font(.subheadline)
+                        }
+                        .accessibilityElement(children: .combine)
                     }
                     Divider()
                     Label("SideStore: espacios libres sin verificar", systemImage: "info.circle")
@@ -114,6 +128,7 @@ private struct BloomBoxIPAOpenSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancelar", action: dismiss)
+                        .disabled(isPreparingSideStoreIPA)
                 }
             }
         }
@@ -149,6 +164,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     // ipa choosing stuff
     @State var choosingIPA = false
     @State private var receivedIPA: BloomBoxReceivedIPA?
+    @State private var isPreparingSideStoreIPA = false
     @State var errorShow = false
     @State var errorInfo = ""
     
@@ -562,17 +578,49 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             BloomBoxIPAOpenSheet(
                 fileURL: request.url,
                 hasSideStore: UserDefaults.sideStoreExist(),
+                isPreparingSideStoreIPA: isPreparingSideStoreIPA,
                 installInBloomBox: {
                     receivedIPA = nil
                     Task { await installFromUrl(urlStr: request.url.absoluteString) }
                 },
                 openSideStore: {
-                    receivedIPA = nil
-                    if UserDefaults.sideStoreExist() {
-                        LCUtils.openSideStore(delegate: self)
-                    } else {
+                    guard !isPreparingSideStoreIPA else { return }
+                    guard UserDefaults.sideStoreExist() else {
                         errorInfo = "SideStore no está disponible en esta instalación."
                         errorShow = true
+                        return
+                    }
+                    isPreparingSideStoreIPA = true
+                    let sourceURL = request.url
+                    Task {
+                        defer { isPreparingSideStoreIPA = false }
+                        do {
+                            // Files may deliver a security-scoped URL. Stage it in
+                            // BloomBox's sandbox before passing it to the built-in
+                            // SideStore; the system share sheet does not deliver to
+                            // the SideStore guest running inside this same app.
+                            let handoffURL = try await Task.detached(priority: .userInitiated) { () throws -> URL in
+                                let didAccess = sourceURL.startAccessingSecurityScopedResource()
+                                defer {
+                                    if didAccess { sourceURL.stopAccessingSecurityScopedResource() }
+                                }
+                                let fm = FileManager.default
+                                let directory = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+                                    .appendingPathComponent("BloomBoxSideStoreImports", isDirectory: true)
+                                try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+                                let destination = directory.appendingPathComponent(
+                                    UUID().uuidString + "-" + sourceURL.lastPathComponent
+                                )
+                                try fm.copyItem(at: sourceURL, to: destination)
+                                return destination
+                            }.value
+
+                            receivedIPA = nil
+                            LCUtils.openSideStore(delegate: self, urlStr: handoffURL.absoluteString)
+                        } catch {
+                            errorInfo = "No se pudo preparar el IPA para SideStore: " + error.localizedDescription
+                            errorShow = true
+                        }
                     }
                 },
                 dismiss: { receivedIPA = nil }
