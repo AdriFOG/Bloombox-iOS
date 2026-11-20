@@ -6,9 +6,9 @@
 
 A personal home for your apps, widgets and files — with room to experiment.
 
-[**Download BloomBox**](https://github.com/adri23rep-stack/BloomBox/releases) · [What's new](https://github.com/adri23rep-stack/BloomBox/releases/tag/v1.3.0) · [Report an issue](https://github.com/adri23rep-stack/BloomBox/issues)
+[**Development builds**](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml) · [Project history](https://github.com/AdriFOG/Bloombox-iOS/commits/main/) · [Report an issue](https://github.com/AdriFOG/Bloombox-iOS/issues)
 
-[![Build](https://github.com/adri23rep-stack/BloomBox/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/adri23rep-stack/BloomBox/actions/workflows/build.yml)
+[![Build](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-purple.svg)](LICENSE) · [Original-work attribution](LICENSE-ADDITIONAL-TERMS.md)
 
 </div>
@@ -17,17 +17,22 @@ A personal home for your apps, widgets and files — with room to experiment.
 
 Its home screen lives **inside the app**; it does not replace the iOS Home Screen. Experimental features are clearly identified below so you can choose what to try.
 
-## A space that feels like yours
+## BloomBox 2.0 · A closer look
 
 <table>
 <tr>
-<td align="center" width="33%"><img src="screenshots/showcase/widgets.jpeg" width="240" alt="BloomBox desktop with glass panels, photo and note widgets, wallpaper and dock"><br><b>Your desktop, your style</b><br>Widgets, wallpaper and a familiar dock.</td>
-<td align="center" width="33%"><img src="screenshots/showcase/app-library.jpeg" width="240" alt="BloomBox searchable app library with categorized app folders"><br><b>Your apps, organized</b><br>A searchable library alongside your home pages.</td>
-<td align="center" width="33%"><img src="screenshots/showcase/modules.jpeg" width="240" alt="BloomBox Modules panel with RAM+, JIT, desktop, connectivity, privacy and experimental tools"><br><b>More control in one place</b><br>Modules brings advanced tools within reach.</td>
+<td align="center" width="33%"><img src="screenshots/showcase/home-2026-11.jpg" width="240" alt="BloomBox Kirby-themed desktop with apps, animated character, glass dock and wallpaper"><br><b>Your desktop, your style</b><br>Home pages, themes and a glass dock.</td>
+<td align="center" width="33%"><img src="screenshots/showcase/profiles-news-2026-11.jpg" width="240" alt="BloomBox profiles selector, GameBox preview and remote news feed"><br><b>Profiles, games & news</b><br>Everything in one familiar space.</td>
+<td align="center" width="33%"><img src="screenshots/showcase/app-library-2026-11.jpg" width="240" alt="BloomBox app library showing suggested, recently added, games and other apps"><br><b>Your apps, organized</b><br>Browse the App Library by category.</td>
+</tr>
+<tr>
+<td align="center"><img src="screenshots/showcase/modules-2026-11.jpg" width="240" alt="BloomBox Modules with RAM+, JIT, Home Screen, Connectivity, Privacy and Experimental tiles"><br><b>Modules</b><br>Advanced features in one control center.</td>
+<td align="center"><img src="screenshots/showcase/ram-plus-2026-11.jpg" width="240" alt="RAM+ screen confirming the installed app and provisioning profile checks"><br><b>RAM+ checks</b><br>View memory entitlement status.</td>
+<td align="center"><img src="screenshots/showcase/jit-per-app-2026-11.jpg" width="240" alt="BloomBox JIT setup with per-app JIT toggles and JIT history"><br><b>JIT per app</b><br>Control which guest apps request JIT.</td>
 </tr>
 </table>
 
-*Real device screenshots from development builds, shown in Spanish. Appearance and available controls can differ by release. Third-party apps and wallpaper shown are not bundled with BloomBox.*
+*Real iPhone screenshots supplied by the maintainer in November 2026, resized for the README. Screens reflect a development build and personal setup; wallpapers, characters, third-party apps and games are not included with BloomBox. Some labels remain in Spanish depending on settings.*
 
 ## What you can do
 
@@ -46,13 +51,7 @@ Its home screen lives **inside the app**; it does not replace the iOS Home Scree
 
 These tools are part of active development. **Included in a release does not mean universally compatible.** Your iOS version, signing setup and the guest app all matter.
 
-<table>
-<tr>
-<td align="center" width="33%"><img src="screenshots/showcase/ram-plus.jpeg" width="240" alt="RAM+ screen reporting installed process and provisioning profile checks passed"><br><b>RAM+ validation</b><br>See the installed permission checks.</td>
-<td align="center" width="33%"><img src="screenshots/showcase/jit-setup.png" width="240" alt="Built-in JIT setup showing on-device pairing completed with LocalDevVPN selected"><br><b>On-device JIT setup</b><br>Pairing and provider controls.</td>
-<td align="center" width="33%"><img src="screenshots/showcase/melonx-gameplay.png" width="240" alt="KAMIKO running in a MeloNX development test with touch controls and performance overlay"><br><b>MeloNX in action</b><br>A real experimental gameplay test.</td>
-</tr>
-</table>
+The latest RAM+ and per-app JIT screens are shown in the gallery above. Previous development screenshots, including an [experimental MeloNX gameplay capture](screenshots/showcase/melonx-gameplay.png), remain available in the screenshot archive.
 
 ### RAM+ · increased memory limit
 
@@ -66,7 +65,7 @@ The v1.3.0 reinstall flow can fail to locate or accept a matching IPA. A [latest
 
 BloomBox includes experimental on-device pairing and built-in JIT integration for **guest apps inside BloomBox**. LocalDevVPN, Developer Mode and correctly signed extensions are required. Pairing success and debugger attachment are not, by themselves, proof that a guest can use JIT.
 
-The gameplay screenshot above comes from **MeloNX 2.6 development testing**. Its dedicated integration is on the [experimental MeloNX branch](https://github.com/adri23rep-stack/BloomBox/tree/experimental/melonx-26-jit), separate from v1.3.0. It does not require a separate StikDebug installation. The visible frame rate is one captured moment, not a benchmark or a guarantee for other games.
+The archived MeloNX gameplay screenshot comes from **MeloNX 2.6 development testing**. Its dedicated integration is on the [experimental MeloNX branch](https://github.com/adri23rep-stack/BloomBox/tree/experimental/melonx-26-jit), separate from v1.3.0. It does not require a separate StikDebug installation. The visible frame rate is one captured moment, not a benchmark or a guarantee for other games.
 
 See [built-in JIT setup](docs/Manzana-OnDevice-JIT.md) and the [MeloNX experiment notes](https://github.com/adri23rep-stack/BloomBox/blob/experimental/melonx-26-jit/docs/MeloNX-2.6-JIT.md). Some technical notes retain earlier project names.
 
@@ -89,7 +88,7 @@ Backups do not include the guest IPA, and cloud sessions or device-bound credent
 
 **Updating?** Keep the same signing account, team and compatible bundle identity, and back up important data first. Do not delete BloomBox just to refresh or retry RAM+: deleting the app can remove its local data.
 
-For development builds, use a successful [BloomBox - Build workflow run](https://github.com/adri23rep-stack/BloomBox/actions/workflows/build.yml) and check its branch before downloading the artifact. Development builds may contain unfinished changes; a successful build is not an on-device compatibility test.
+For development builds, use a successful [BloomBox - Build workflow run](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml) and check its branch before downloading the artifact. Development builds may contain unfinished changes; a successful build is not an on-device compatibility test.
 
 ## Questions before installing
 
@@ -107,13 +106,13 @@ BloomBox keeps some legacy data keys for app updates, signing compatibility and 
 
 **Where can I check progress?**
 
-[Releases](https://github.com/adri23rep-stack/BloomBox/releases) show published changes, [Actions](https://github.com/adri23rep-stack/BloomBox/actions) shows build results, and [Issues](https://github.com/adri23rep-stack/BloomBox/issues) tracks reports. Experimental branches should not be assumed to be included in a release.
+[Releases](https://github.com/adri23rep-stack/BloomBox/releases) show published changes, [Actions](https://github.com/AdriFOG/Bloombox-iOS/actions) shows build results, and [Issues](https://github.com/AdriFOG/Bloombox-iOS/issues) tracks reports. Experimental branches should not be assumed to be included in a release.
 
 ## Help BloomBox grow
 
 A useful bug report includes your device, iOS version, BloomBox version or branch, installation method, guest app/version and steps to reproduce. For RAM+ or JIT, include the relevant status screen and the stage that failed. Remove account details, pairing files and credentials before sharing logs.
 
-[Report a bug or suggest a feature](https://github.com/adri23rep-stack/BloomBox/issues). Contributions to compatibility testing, documentation, translations and development are welcome. If BloomBox is useful to you, a star helps others discover the project.
+[Report a bug or suggest a feature](https://github.com/AdriFOG/Bloombox-iOS/issues). Contributions to compatibility testing, documentation, translations and development are welcome. If BloomBox is useful to you, a star helps others discover the project.
 
 ## Open source, with credit where it belongs
 
