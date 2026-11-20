@@ -1050,7 +1050,7 @@ struct BloomBoxHomeScreen: View {
         GeometryReader { geometry in
             ZStack {
                 Color.black
-                if performance.useDarkWallpaper {
+                if performance.level >= .serious {
                     Color(white: 0.08)
                 } else if wallpaperStyle == "motion", let url = motionURL {
                     if performance.allowsVideo && !pauseWallpaper && !reduceMotion && !paused {
@@ -2029,7 +2029,8 @@ struct BloomBoxHomeScreen: View {
         let delay = Double(widget.slot % 4) * 0.145
             + Double(widget.slot / 4) * 0.026
         return BloomBoxGridWidgetView(widget: widget, width: w, height: h,
-                                      active: page == index + 1,
+                                      active: page == index + 1 && !searching && openFolder == nil &&
+                                          performance.allowsVideo,
                                       clockAccentColor: pixelAccent)
             .allowsHitTesting(false)
             .frame(width: w, height: h)
