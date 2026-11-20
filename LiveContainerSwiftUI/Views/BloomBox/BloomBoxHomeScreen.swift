@@ -229,13 +229,16 @@ struct BloomBoxHomeScreen: View {
     ]
     private enum DesktopAction { case edit, widgets, pages, icons, customize, interface }
 
-    private struct HuskGame {
+    private struct HuskGame: Identifiable {
+        var id: String { key }
         let key: String
         let title: String
         let directory: URL
         let launchURL: URL
     }
     @State private var huskGames: [HuskGame] = []
+    @State private var orientationGame: HuskGame?
+    @State private var askForThisLaunch = false
     @State private var huskError: String?
     private var husk: LCAppModel? {
         sharedModel.apps.first { $0.bundleIdentifier == "com.husk.app" && (!$0.appInfo.isLocked || sharedModel.isHiddenAppUnlocked) }
@@ -485,6 +488,22 @@ struct BloomBoxHomeScreen: View {
             .onChange(of: sharedModel.isHiddenAppUnlocked) { _ in refreshHuskGames() }
             .onChange(of: themeActiveID) { _ in refreshHuskGames() }
             .onChange(of: husk?.appInfo.relativeBundlePath) { _ in refreshHuskGames() }
+            .sheet(item: $orientationGame) { game in
+                VStack(spacing: 18) {
+                    Text(game.title).font(.headline)
+                    Text(englishUI ? "Launch orientation" : "Orientación al abrir")
+                    ForEach(["portrait", "landscape", "hybrid"], id: \.self) { mode in
+                        if mode != "hybrid" || !askForThisLaunch {
+                            Button(orientationTitle(mode)) {
+                                if !askForThisLaunch { UserDefaults.standard.set(mode, forKey: orientationKey(game)) }
+                                if mode == "hybrid" { askForThisLaunch = true }
+                                else { orientationGame = nil; openHuskGame(game, mode: mode) }
+                            }.buttonStyle(.bordered)
+                        }
+                    }
+                    Button(englishUI ? "Cancel" : "Cancelar") { orientationGame = nil }
+                }.padding()
+            }
             .alert("Husk", isPresented: Binding(get: { huskError != nil }, set: { if !$0 { huskError = nil } })) {
                 Button("OK") { huskError = nil }
             } message: { Text(huskError ?? "") }
@@ -1238,7 +1257,8 @@ struct BloomBoxHomeScreen: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            if let app = appMap[key] {
+            if let game = huskGames.first(where: { $0.key == key }) { huskMenu(game) }
+            else if let app = appMap[key] {
                 appMenu(key, app: app)
             }
         }
@@ -1270,6 +1290,45 @@ struct BloomBoxHomeScreen: View {
         }
     }
 
+    private func orientationKey(_ game: HuskGame) -> String { "BloomBoxOrientation/" + game.key }
+    private func orientationTitle(_ mode: String) -> String {
+        switch mode {
+        case "portrait": return englishUI ? "Portrait" : "Vertical"
+        case "landscape": return englishUI ? "Landscape" : "Horizontal"
+        default: return englishUI ? "Hybrid · ask every time" : "Híbrido · preguntar siempre"
+        }
+    }
+    private func openHuskGame(_ game: HuskGame, mode: String) {
+        guard let host = husk, huskGames.contains(where: { $0.key == game.key }) else { return }
+        Task {
+            do {
+                let url = game.directory.appendingPathComponent("settings.json")
+                var settings: [String: Any] = [:]
+                if FileManager.default.fileExists(atPath: url.path) {
+                    guard let saved = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any] else {
+                        throw "No se pudieron leer los ajustes de Husk."
+                    }
+                    settings = saved
+                }
+                settings["orientation"] = mode
+                try JSONSerialization.data(withJSONObject: settings).write(to: url, options: .atomic)
+                try await host.runApp(urlStr: game.launchURL.absoluteString)
+            } catch { huskError = error.localizedDescription }
+        }
+    }
+    @ViewBuilder private func huskMenu(_ game: HuskGame) -> some View {
+        Menu(englishUI ? "Orientation" : "Orientación", systemImage: "rotate.right") {
+            ForEach(["portrait", "landscape", "hybrid"], id: \.self) { mode in
+                Button { UserDefaults.standard.set(mode, forKey: orientationKey(game)) } label: {
+                    if UserDefaults.standard.string(forKey: orientationKey(game)) == mode {
+                        Label(orientationTitle(mode), systemImage: "checkmark")
+                    } else { Text(orientationTitle(mode)) }
+                }
+            }
+        }
+        placementMenu(game.key)
+    }
+
     private func launchLibraryKey(_ key: String) {
         if key == Self.sideStoreKey { openSideStore() }
         else if key == Self.installKey { openInstall() }
@@ -1277,11 +1336,10 @@ struct BloomBoxHomeScreen: View {
         else if key == Self.appStoreKey { appStorePresented = true }
         else if key == Self.modulesKey { modulesPresented = true }
         else if key == Self.themesKey { themesPresented = true }
-        else if let game = huskGames.first(where: { $0.key == key }), let host = husk {
-            Task {
-                do { try await host.runApp(urlStr: game.launchURL.absoluteString) }
-                catch { huskError = error.localizedDescription }
-            }
+        else if let game = huskGames.first(where: { $0.key == key }) {
+            let mode = UserDefaults.standard.string(forKey: orientationKey(game))
+            if mode == "portrait" || mode == "landscape" { openHuskGame(game, mode: mode!) }
+            else { askForThisLaunch = mode == "hybrid"; orientationGame = game }
         }
         else if let app = appMap[key] {
             if unopenedGiftKeys.contains(key) { revealGift(key) }
@@ -2402,7 +2460,8 @@ struct BloomBoxHomeScreen: View {
                             .clipShape(RoundedRectangle(cornerRadius: 14))
                         if showLabel { Text(game.title).font(.caption).lineLimit(1).foregroundStyle(.white) }
                     }
-                }.buttonStyle(.plain)
+                }.buttonStyle(LiveBoardHomePressStyle(reduceMotion: reduceMotion))
+                .contextMenu { huskMenu(game) }
             } else if let app = appMap[key] {
                 if unopenedGiftKeys.contains(key) && !editing {
                     BloomBoxHomeGiftIcon(name: title(key), size: largeIcons ? 76 : 64,
@@ -2494,7 +2553,11 @@ struct BloomBoxHomeScreen: View {
             }
         }
         .buttonStyle(LiveBoardHomePressStyle(reduceMotion: reduceMotion))
-        .contextMenu {
+        .contextMenu { placementMenu(key) }
+        .accessibilityLabel(BloomBoxL10n.t(isThemes ? "Temas" : title(key)))
+    }
+
+    @ViewBuilder private func placementMenu(_ key: String) -> some View {
             Button("Editar pantalla de inicio", systemImage: "square.grid.3x3") { enterEditMode() }
             if layout.dock.contains(key) {
                 Button("Mover al escritorio", systemImage: "rectangle.bottomthird.inset.filled") {
@@ -2530,8 +2593,6 @@ struct BloomBoxHomeScreen: View {
                     }
                 }
             }
-        }
-        .accessibilityLabel(BloomBoxL10n.t(isThemes ? "Temas" : title(key)))
     }
 
     private func appMenu(_ key: String, app: LCAppModel) -> some View {
@@ -2731,6 +2792,8 @@ struct BloomBoxHomeScreen: View {
                                 let key = folder.apps[slot]
                                 if let app = appMap[key] {
                                     LiveBoardIconImage(app: app, dark: darkIcons)
+                                } else if huskGames.contains(where: { $0.key == key }) {
+                                    miniatureIcon(key, size: 16)
                                 } else if [Self.modulesKey, Self.tweakStoreKey, Self.appStoreKey,
                                            Self.installKey, Self.sideStoreKey, Self.themesKey].contains(key) {
                                     ZStack {
@@ -3272,7 +3335,7 @@ struct BloomBoxHomeScreen: View {
                     movePlacedWidget(String(key.dropFirst("bloombox-widget:".count)),
                                      to: pageIndex, slot: slot)
                 } else {
-                    guard appMap[key] != nil ||
+                    guard appMap[key] != nil || huskGames.contains(where: { $0.key == key }) ||
                           layout.folders.contains(where: { $0.id == key }) ||
                           [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey,
                            Self.appStoreKey, Self.modulesKey, Self.themesKey].contains(key) else { return }
@@ -3296,7 +3359,7 @@ struct BloomBoxHomeScreen: View {
                 if key.hasPrefix("bloombox-widget:") {
                     movePlacedWidget(String(key.dropFirst("bloombox-widget:".count)),
                                      to: pageIndex, slot: nil)
-                } else if appMap[key] != nil ||
+                } else if appMap[key] != nil || huskGames.contains(where: { $0.key == key }) ||
                           layout.folders.contains(where: { $0.id == key }) ||
                           [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey,
                            Self.appStoreKey, Self.modulesKey, Self.themesKey].contains(key) {
@@ -3314,7 +3377,7 @@ struct BloomBoxHomeScreen: View {
         provider.loadObject(ofClass: NSString.self) { value, _ in
             guard let key = value as? String else { return }
             DispatchQueue.main.async {
-                guard appMap[key] != nil ||
+                guard appMap[key] != nil || huskGames.contains(where: { $0.key == key }) ||
                       key == Self.sideStoreKey || key == Self.installKey || key == Self.tweakStoreKey || key == Self.appStoreKey || key == Self.modulesKey || key == Self.themesKey ||
                       layout.folders.contains(where: { $0.id == key }) else { return }
                 apply(key)

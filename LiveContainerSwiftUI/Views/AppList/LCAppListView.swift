@@ -50,6 +50,8 @@ private struct BloomBoxIPAOpenSheet: View {
     let installInBloomBox: () -> Void
     let openSideStore: () -> Void
     let dismiss: () -> Void
+    var isAPK = false
+    var hasHusk = false
 
     var body: some View {
         NavigationView {
@@ -71,6 +73,18 @@ private struct BloomBoxIPAOpenSheet: View {
                         }
                         Spacer(minLength: 0)
                     }
+                    if isAPK {
+                        Label("Husk · Leviidev", systemImage: "gamecontroller.fill")
+                        if hasHusk {
+                            Button(action: installInBloomBox) {
+                                Label(BloomBoxL10n.isEnglish ? "Install APK" : "Instalar APK", systemImage: "square.stack.3d.up.fill")
+                                    .frame(maxWidth: .infinity).padding(.vertical, 9)
+                            }.buttonStyle(.borderedProminent)
+                        } else {
+                            Link(BloomBoxL10n.isEnglish ? "Get Husk for BloomBox" : "Descargar Husk para BloomBox",
+                                 destination: URL(string: "https://github.com/Leviidev/Husk/releases")!)
+                        }
+                    } else {
                     Text("¿Dónde quieres instalar esta aplicación?")
                         .font(.headline)
                     Button(action: installInBloomBox) {
@@ -106,10 +120,11 @@ private struct BloomBoxIPAOpenSheet: View {
                         Button("Abrir SideStore", action: openSideStore)
                             .font(.subheadline)
                     }
+                    }
                 }
                 .padding(20)
             }
-            .navigationTitle("Instalar IPA")
+            .navigationTitle(isAPK ? (BloomBoxL10n.isEnglish ? "Install APK" : "Instalar APK") : BloomBoxL10n.t("Instalar IPA"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -148,7 +163,6 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     @State var didAppear = false
     // ipa choosing stuff
     @State var choosingIPA = false
-    @State private var apkInstalled = false
     @State private var receivedIPA: BloomBoxReceivedIPA?
     @State var errorShow = false
     @State var errorInfo = ""
@@ -554,39 +568,23 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         } message: {
             Text(errorInfo)
         }
-        .betterFileImporter(isPresented: $choosingIPA, types: [.ipa, .tipa], multiple: false, callback: { fileUrls in
-            Task { await startInstallApp(fileUrls[0]) }
+        .betterFileImporter(isPresented: $choosingIPA, types: [.ipa, .tipa, UTType(importedAs: "com.android.package-archive")], multiple: false, callback: { fileUrls in
+            guard let file = fileUrls.first else { return }
+            if file.pathExtension.lowercased() == "apk" { handleURL(url: file) }
+            else { Task { await startInstallApp(file) } }
         }, onDismiss: {
             choosingIPA = false
         })
-        .alert(BloomBoxL10n.isEnglish ? "APK installed" : "APK instalado", isPresented: $apkInstalled) {
-            Button("OK") {}
-        }
         .sheet(item: $receivedIPA) { request in
-            if request.url.pathExtension.lowercased() == "apk" {
-                let husk = sharedModel.apps.first { $0.bundleIdentifier == "com.husk.app" }
-                let en = BloomBoxL10n.isEnglish
-                VStack(spacing: 20) {
-                    Text(request.url.lastPathComponent).font(.headline)
-                    Text(en ? "Android powered by Husk · Leviidev" : "Motor Android de Husk · Leviidev")
-                    if let husk {
-                        Button(en ? "Install with Husk" : "Instalar con Husk") {
-                            receivedIPA = nil
-                            Task { await importAPK(request.url, host: husk) }
-                        }.buttonStyle(.borderedProminent)
-                    } else {
-                        Text(en ? "Install the official Husk IPA in BloomBox, then reopen this APK." : "Instala el IPA oficial de Husk en BloomBox y vuelve a abrir este APK.")
-                        Link("Husk · GitHub", destination: URL(string: "https://github.com/Leviidev/Husk/releases")!)
-                    }
-                    Button(en ? "Cancel" : "Cancelar") { receivedIPA = nil }
-                }.padding()
-            } else {
+            let isAPK = request.url.pathExtension.lowercased() == "apk"
+            let husk = sharedModel.apps.first { $0.bundleIdentifier == "com.husk.app" }
             BloomBoxIPAOpenSheet(
                 fileURL: request.url,
                 hasSideStore: UserDefaults.sideStoreExist(),
                 installInBloomBox: {
                     receivedIPA = nil
-                    Task { await installFromUrl(urlStr: request.url.absoluteString) }
+                    if isAPK, let husk { Task { await importAPK(request.url, host: husk) } }
+                    else if !isAPK { Task { await installFromUrl(urlStr: request.url.absoluteString) } }
                 },
                 openSideStore: {
                     receivedIPA = nil
@@ -597,9 +595,9 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                         errorShow = true
                     }
                 },
-                dismiss: { receivedIPA = nil }
+                dismiss: { receivedIPA = nil },
+                isAPK: isAPK, hasHusk: husk != nil
             )
-            }
         }
         .alert("lc.appList.installation".loc, isPresented: $installReplaceAlert.show) {
             ForEach(installOptions, id: \.self) { installOption in
@@ -1939,9 +1937,14 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     }
     
     @MainActor private func importAPK(_ url: URL, host: LCAppModel) async {
+        guard !installprogressVisible else { return }
+        installprogressVisible = true
+        installProgressPercentage = 0
+        beginInstallationCelebration()
+        defer { installprogressVisible = false }
         do {
             if host.appInfo.isLocked && !sharedModel.isHiddenAppUnlocked {
-                guard try await LCUtils.authenticateUser() else { return }
+                guard try await LCUtils.authenticateUser() else { await finishInstallationCelebration(); return }
             }
             host.ensurePrimaryContainer()
             let folder = try BloomBoxProfileContainerAdapter.containerForLaunch(app: host, explicitlyRequested: nil)
@@ -1974,7 +1977,18 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 let handle = try FileHandle(forReadingFrom: target)
                 defer { try? handle.close() }
                 var hash = SHA256()
-                while let bytes = try handle.read(upToCount: 1048576), !bytes.isEmpty { hash.update(data: bytes) }
+                let size = (try target.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                var read = 0
+                var lastPercent = 0
+                while let bytes = try handle.read(upToCount: 1048576), !bytes.isEmpty {
+                    hash.update(data: bytes)
+                    read += bytes.count
+                    let percent = min(99, read * 100 / max(1, size))
+                    if percent > lastPercent {
+                        lastPercent = percent
+                        await MainActor.run { installProgressPercentage = Float(percent) / 100 }
+                    }
+                }
                 let id = hash.finalize().map { String(format: "%02x", $0) }.joined()
                 let installed = root.appendingPathComponent(id)
                 try url.deletingPathExtension().lastPathComponent.write(to: staging.appendingPathComponent("label.txt"), atomically: true, encoding: .utf8)
@@ -1982,8 +1996,11 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 catch { if !fm.fileExists(atPath: installed.appendingPathComponent("base.apk").path) { throw error } }
             }.value
             NotificationCenter.default.post(name: Notification.Name("BloomBoxHuskLibraryChanged"), object: nil)
-            apkInstalled = true
+            installProgressPercentage = 1
+            installationActuallySucceeded = true
+            await finishInstallationCelebration()
         } catch {
+            await finishInstallationCelebration()
             errorInfo = error.localizedDescription
             errorShow = true
         }
