@@ -6,15 +6,9 @@ import SwiftUI
 struct BloomBoxNovaSettingsView: View {
     @Binding var layout: BloomBoxNovaLayout
     let availableKeys: [String]
+    let english: Bool
     @Environment(\.dismiss) private var dismiss
     @State private var resetConfirmation = false
-    @AppStorage("BloomBoxPreferredLanguage", store: LiveContainerPreferencesAdapter.defaults)
-    private var language = "system"
-
-    private var english: Bool {
-        language == "en" || (language == "system" &&
-            !(Locale.preferredLanguages.first ?? "en").lowercased().hasPrefix("es"))
-    }
     private func t(_ spanish: String, _ en: String) -> String {
         english ? en : spanish
     }
