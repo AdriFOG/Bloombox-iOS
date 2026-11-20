@@ -631,6 +631,10 @@ struct BloomBoxWizardLauncherChoiceView: View {
                            title: "Launcher iOS", englishTitle: "iOS Home",
                            detail: "Escritorio, widgets y Dock. GameBox a un toque.",
                            englishDetail: "Home Screen, widgets and Dock. GameBox one tap away.")
+                    option("nova", symbol: "square.grid.4x3.fill",
+                           title: "Launcher Android", englishTitle: "Android Home",
+                           detail: "Escritorio estilo Nova, cajón de apps, carpetas y gestos.",
+                           englishDetail: "Nova-style desktop, app drawer, folders and gestures.")
                     option("gamebox", symbol: "gamecontroller.fill",
                            title: "GameBox", englishTitle: "GameBox",
                            detail: "Inicia directamente en tu biblioteca de juegos.",
