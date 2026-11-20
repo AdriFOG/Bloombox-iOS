@@ -299,7 +299,7 @@ jobs:
           "$RUNNER_TEMP/bloombox-home-native-tests"
       - name: Test BloomBox animated media imports and legacy wallpapers
         run: |
-          swiftc LiveContainerSwiftUI/Views/BloomBox/BloomBoxMotionMedia.swift Tests/wallpaper/main.swift -o "$RUNNER_TEMP/bloombox-wallpaper-tests"
+          swiftc LiveContainerSwiftUI/Views/BloomBox/BloomBoxMotionMedia.swift LiveContainerSwiftUI/Views/BloomBox/BloomBoxGIFTranscoder.swift Tests/wallpaper/main.swift -o "$RUNNER_TEMP/bloombox-wallpaper-tests"
           "$RUNNER_TEMP/bloombox-wallpaper-tests"
       - name: Test app appearance storage and legacy icon migration
         run: |
