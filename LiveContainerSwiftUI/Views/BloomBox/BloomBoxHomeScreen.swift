@@ -1360,6 +1360,22 @@ struct BloomBoxHomeScreen: View {
             : "El depurador JIT no se conectó en 30 segundos. Revisa el emparejamiento y el registro JIT."
     }
 
+    // The LiveProcess scene can be a little later than the PID callback,
+    // especially when the debugger is attaching. Retry only the delivery,
+    // never spawn Husk a second time.
+    @MainActor private func deliverHuskGameLink(_ game: HuskGame) async throws -> Bool {
+        let deadline = Date().addingTimeInterval(5)
+        repeat {
+            try Task.checkCancellation()
+            if AppSceneViewController.bloomBoxSendURL(
+                game.launchURL.absoluteString, toContainer: game.containerFolder) {
+                return true
+            }
+            try await Task.sleep(nanoseconds: 150_000_000)
+        } while Date() < deadline
+        return false
+    }
+
     private func openHuskGame(_ game: HuskGame, mode: String) {
         guard let host = husk, huskGames.contains(where: { $0.key == game.key }),
               huskStartingGame == nil else { return }
@@ -1406,8 +1422,7 @@ struct BloomBoxHomeScreen: View {
                 if #available(iOS 16.1, *), MultitaskManager.isUsing(container: game.containerFolder) {
                     // Husk is already running. Forward the game link into its
                     // existing scene without launching another JIT session.
-                    guard AppSceneViewController.bloomBoxSendURL(
-                        game.launchURL.absoluteString, toContainer: game.containerFolder) else {
+                    guard try await deliverHuskGameLink(game) else {
                         throw englishUI ? "Husk is busy. Close its existing window and retry."
                             : "Husk está ocupado. Cierra su ventana y vuelve a intentarlo."
                     }
@@ -1426,8 +1441,7 @@ struct BloomBoxHomeScreen: View {
                     if remaining > 0 {
                         try await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
                     }
-                    guard AppSceneViewController.bloomBoxSendURL(
-                        game.launchURL.absoluteString, toContainer: game.containerFolder) else {
+                    guard try await deliverHuskGameLink(game) else {
                         throw englishUI ? "Husk did not expose its running game scene. Close Husk and retry."
                             : "No se encontró la ventana activa de Husk. Ciérralo y vuelve a intentarlo."
                     }
