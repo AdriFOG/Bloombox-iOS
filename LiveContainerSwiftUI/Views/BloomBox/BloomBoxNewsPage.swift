@@ -158,13 +158,14 @@ private struct BloomBoxRemoteNewsSection: View {
     @AppStorage("BloomBoxPreferredLanguage", store: LCUtils.appGroupUserDefault)
     private var preferredLanguage = "system"
     private var english: Bool { (preferredLanguage == "system" ? (Locale.preferredLanguages.first ?? "en") : preferredLanguage).lowercased().hasPrefix("en") }
-    private var defaultFeed: String { "https://raw.githubusercontent.com/adri23rep-stack/BloomBox-Catalog/main/news/\(english ? "en" : "es").json" }
+    private var defaultFeed: String { "https://raw.githubusercontent.com/AdriFOG/Bloombox-Remote-Systems/main/news/\(english ? "en" : "es").json" }
     // Earlier builds persisted the old built-in feed URL. Treat that legacy
-    // default as automatic so upgrades use BloomBox-Catalog and its locale feeds.
+    // default as automatic so upgrades use the AdriFOG remote catalog and its locale feeds.
     // Preserve any genuinely custom HTTPS news source selected by the user.
     private var activeFeed: String {
         let saved = feedAddress.trimmingCharacters(in: .whitespacesAndNewlines)
-        if saved.isEmpty || saved == "https://raw.githubusercontent.com/adri23rep-stack/BloomBox/feature/bloombox-2-ui-foundation-20261031/remote/news.json" || saved == "https://raw.githubusercontent.com/adri23rep-stack/BloomBox/main/remote/news.json" {
+        let oldCatalogDefault = "https://raw.githubusercontent.com/adri23rep-stack/BloomBox-Catalog/main/news/"
+        if saved.isEmpty || saved == "https://raw.githubusercontent.com/adri23rep-stack/BloomBox/feature/bloombox-2-ui-foundation-20261031/remote/news.json" || saved == "https://raw.githubusercontent.com/adri23rep-stack/BloomBox/main/remote/news.json" || saved == oldCatalogDefault + "es.json" || saved == oldCatalogDefault + "en.json" {
             return defaultFeed
         }
         return saved

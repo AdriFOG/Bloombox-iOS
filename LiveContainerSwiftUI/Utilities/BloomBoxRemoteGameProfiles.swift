@@ -14,7 +14,7 @@ final class BloomBoxRemoteGameProfiles: ObservableObject {
     private static let cacheKey = "BloomBoxGameProfilesVerified-v1"
     private static let syncKey = "BloomBoxGameProfilesLastSync-v1"
     private static let catalogURL = URL(string:
-        "https://raw.githubusercontent.com/adri23rep-stack/BloomBox-Catalog/main/catalog/game-profiles.json")!
+        "https://raw.githubusercontent.com/AdriFOG/Bloombox-Remote-Systems/main/catalog/game-profiles.json")!
     private let defaults = LCUtils.appGroupUserDefault
     private var lastAttempt: Date?
 

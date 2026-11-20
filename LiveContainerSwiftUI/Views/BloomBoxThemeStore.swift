@@ -566,7 +566,7 @@ struct BloomBoxThemeStoreView: View {
         loading = true
         defer { loading = false }
         guard let url = URL(string:
-            "https://raw.githubusercontent.com/adri23rep-stack/BloomBox-Catalog/main/catalog/themes.json")
+            "https://raw.githubusercontent.com/AdriFOG/Bloombox-Remote-Systems/main/catalog/themes.json")
         else { return }
         do {
             var req = URLRequest(url: url)
@@ -588,7 +588,7 @@ struct BloomBoxThemeStoreView: View {
     private func safeDownloadURL(_ path: String) -> URL? {
         guard let url = URL(string: path), url.scheme == "https",
               url.host == "raw.githubusercontent.com",
-              url.path.hasPrefix("/adri23rep-stack/BloomBox-Catalog/main/themes/"),
+              url.path.hasPrefix("/AdriFOG/Bloombox-Remote-Systems/main/themes/"),
               url.user == nil, url.password == nil,
               url.query == nil, url.fragment == nil,
               (url.pathExtension.lowercased() == "bbtheme" ||
@@ -617,7 +617,7 @@ struct BloomBoxThemeStoreView: View {
             }
             let partURL = root.appendingPathComponent(filename)
             guard partURL.scheme == "https", partURL.host == "raw.githubusercontent.com",
-                  partURL.path.hasPrefix("/adri23rep-stack/BloomBox-Catalog/main/themes/") else {
+                  partURL.path.hasPrefix("/AdriFOG/Bloombox-Remote-Systems/main/themes/") else {
                 throw BloomBoxThemePackage.ThemeError.invalid("Invalid theme chunk location.")
             }
             var request = URLRequest(url: partURL)

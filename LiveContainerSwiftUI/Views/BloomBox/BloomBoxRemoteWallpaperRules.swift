@@ -29,7 +29,7 @@ final class BloomBoxRemoteWallpaperRules: ObservableObject {
 
     // Stable curated wallpaper feed, merged into BloomBox-Catalog/main.
     private static let catalogURL = URL(string:
-        "https://raw.githubusercontent.com/adri23rep-stack/BloomBox-Catalog/main/catalog/gamebox-wallpaper-rules.json")!
+        "https://raw.githubusercontent.com/AdriFOG/Bloombox-Remote-Systems/main/catalog/gamebox-wallpaper-rules.json")!
 
     private init() {
         if let bytes = defaults.data(forKey: cachedKey),
