@@ -959,6 +959,9 @@
 "¿Dónde quieres instalar esta aplicación?" = "Where do you want to install this app?";
 "Instalar dentro de BloomBox" = "Install in BloomBox";
 "Instalar con SideStore" = "Install with SideStore";
+"BloomBox enviará el IPA directamente al SideStore integrado, sin abrir el menú Compartir." = "BloomBox will send this IPA directly to built-in SideStore without opening the Share sheet.";
+"SideStore integrado no está disponible en esta instalación." = "Built-in SideStore is unavailable in this installation.";
+"Preparando IPA para SideStore…" = "Preparing IPA for SideStore…";
 "Se abrirá Compartir: selecciona SideStore para importar el IPA." = "The Share sheet will open: choose SideStore to import the IPA.";
 "Abrir SideStore para importar el archivo" = "Open SideStore to import the file";
 "SideStore: espacios libres sin verificar" = "SideStore: available slots not verified";
