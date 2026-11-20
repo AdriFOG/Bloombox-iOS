@@ -67,7 +67,14 @@ struct BloomBoxWidgetGallery: View {
         .navigationViewStyle(.stack)
         .onAppear {
             pageKinds = pageSelection ?? []
-            photo = UIImage(contentsOfFile: photoURL.path)
+        }
+        .task {
+            let source = photoURL
+            let decoded = await Task.detached(priority: .utility) {
+                BloomBoxImageCache.downsample(source, maxPixelSize: 512)
+            }.value
+            guard !Task.isCancelled else { return }
+            photo = decoded
         }
         .accessibilityIdentifier("bloombox.widgets.gallery")
     }
