@@ -10,6 +10,8 @@
 	<true/>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>MusicHapticsSupported</key>
+	<true/>
 	<key>CFBundleDisplayName</key>
 	<string>BloomBox</string>
 	<key>UTImportedTypeDeclarations</key>

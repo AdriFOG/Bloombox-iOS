@@ -33,6 +33,11 @@ class LCAppModel: ObservableObject, Hashable {
             appInfo.isJITNeeded = uiIsJITNeeded
         }
     }
+    @Published var uiHelperProcessesSupport : Bool {
+        didSet {
+            appInfo.helperProcessesSupport = uiHelperProcessesSupport
+        }
+    }
     @Published var uiClassicMode : Bool {
         didSet {
             appInfo.classicMode = uiClassicMode
@@ -189,6 +194,7 @@ class LCAppModel: ObservableObject, Hashable {
         }
         
         self.uiIsJITNeeded = appInfo.isJITNeeded
+        self.uiHelperProcessesSupport = appInfo.helperProcessesSupport
         self.uiClassicMode = appInfo.classicMode
         self.uiIsHidden = appInfo.isHidden
         self.uiIsLocked = appInfo.isLocked

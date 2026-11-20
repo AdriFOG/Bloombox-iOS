@@ -154,6 +154,11 @@ struct LCAppSettingsView: View {
             
             
             Section {
+                Toggle(isOn: $model.uiHelperProcessesSupport) {
+                    Text(Locale.current.language.languageCode?.identifier == "es"
+                         ? "Permitir procesos auxiliares" : "Helper Process Support")
+                }
+                .disabled(model.uiIs32bit)
                 Toggle(isOn: $model.uiIsJITNeeded) {
                     Text("lc.appSettings.launchWithJit".loc)
                 }
