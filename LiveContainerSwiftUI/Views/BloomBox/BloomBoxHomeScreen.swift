@@ -77,7 +77,7 @@ struct BloomBoxHomeScreen: View {
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @AppStorage("LiveBoardReduceMotion", store: LiveContainerPreferencesAdapter.defaults) private var customReduceMotion = false
     @AppStorage("LiveBoardHiddenPages", store: LiveContainerPreferencesAdapter.defaults) private var hiddenPagesJSON = "[]"
-    private var reduceMotion: Bool { systemReduceMotion || customReduceMotion }
+    private var reduceMotion: Bool { systemReduceMotion || customReduceMotion || !performance.allowsDecorations }
     @AppStorage("BloomBoxBuiltInFolderMigrated", store: LiveContainerPreferencesAdapter.defaults)
     private var builtInFolderMigrated = false
     @AppStorage("BloomBoxWidgetMissingAppFallbacks", store: LiveContainerPreferencesAdapter.defaults)
@@ -282,7 +282,10 @@ struct BloomBoxHomeScreen: View {
                 .font(.system(size: 25, weight: .semibold))
                 .foregroundStyle(profileAccent)
                 .frame(width: 57, height: 57)
-                .background(.ultraThinMaterial, in: Circle())
+                .background {
+                    if performance.allowsGlass { Circle().fill(.ultraThinMaterial) }
+                    else { Circle().fill(Color(white: 0.13)) }
+                }
                 .overlay(Circle().strokeBorder(profileAccent.opacity(0.58), lineWidth: 1.3))
                 .shadow(color: profileAccent.opacity(0.28), radius: 15, y: 5)
         }
@@ -577,7 +580,13 @@ struct BloomBoxHomeScreen: View {
                 }
                 .foregroundStyle(.white)
                 .padding(14)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
+                .background {
+                    if performance.allowsGlass {
+                        RoundedRectangle(cornerRadius: 20).fill(.ultraThinMaterial)
+                    } else {
+                        RoundedRectangle(cornerRadius: 20).fill(Color(white: 0.13))
+                    }
+                }
                 .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(.white.opacity(0.25)))
                 .padding(.horizontal, 18)
                 .padding(.top, 8)
