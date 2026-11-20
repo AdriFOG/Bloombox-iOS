@@ -285,12 +285,10 @@ int NSExtensionMain(int argc, char *argv[], char *envp[], char *apple[]) {
             kern_return_t status = bootstrap_look_up(bootstrap_port, service.UTF8String, &port);
             if (status == KERN_SUCCESS && MACH_PORT_VALID(port)) {
                 mach_port_deallocate(mach_task_self(), port);
-                xpc_release(properties);
                 return LivePlugInMain(argc, argv, envp, apple);
             }
         }
     }
-    if (properties) xpc_release(properties);
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wundeclared-selector"
     method_setImplementation(class_getInstanceMethod(NSClassFromString(@"NSXPCDecoder"), @selector(_validateAllowedClass:forKey:allowingInvocations:)), (IMP)hook_do_nothing);
