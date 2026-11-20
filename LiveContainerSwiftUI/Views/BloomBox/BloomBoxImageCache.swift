@@ -97,6 +97,7 @@ struct BloomBoxStaticVideoPoster: View {
     let fit: Bool
     let maxPixelSize: Int
     var blurRadius: CGFloat = 0
+    var clearBackground = false
     @State private var image: UIImage?
 
     var body: some View {
@@ -105,7 +106,7 @@ struct BloomBoxStaticVideoPoster: View {
                 Image(uiImage: image).resizable()
                     .aspectRatio(contentMode: fit ? .fit : .fill)
             } else {
-                Color.black
+                clearBackground ? Color.clear : Color.black
             }
         }
         .task(id: "\(url.path)|\(maxPixelSize)|\(blurRadius)") {
