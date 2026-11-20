@@ -65,7 +65,7 @@ struct BloomBoxNovaSettingsView: View {
 
     private var motionSection: some View {
         Section(t("Movimiento", "Motion")) {
-            Picker(t("Animación al abrir", "Launch animation"), selection: $layout.animation) {
+            Picker(t("Animación al abrir", "Launch animation"), selection: $layout.launchAnimation) {
                 Text("Zoom").tag("zoom")
                 Text(t("Deslizamiento", "Slide")).tag("slide")
                 Text(t("Desvanecer", "Fade")).tag("fade")
