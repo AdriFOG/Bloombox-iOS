@@ -13,7 +13,11 @@ enum BloomBoxImageCache {
 
     static func downsample(_ url: URL, maxPixelSize: Int) -> UIImage? {
         let side = max(32, min(3072, maxPixelSize))
-        let key = "\(url.path)|\(side)" as NSString
+        // Imported themes may overwrite the same wallpaper path: cache by file
+        // version, not only by URL. This metadata read runs on the worker thread.
+        let metadata = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+        let version = "\(metadata?.contentModificationDate?.timeIntervalSince1970 ?? 0)|\(metadata?.fileSize ?? 0)"
+        let key = "\(url.path)|\(side)|\(version)" as NSString
         if let cached = cache.object(forKey: key) { return cached }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, [
             kCGImageSourceShouldCache: false
