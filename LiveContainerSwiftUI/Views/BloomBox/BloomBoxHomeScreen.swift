@@ -992,6 +992,8 @@ struct BloomBoxHomeScreen: View {
         } message: {
             Text(appTweakError ?? "")
         }
+        } // guestActive false
+        } // Group
     }
 
     private func installMotionWallpaper(_ name: String) {
@@ -3297,8 +3299,6 @@ struct BloomBoxHomeScreen: View {
         }
         return true
     }
-        } // guestActive
-        } // Group
 }
 
 
