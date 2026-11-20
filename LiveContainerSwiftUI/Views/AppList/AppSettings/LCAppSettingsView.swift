@@ -155,7 +155,7 @@ struct LCAppSettingsView: View {
             
             Section {
                 Toggle(isOn: $model.uiHelperProcessesSupport) {
-                    Text(Locale.current.language.languageCode?.identifier == "es"
+                    Text((Locale.preferredLanguages.first ?? "en").lowercased().hasPrefix("es")
                          ? "Permitir procesos auxiliares" : "Helper Process Support")
                 }
                 .disabled(model.uiIs32bit)
@@ -323,7 +323,7 @@ struct LCAppSettingsView: View {
                 }
                 if #available(iOS 26.0, *) {
                     Toggle(isOn: $model.uiFixBackgroundTaskIdentifiers) {
-                        Text(Locale.current.language.languageCode?.identifier == "es"
+                        Text((Locale.preferredLanguages.first ?? "en").lowercased().hasPrefix("es")
                              ? "Corregir tareas en segundo plano"
                              : "Fix Background Processing Tasks")
                     }
