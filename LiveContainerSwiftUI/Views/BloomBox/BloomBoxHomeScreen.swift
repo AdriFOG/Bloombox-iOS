@@ -320,16 +320,16 @@ struct BloomBoxHomeScreen: View {
         } else {
         GeometryReader { geometry in
             ZStack(alignment: .top) {
-                if (searching || page == libraryPageIndex) && performance.allowsGlass {
+                if (searching || openFolder != nil || page == libraryPageIndex) && performance.allowsGlass {
                     if wallpaperStyle == "motion", let motionURL {
                         GeometryReader { size in
                             BloomBoxStaticVideoPoster(url: motionURL, fit: wallpaperFit,
                                 maxPixelSize: Int(max(size.size.width, size.size.height) * UIScreen.main.scale),
-                                blurRadius: 14)
+                                blurRadius: openFolder != nil ? 18 : 14)
                                 .frame(width: size.size.width, height: size.size.height).clipped()
                         }.ignoresSafeArea()
                     } else {
-                        background.blur(radius: 14)
+                        background.blur(radius: openFolder != nil ? 18 : 14)
                     }
                 } else {
                     background
@@ -1062,7 +1062,8 @@ struct BloomBoxHomeScreen: View {
                 if performance.level >= .serious {
                     Color(white: 0.08)
                 } else if wallpaperStyle == "motion", let url = motionURL {
-                    if performance.allowsVideo && !pauseWallpaper && !reduceMotion && !paused {
+                    if performance.allowsVideo && !pauseWallpaper && !reduceMotion && !paused &&
+                        !searching && openFolder == nil && page != libraryPageIndex {
                         BloomBoxAnimatedWallpaper(url: url, fit: wallpaperFit, paused: false)
                             .id(motionWallpaper)
                             .frame(width: geometry.size.width, height: geometry.size.height).clipped()
