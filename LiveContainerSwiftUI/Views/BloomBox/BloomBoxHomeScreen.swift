@@ -114,6 +114,16 @@ struct BloomBoxHomeScreen: View {
     private var unopenedGiftKeys: Set<String> {
         Set((try? JSONDecoder().decode([String].self, from: Data(giftKeysJSON.utf8))) ?? [])
     }
+    private func refreshNewInstallGift(_ notification: Notification) {
+        guard let key = notification.object as? String, appMap[key] != nil else { return }
+        // An external UserDefaults.set does not always refresh @AppStorage in
+        // the currently mounted Home view. Explicitly update its SwiftUI state
+        // before the overlay disappears, without requiring an app restart.
+        let current = LiveContainerPreferencesAdapter.defaults
+            .string(forKey: "BloomBoxPendingGiftKeysV1") ?? "[]"
+        if giftKeysJSON != current { giftKeysJSON = current }
+        reconcile()
+    }
     private func revealGift(_ key: String) {
         var pending = unopenedGiftKeys
         guard pending.remove(key) != nil else { return }
@@ -339,7 +349,8 @@ struct BloomBoxHomeScreen: View {
                 if installInProgress {
                     BloomBoxHomeInstallationNotice(progress: installProgress,
                                                        completed: installCompleted,
-                                                       reduceMotion: reduceMotion)
+                                                       reduceMotion: reduceMotion,
+                                                       accentColor: profileAccent)
                         .transition(.opacity)
                         .zIndex(30)
                 }
@@ -423,6 +434,10 @@ struct BloomBoxHomeScreen: View {
                     aliveRevealed = true
                     stopAlivePlayfulness()
                 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for:
+                Notification.Name("BloomBoxNewInstallGiftCreated"))) { notification in
+                refreshNewInstallGift(notification)
             }
             .onChange(of: appKeys) { _ in reconcile() }
             .onChange(of: layout) {
