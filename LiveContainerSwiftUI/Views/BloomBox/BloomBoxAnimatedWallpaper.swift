@@ -61,6 +61,9 @@ private final class BloomBoxMotionSurface: UIView {
     override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = .black
+        isOpaque = false
+        movieLayer.isOpaque = false
+        movieLayer.backgroundColor = UIColor.clear.cgColor
         clipsToBounds = true
         layer.addSublayer(movieLayer)
         layer.addSublayer(gifLayer)
@@ -85,7 +88,7 @@ private final class BloomBoxMotionSurface: UIView {
     func configure(url: URL, fit: Bool, playing: Bool, transparentGIF: Bool) {
         let isGIF = url.pathExtension.lowercased() == "gif"
         shouldPlay = playing
-        backgroundColor = isGIF && transparentGIF ? .clear : .black
+        backgroundColor = transparentGIF ? .clear : .black
         movieLayer.videoGravity = fit ? .resizeAspect : .resizeAspectFill
         gifLayer.contentsGravity = fit ? .resizeAspect : .resizeAspectFill
 
