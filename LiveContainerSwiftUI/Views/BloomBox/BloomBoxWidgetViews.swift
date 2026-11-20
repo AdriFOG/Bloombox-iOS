@@ -17,7 +17,7 @@ enum BloomBoxWidgetMedia {
     static func url(for name: String?) -> URL? {
         guard let name, name.hasPrefix("widget-"),
               (name as NSString).lastPathComponent == name,
-              ["gif", "jpg", "png", "webp"].contains((name as NSString).pathExtension.lowercased())
+              ["gif", "jpg", "png", "webp", "mov"].contains((name as NSString).pathExtension.lowercased())
         else { return nil }
         return directory.appendingPathComponent(name)
     }
@@ -55,7 +55,15 @@ enum BloomBoxWidgetMedia {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         do {
             try payload.write(to: target, options: .atomic)
-            if isGIF { _ = try BloomBoxMotionMedia.gifFrames(target) }
+            if isGIF {
+                _ = try BloomBoxMotionMedia.gifFrames(target)
+                let converted = target.deletingPathExtension().appendingPathExtension("mov")
+                if (try? BloomBoxGIFTranscoder.convert(target, to: converted,
+                                                       preserveAlpha: true)) != nil {
+                    try? FileManager.default.removeItem(at: target)
+                    return converted.lastPathComponent
+                }
+            }
             return file
         } catch {
             try? FileManager.default.removeItem(at: target)
@@ -374,10 +382,10 @@ struct BloomBoxGridWidgetView: View {
                 default:
                     if let file = BloomBoxWidgetMedia.url(for: widget.mediaName) {
                         if file.pathExtension.lowercased() == "gif" ||
-                            file.pathExtension.lowercased() == "mp4" {
+                            file.pathExtension.lowercased() == "mov" {
                             BloomBoxAnimatedWallpaper(url: file, fit: !widget.fill,
                                 paused: scenePhase != .active || !active || !performance.allowsVideo,
-                                clearBackground: file.pathExtension.lowercased() == "gif")
+                                clearBackground: true)
                         } else {
                             BloomBoxDownsampledImage(url: file, fit: !widget.fill,
                                 maxPixelSize: Int(max(width, height) * UIScreen.main.scale))
