@@ -41,13 +41,22 @@ struct LiveBoardEditWobble: ViewModifier {
     var phase: Double = 0
     var speed: Double = 22
     var amplitude: Double = 1.5
+    @State private var rocking = false
+
     @ViewBuilder func body(content: Content) -> some View {
         if active {
-            TimelineView(.animation(minimumInterval: 1.0 / 30)) { time in
-                content.rotationEffect(.degrees(sin(time.date.timeIntervalSinceReferenceDate * speed + phase) * amplitude))
-            }
+            content
+                .rotationEffect(.degrees(rocking ? amplitude : -amplitude))
+                .animation(
+                    .easeInOut(duration: max(0.18, .pi / max(1, speed)))
+                        .repeatForever(autoreverses: true)
+                        .delay(phase / max(1, speed)),
+                    value: rocking
+                )
+                .onAppear { rocking = true }
+                .onDisappear { rocking = false }
         } else {
-            content.rotationEffect(.zero).transaction { $0.animation = nil; $0.disablesAnimations = true }
+            content
         }
     }
 }
