@@ -24,6 +24,7 @@
 @end
 
 @interface AppSceneViewController()
+@property(nonatomic,strong) UIView *bloomBoxStartupCover;
 @property(nonatomic) UIWindowScene *hostScene;
 @property(nonatomic) NSString *sceneID;
 @property(nonatomic) NSExtension* extension;
@@ -45,10 +46,79 @@
 
 + (BOOL)bloomBoxSendURL:(NSString *)urlString toContainer:(NSString *)dataUUID {
     if (![NSThread isMainThread] || !urlString.length || !dataUUID.length) return NO;
+    NSURL *link = [NSURL URLWithString:urlString];
+    if (!link.scheme.length) return NO;
     AppSceneViewController *target = [[self bloomBoxActiveGuestScenes] objectForKey:dataUUID];
     if (!target || !target.isAppRunning || !target.presenter || !target.presenter.scene) return NO;
     [target openURLScheme:urlString];
     return YES;
+}
+
++ (NSMutableDictionary<NSString *, NSString *> *)bloomBoxPendingStartupTitles {
+    static NSMutableDictionary<NSString *, NSString *> *titles;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ titles = [NSMutableDictionary dictionary]; });
+    return titles;
+}
+
++ (void)bloomBoxBeginStartupForContainer:(NSString *)dataUUID title:(NSString *)title {
+    if (![NSThread isMainThread] || !dataUUID.length) return;
+    [self bloomBoxPendingStartupTitles][dataUUID] = title.length ? title : @"Husk";
+    AppSceneViewController *target = [[self bloomBoxActiveGuestScenes] objectForKey:dataUUID];
+    if (target) [target bloomBoxShowStartupCover:title];
+}
+
++ (void)bloomBoxEndStartupForContainer:(NSString *)dataUUID {
+    if (![NSThread isMainThread] || !dataUUID.length) return;
+    [[self bloomBoxPendingStartupTitles] removeObjectForKey:dataUUID];
+    AppSceneViewController *target = [[self bloomBoxActiveGuestScenes] objectForKey:dataUUID];
+    [target bloomBoxHideStartupCover];
+}
+
+- (void)bloomBoxHideStartupCover {
+    [self.bloomBoxStartupCover removeFromSuperview];
+    self.bloomBoxStartupCover = nil;
+}
+
+- (void)bloomBoxShowStartupCover:(NSString *)title {
+    [self bloomBoxHideStartupCover];
+    UIView *cover = [[UIView alloc] initWithFrame:self.view.bounds];
+    cover.backgroundColor = [UIColor colorWithRed:0.055 green:0.044 blue:0.11 alpha:1];
+    cover.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    BOOL english = [[NSLocale preferredLanguages].firstObject.lowercaseString hasPrefix:@"en"];
+    UILabel *brand = [[UILabel alloc] init];
+    brand.text = @"BLOOMBOX  ✦  HUSK";
+    brand.textColor = [UIColor colorWithRed:0.75 green:0.6 blue:1 alpha:1];
+    brand.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
+    UILabel *name = [[UILabel alloc] init];
+    name.text = english ? [NSString stringWithFormat:@"Starting %@", title ?: @"Android"]
+                        : [NSString stringWithFormat:@"Iniciando %@", title ?: @"Android"];
+    name.numberOfLines = 2;
+    name.textAlignment = NSTextAlignmentCenter;
+    name.textColor = UIColor.whiteColor;
+    name.font = [UIFont systemFontOfSize:23 weight:UIFontWeightBold];
+    UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleLarge];
+    spinner.color = [UIColor colorWithRed:0.75 green:0.6 blue:1 alpha:1];
+    [spinner startAnimating];
+    UILabel *detail = [[UILabel alloc] init];
+    detail.text = english ? @"Preparing game and JIT…" : @"Preparando juego y JIT…";
+    detail.textColor = [UIColor colorWithWhite:0.78 alpha:1];
+    detail.textAlignment = NSTextAlignmentCenter;
+    detail.font = [UIFont systemFontOfSize:14];
+    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[brand, name, spinner, detail]];
+    stack.axis = UILayoutConstraintAxisVertical;
+    stack.alignment = UIStackViewAlignmentCenter;
+    stack.spacing = 18;
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
+    [cover addSubview:stack];
+    [NSLayoutConstraint activateConstraints:@[
+        [stack.centerXAnchor constraintEqualToAnchor:cover.centerXAnchor],
+        [stack.centerYAnchor constraintEqualToAnchor:cover.centerYAnchor],
+        [stack.widthAnchor constraintLessThanOrEqualToAnchor:cover.widthAnchor multiplier:0.87]
+    ]];
+    [self.view addSubview:cover];
+    [self.view bringSubviewToFront:cover];
+    self.bloomBoxStartupCover = cover;
 }
 
 
@@ -292,6 +362,8 @@
     [self.view.window.windowScene _registerSettingsDiffActionArray:@[self] forKey:self.sceneID];
     if (self.dataUUID.length) {
         [[AppSceneViewController bloomBoxActiveGuestScenes] setObject:self forKey:self.dataUUID];
+        NSString *pending = [AppSceneViewController bloomBoxPendingStartupTitles][self.dataUUID];
+        if (pending) [self bloomBoxShowStartupCover:pending];
     }
 }
 
@@ -418,7 +490,9 @@
         if (self.dataUUID.length &&
             [[AppSceneViewController bloomBoxActiveGuestScenes] objectForKey:self.dataUUID] == self) {
             [[AppSceneViewController bloomBoxActiveGuestScenes] removeObjectForKey:self.dataUUID];
+            [[AppSceneViewController bloomBoxPendingStartupTitles] removeObjectForKey:self.dataUUID];
         }
+        [self bloomBoxHideStartupCover];
         if(self.sceneID) {
             [[PrivClass(FBSceneManager) sharedInstance] destroyScene:self.sceneID withTransitionContext:nil];
         }
