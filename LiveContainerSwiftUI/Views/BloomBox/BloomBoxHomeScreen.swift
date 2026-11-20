@@ -27,6 +27,8 @@ struct BloomBoxHomeScreen: View {
     private var gameBoxShortcutY = 0.20
     @State private var gameBoxShortcutDrag: CGSize = .zero
     @EnvironmentObject private var sharedModel: SharedModel
+    @ObservedObject private var performance = BloomBoxPerformanceBudget.shared
+    @State private var motionURL: URL?
     @ObservedObject private var appCustomization = LiveBoardAppCustomization.shared
     @State private var appearanceApp: LiveBoardAppearanceSelection?
     @State private var jitSetup = false
@@ -308,11 +310,27 @@ struct BloomBoxHomeScreen: View {
     }
 
     var body: some View {
+        Group {
+        if performance.guestActive {
+            // Dismantle the whole desktop subtree while a guest owns the screen.
+            Color.black.ignoresSafeArea()
+        } else {
         GeometryReader { geometry in
             ZStack(alignment: .top) {
-                background
-                    .blur(radius: (searching || page == libraryPageIndex) ? 14 : 0)
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.38), value: page == libraryPageIndex)
+                if (searching || page == libraryPageIndex) && performance.allowsGlass {
+                    if wallpaperStyle == "motion", let motionURL {
+                        GeometryReader { size in
+                            BloomBoxStaticVideoPoster(url: motionURL, fit: wallpaperFit,
+                                maxPixelSize: Int(max(size.size.width, size.size.height) * UIScreen.main.scale),
+                                blurRadius: 14)
+                                .frame(width: size.size.width, height: size.size.height).clipped()
+                        }.ignoresSafeArea()
+                    } else {
+                        background.blur(radius: 14)
+                    }
+                } else {
+                    background
+                }
                 // Dock belongs to each Home page, not a floating overlay.
                 // Swiping to News or App Library moves the Dock away with Home.
                 TabView(selection: $page) {
@@ -321,33 +339,33 @@ struct BloomBoxHomeScreen: View {
                                      gameNames: newsGameNames)
                         .tag(0)
                     ForEach(visiblePageIndices, id: \.self) { index in
-                        ZStack(alignment: .bottom) {
-                            // Reserve the real height of page controls + Dock. Negative
-                            // Dock padding used to push its glass outside its layout.
-                            homePage(index,
-                                     width: geometry.size.width,
-                                     height: max(400, geometry.size.height - (largeIcons ? 178 : 164)))
-                                .padding(.bottom, largeIcons ? 178 : 164)
-                            VStack(spacing: 0) {
-                                pageControl
-                                    .padding(.bottom, 12)
-                                dock(width: geometry.size.width, homePageIndex: index)
-                                    .padding(.horizontal, 12)
-                            }
-                            .padding(.bottom, 4)
-                        }
-                        .frame(width: geometry.size.width, height: geometry.size.height)
-                        .tag(index + 1)
+                        homePage(index,
+                                 width: geometry.size.width,
+                                 height: max(400, geometry.size.height - (largeIcons ? 178 : 164)))
+                            .padding(.bottom, largeIcons ? 178 : 164)
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                            .tag(index + 1)
                     }
                     appLibrary(width: geometry.size.width)
                         .tag(libraryPageIndex)
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height)
                 .tabViewStyle(.page(indexDisplayMode: .never))
-                .blur(radius: openFolder == nil ? 0 : 18)
-                .blur(radius: searching ? 14 : 0)
+                .modifier(BloomBoxConditionalBlur(active: openFolder != nil && performance.allowsGlass, radius: 18))
+                .modifier(BloomBoxConditionalBlur(active: searching && performance.allowsGlass, radius: 14))
                 .allowsHitTesting(!searching && !installInProgress)
                 .accessibilityHidden(searching || installInProgress)
+                // One shared Dock and page control, instead of one copy in every page.
+                if page > 0 && page < libraryPageIndex && !searching && openFolder == nil {
+                    VStack(spacing: 0) {
+                        pageControl.padding(.bottom, 12)
+                        dock(width: geometry.size.width, homePageIndex: max(0, page - 1))
+                            .padding(.horizontal, 12)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, 4)
+                    .zIndex(11)
+                }
                 if installInProgress {
                     BloomBoxHomeInstallationNotice(progress: installProgress,
                                                        completed: installCompleted,
@@ -475,7 +493,8 @@ struct BloomBoxHomeScreen: View {
                 migrateLegacyPageWidgets()
                 restoreWidgetSpace()
                 homeHasAppeared = true
-                wallpaper = UIImage(contentsOfFile: wallpaperURL.path)
+                loadWallpaperImage()
+                resolveMotionWallpaper()
                 if #available(iOS 16.2, *) {
                     Task { await ManzanaExpiryReminderCenter.shared.synchronize() }
                 }
@@ -977,6 +996,7 @@ struct BloomBoxHomeScreen: View {
 
     private func installMotionWallpaper(_ name: String) {
         let old = motionWallpaper
+        motionURL = BloomBoxMotionMedia.directory.appendingPathComponent(name)
         motionWallpaper = name
         wallpaperStyle = "motion"
         if old != name { BloomBoxMotionMedia.remove(old) }
@@ -984,15 +1004,44 @@ struct BloomBoxHomeScreen: View {
 
     private var background: some View { wallpaperBackground(paused: pageManager) }
 
+    private func loadWallpaperImage() {
+        let url = wallpaperURL
+        Task {
+            let image = await Task.detached(priority: .utility) {
+                BloomBoxImageCache.downsample(url,
+                    maxPixelSize: Int(max(UIScreen.main.bounds.width, UIScreen.main.bounds.height)
+                        * UIScreen.main.scale))
+            }.value
+            wallpaper = image
+        }
+    }
+
+    private func resolveMotionWallpaper() {
+        let name = motionWallpaper
+        Task {
+            let resolved = await Task.detached(priority: .utility) {
+                BloomBoxMotionMedia.url(name)
+            }.value
+            if motionWallpaper == name { motionURL = resolved }
+        }
+    }
+
     private func wallpaperBackground(paused: Bool) -> some View {
         GeometryReader { geometry in
             ZStack {
                 Color.black
-                if wallpaperStyle == "motion", let url = BloomBoxMotionMedia.url(motionWallpaper) {
-                    BloomBoxAnimatedWallpaper(url: url, fit: wallpaperFit,
-                        paused: pauseWallpaper || reduceMotion || paused)
-                        .id(motionWallpaper)
-                        .frame(width: geometry.size.width, height: geometry.size.height).clipped()
+                if performance.useDarkWallpaper {
+                    Color(white: 0.08)
+                } else if wallpaperStyle == "motion", let url = motionURL {
+                    if performance.allowsVideo && !pauseWallpaper && !reduceMotion && !paused {
+                        BloomBoxAnimatedWallpaper(url: url, fit: wallpaperFit, paused: false)
+                            .id(motionWallpaper)
+                            .frame(width: geometry.size.width, height: geometry.size.height).clipped()
+                    } else {
+                        BloomBoxStaticVideoPoster(url: url, fit: wallpaperFit,
+                            maxPixelSize: Int(max(geometry.size.width, geometry.size.height) * UIScreen.main.scale))
+                            .frame(width: geometry.size.width, height: geometry.size.height).clipped()
+                    }
                 } else if wallpaperStyle == "photo", let wallpaper {
                     Image(uiImage: wallpaper).resizable().aspectRatio(contentMode: wallpaperFit ? .fit : .fill)
                         .frame(width: geometry.size.width, height: geometry.size.height).clipped()
@@ -1789,7 +1838,8 @@ struct BloomBoxHomeScreen: View {
         layout = newLayout
         savedLayout = newLayout.encoded
         syncImportedThemePreferences()
-        wallpaper = UIImage(contentsOfFile: wallpaperURL.path)
+        loadWallpaperImage()
+        resolveMotionWallpaper()
         page = 1
         selectedWidgetID = nil
         finishEditing()
@@ -2004,7 +2054,8 @@ struct BloomBoxHomeScreen: View {
             .offset(x: 14 + CGFloat(widget.slot % 4) * cellWidth,
                     y: (editing ? 50 : 20) + CGFloat(widget.slot / 4) * pitch)
             .modifier(BloomBoxLivingMotion(mode: living.mode, speed: living.speed, travel: living.travel,
-                enabled: scenePhase == .active && page == index + 1 && !editing && !reduceMotion && !searching))
+                enabled: scenePhase == .active && page == index + 1 && !editing &&
+                    !reduceMotion && !searching && performance.allowsLivingWidgets))
             .shadow(color: (living.depth ?? false) && !editing ? Color.black.opacity(0.38) : .clear,
                     radius: (living.depth ?? false) && !editing ? 15 : 0, x: 0, y: 12)
             .shadow(color: (living.glow ?? false) && !editing ? accent.opacity(0.48) : .clear,
@@ -2641,7 +2692,7 @@ struct BloomBoxHomeScreen: View {
         .padding(.horizontal, 8)
         .frame(height: 40)
         .liveBoardGlass(radius: 16, interactive: false)
-        .blur(radius: openFolder == nil ? 0 : 18)
+        .modifier(BloomBoxConditionalBlur(active: openFolder != nil && performance.allowsGlass, radius: 18))
         .accessibilityIdentifier("home.pages")
     }
 
@@ -3246,6 +3297,8 @@ struct BloomBoxHomeScreen: View {
         }
         return true
     }
+        } // guestActive
+        } // Group
 }
 
 
