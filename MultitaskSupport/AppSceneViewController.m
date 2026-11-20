@@ -32,6 +32,25 @@
 
 @implementation AppSceneViewController
 
+// Strong container keys, weak view controllers. Never keep a closed guest
+// alive simply because a launcher has a saved Android shortcut.
++ (NSMapTable<NSString *, AppSceneViewController *> *)bloomBoxActiveGuestScenes {
+    static NSMapTable<NSString *, AppSceneViewController *> *scenes;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        scenes = [NSMapTable strongToWeakObjectsMapTable];
+    });
+    return scenes;
+}
+
++ (BOOL)bloomBoxSendURL:(NSString *)urlString toContainer:(NSString *)dataUUID {
+    if (![NSThread isMainThread] || !urlString.length || !dataUUID.length) return NO;
+    AppSceneViewController *target = [[self bloomBoxActiveGuestScenes] objectForKey:dataUUID];
+    if (!target || !target.isAppRunning || !target.presenter || !target.presenter.scene) return NO;
+    [target openURLScheme:urlString];
+    return YES;
+}
+
 
 - (instancetype)initWithBundleId:(NSString*)bundleId dataUUID:(NSString*)dataUUID delegate:(id<AppSceneViewControllerDelegate>)delegate {
     self = [super initWithNibName:nil bundle:nil];
@@ -271,6 +290,9 @@
     self.contentView.layer.position = CGPointMake(0, 0);
     
     [self.view.window.windowScene _registerSettingsDiffActionArray:@[self] forKey:self.sceneID];
+    if (self.dataUUID.length) {
+        [[AppSceneViewController bloomBoxActiveGuestScenes] setObject:self forKey:self.dataUUID];
+    }
 }
 
 - (void)terminate {
@@ -393,6 +415,10 @@
     }
     _isAppTerminationCleanUpCalled = true;
     dispatch_async(dispatch_get_main_queue(), ^{
+        if (self.dataUUID.length &&
+            [[AppSceneViewController bloomBoxActiveGuestScenes] objectForKey:self.dataUUID] == self) {
+            [[AppSceneViewController bloomBoxActiveGuestScenes] removeObjectForKey:self.dataUUID];
+        }
         if(self.sceneID) {
             [[PrivClass(FBSceneManager) sharedInstance] destroyScene:self.sceneID withTransitionContext:nil];
         }
