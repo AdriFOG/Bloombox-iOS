@@ -170,7 +170,7 @@ struct BloomBoxNovaLauncher: View {
                             }
                             Spacer()
                             Button(t("Listo", "Done")) { editing = false }
-                                .fontWeight(.bold)
+                                .font(.footnote.weight(.bold))
                         }
                         .font(.footnote)
                         .foregroundStyle(.white)
