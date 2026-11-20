@@ -440,7 +440,12 @@ struct BloomBoxHomeScreen: View {
             })
             .onChange(of: scenePhase) { phase in
                 stopAlivePlayfulness()
-                if phase == .active { ramPlus.refresh() }
+                if phase == .active {
+                    // Recheck on foreground: the OS may have changed thermal or
+                    // power state while BloomBox was suspended.
+                    performance.refresh()
+                    ramPlus.refresh()
+                }
                 if phase == .active, #available(iOS 16.2, *) {
                     Task { await ManzanaExpiryReminderCenter.shared.synchronize() }
                 }
@@ -1059,8 +1064,11 @@ struct BloomBoxHomeScreen: View {
         GeometryReader { geometry in
             ZStack {
                 Color.black
-                if performance.level >= .serious {
-                    Color(white: 0.08)
+                // A warm phone or Low Power Mode should freeze animations,
+                // not erase the user-selected wallpaper. Only the truly
+                // critical thermal state replaces it with a dark surface.
+                if performance.level == .critical {
+                    Color.black
                 } else if wallpaperStyle == "motion", let url = motionURL {
                     if performance.allowsVideo && !pauseWallpaper && !reduceMotion && !paused &&
                         !searching && openFolder == nil && page != libraryPageIndex {
