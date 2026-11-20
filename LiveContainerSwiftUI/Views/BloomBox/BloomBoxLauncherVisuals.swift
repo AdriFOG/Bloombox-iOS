@@ -200,9 +200,10 @@ private struct LiveBoardGlassSurface: ViewModifier {
     let radius: CGFloat
     let interactive: Bool
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @ObservedObject private var performance = BloomBoxPerformanceBudget.shared
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        if reduceTransparency {
+        if reduceTransparency || !performance.allowsGlass {
             content.background(Color(white: 0.16), in: shape)
                 .overlay(shape.strokeBorder(.white.opacity(0.18), lineWidth: 0.5))
         } else if #available(iOS 26.0, *) {
@@ -224,10 +225,11 @@ extension View {
 private struct BloomBoxHomeDockGlassSurface: ViewModifier {
     let radius: CGFloat
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @ObservedObject private var performance = BloomBoxPerformanceBudget.shared
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        if reduceTransparency {
+        if reduceTransparency || !performance.allowsGlass {
             content
                 .background(Color(white: 0.13).opacity(0.95), in: shape)
                 .overlay(shape.strokeBorder(.white.opacity(0.28), lineWidth: 1))
