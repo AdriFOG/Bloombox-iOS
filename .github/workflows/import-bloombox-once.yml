@@ -1,0 +1,59 @@
+name: BloomBox one-time source migration
+
+on:
+  push:
+    paths:
+      - .github/workflows/import-bloombox-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    name: Import full source history without publishing a release
+    if: github.repository == 'AdriFOG/Bloombox-iOS'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Import verified source while preserving both histories
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXPECTED_TARGET: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git clone --branch main --single-branch https://github.com/adri23rep-stack/BloomBox.git source
+          cd source
+          EXPECTED_SOURCE=97f73a77d3bca21f3e800b51fb132022d0f16f2a
+          SOURCE_HEAD="$(git rev-parse HEAD)"
+          if [ "$SOURCE_HEAD" != "$EXPECTED_SOURCE" ]; then
+            echo "::error::Old BloomBox main changed after its uploaded ZIP was checked; refusing import"
+            exit 1
+          fi
+          SOURCE_TREE="$(git rev-parse HEAD^{tree})"
+          if [ "$SOURCE_TREE" != "61e7843c8b061aa10802c83a57e8e9f9706ea4ba" ]; then
+            echo "::error::Old BloomBox source tree has an unexpected checksum"
+            exit 1
+          fi
+
+          # Prevent the migrated legacy workflow from auto-publishing v1.0.0
+          # when the new repository's main branch is built in the future.
+          git rm -f -- .github/workflows/first-release.yml
+          SAFE_TREE="$(git write-tree)"
+
+          git remote add destination "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags destination main
+          DEST_HEAD="$(git rev-parse FETCH_HEAD)"
+          if [ "$DEST_HEAD" != "$EXPECTED_TARGET" ]; then
+            echo "::error::Destination main changed during migration; refusing import"
+            exit 1
+          fi
+
+          export GIT_AUTHOR_NAME="BloomBox Migration"
+          export GIT_AUTHOR_EMAIL="noreply@github.com"
+          export GIT_COMMITTER_NAME="BloomBox Migration"
+          export GIT_COMMITTER_EMAIL="noreply@github.com"
+          NEW_COMMIT="$(printf '%s\n' 'Import verified BloomBox source and full Git history (no release)' '' 'Preserves the old BloomBox history and the new repository initial commit.' 'Legacy automatic first-release workflow disabled for migration safety.' | git commit-tree "$SAFE_TREE" -p "$SOURCE_HEAD" -p "$DEST_HEAD")"
+          git push destination "$NEW_COMMIT:refs/heads/main"
+          echo "Imported source from $SOURCE_HEAD as merge commit $NEW_COMMIT"
+          echo "GitHub Actions will not automatically release this version."
