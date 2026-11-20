@@ -8,5 +8,6 @@ NS_ASSUME_NONNULL_BEGIN
 /// Restricted Playnite .pthm ZIP extraction for data-only theme files; no executables.
 + (BOOL)unpackPlayniteTheme:(NSURL *)source toURL:(NSURL *)destination error:(NSError **)error NS_SWIFT_NAME(unpackPlayniteTheme(source:destination:));
 + (nullable NSDictionary<NSString *, id> *)inspectIPA:(NSURL *)source error:(NSError **)error NS_SWIFT_NAME(inspectIPA(_:));
++ (BOOL)validateAPK:(NSURL *)source error:(NSError **)error NS_SWIFT_NAME(validateAPK(_:));
 @end
 NS_ASSUME_NONNULL_END

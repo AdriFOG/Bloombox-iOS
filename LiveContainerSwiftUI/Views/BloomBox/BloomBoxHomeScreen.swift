@@ -480,6 +480,7 @@ struct BloomBoxHomeScreen: View {
                 Notification.Name("BloomBoxNewInstallGiftCreated"))) { notification in
                 refreshNewInstallGift(notification)
             }
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("BloomBoxHuskLibraryChanged"))) { _ in refreshHuskGames() }
             .onChange(of: themeActiveID) { _ in refreshHuskGames() }
             .onChange(of: husk?.appInfo.relativeBundlePath) { _ in refreshHuskGames() }
             .alert("Husk", isPresented: Binding(get: { huskError != nil }, set: { if !$0 { huskError = nil } })) {

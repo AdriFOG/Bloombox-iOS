@@ -148,6 +148,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     @State var didAppear = false
     // ipa choosing stuff
     @State var choosingIPA = false
+    @State private var apkInstalled = false
     @State private var receivedIPA: BloomBoxReceivedIPA?
     @State var errorShow = false
     @State var errorInfo = ""
@@ -558,6 +559,9 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         }, onDismiss: {
             choosingIPA = false
         })
+        .alert(BloomBoxL10n.isEnglish ? "APK installed" : "APK instalado", isPresented: $apkInstalled) {
+            Button("OK") {}
+        }
         .sheet(item: $receivedIPA) { request in
             if request.url.pathExtension.lowercased() == "apk" {
                 let husk = sharedModel.apps.first { $0.bundleIdentifier == "com.husk.app" }
@@ -1939,17 +1943,46 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             if host.appInfo.isLocked && !sharedModel.isHiddenAppUnlocked {
                 guard try await LCUtils.authenticateUser() else { return }
             }
-            let copy = try await Task.detached(priority: .userInitiated) {
+            host.ensurePrimaryContainer()
+            let folder = try BloomBoxProfileContainerAdapter.containerForLaunch(app: host, explicitlyRequested: nil)
+            guard let container = host.uiContainers.first(where: { $0.folderName == folder }) else {
+                throw "No se encontró el contenedor de Husk."
+            }
+            let home = container.containerURL
+            try await Task.detached(priority: .userInitiated) {
+                let fm = FileManager.default
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                let folder = FileManager.default.temporaryDirectory
-                    .appendingPathComponent(UUID().uuidString, isDirectory: true)
-                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                let target = folder.appendingPathComponent(url.lastPathComponent)
-                try FileManager.default.copyItem(at: url, to: target)
-                return target
+                let root = home.appendingPathComponent("Documents/TranslationLayer")
+                guard root.resolvingSymlinksInPath().standardizedFileURL.path ==
+                        home.resolvingSymlinksInPath().appendingPathComponent("Documents/TranslationLayer").standardizedFileURL.path else {
+                    throw "La carpeta de Husk no es válida."
+                }
+                try fm.createDirectory(at: root, withIntermediateDirectories: true)
+                let staging = root.appendingPathComponent("." + UUID().uuidString)
+                try fm.createDirectory(at: staging, withIntermediateDirectories: false)
+                defer { try? fm.removeItem(at: staging) }
+                let target = staging.appendingPathComponent("base.apk")
+                var coordinatorError: NSError?
+                var copyError: Error?
+                NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &coordinatorError) { source in
+                    do { try fm.copyItem(at: source, to: target) } catch { copyError = error }
+                }
+                if let error = coordinatorError { throw error }
+                if let error = copyError { throw error }
+                try BloomBoxArchive.validateAPK(target)
+                let handle = try FileHandle(forReadingFrom: target)
+                defer { try? handle.close() }
+                var hash = SHA256()
+                while let bytes = try handle.read(upToCount: 1048576), !bytes.isEmpty { hash.update(data: bytes) }
+                let id = hash.finalize().map { String(format: "%02x", $0) }.joined()
+                let installed = root.appendingPathComponent(id)
+                try url.deletingPathExtension().lastPathComponent.write(to: staging.appendingPathComponent("label.txt"), atomically: true, encoding: .utf8)
+                do { try fm.moveItem(at: staging, to: installed) }
+                catch { if !fm.fileExists(atPath: installed.appendingPathComponent("base.apk").path) { throw error } }
             }.value
-            try await host.runApp(urlStr: copy.absoluteString)
+            NotificationCenter.default.post(name: Notification.Name("BloomBoxHuskLibraryChanged"), object: nil)
+            apkInstalled = true
         } catch {
             errorInfo = error.localizedDescription
             errorShow = true

@@ -3,6 +3,7 @@
 #include "archive_entry.h"
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <string.h>
 #include <unistd.h>
 
 static BOOL fail(NSError **error, NSString *message) {
@@ -21,6 +22,25 @@ static BOOL safePath(NSString *path) {
     return YES;
 }
 @implementation BloomBoxArchive
++ (BOOL)validateAPK:(NSURL *)source error:(NSError **)error {
+    struct archive *reader = archive_read_new();
+    if (!reader) return fail(error, @"No se pudo leer el APK.");
+    archive_read_support_format_zip(reader);
+    BOOL found = NO;
+    if (archive_read_open_filename(reader, source.fileSystemRepresentation, 65536) == ARCHIVE_OK) {
+        struct archive_entry *entry;
+        while (archive_read_next_header(reader, &entry) == ARCHIVE_OK) {
+            const char *name = archive_entry_pathname(entry);
+            if (name && strcmp(name, "AndroidManifest.xml") == 0 &&
+                archive_entry_filetype(entry) == AE_IFREG && archive_entry_size(entry) > 0) {
+                found = YES;
+                break;
+            }
+        }
+    }
+    archive_read_free(reader);
+    return found || fail(error, @"APK inválido: falta AndroidManifest.xml.");
+}
 + (BOOL)packDirectory:(NSURL *)source toURL:(NSURL *)destination error:(NSError **)error {
     NSFileManager *fm = NSFileManager.defaultManager;
     source = source.URLByResolvingSymlinksInPath.URLByStandardizingPath;
