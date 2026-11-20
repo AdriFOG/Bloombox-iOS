@@ -73,6 +73,12 @@ class LCAppModel: ObservableObject, Hashable {
         }
     }
     
+    @Published var uiFixBackgroundTaskIdentifiers : Bool {
+        didSet {
+            appInfo.fixBackgroundTaskIdentifiers = uiFixBackgroundTaskIdentifiers
+        }
+    }
+
     @Published var uiHideLiveContainer : Bool {
         didSet {
             appInfo.hideLiveContainer = uiHideLiveContainer
@@ -197,6 +203,7 @@ class LCAppModel: ObservableObject, Hashable {
         self.uiUseLCBundleId = appInfo.doUseLCBundleId
         self.uiFixFilePickerNew = appInfo.fixFilePickerNew
         self.uiFixLocalNotification = appInfo.fixLocalNotification
+        self.uiFixBackgroundTaskIdentifiers = appInfo.fixBackgroundTaskIdentifiers
         self.uiHideLiveContainer = appInfo.hideLiveContainer
         self.uiNetworkBlocked = appInfo.networkBlocked
         self.uiDontInjectTweakLoader = appInfo.dontInjectTweakLoader

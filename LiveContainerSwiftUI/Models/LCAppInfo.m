@@ -601,6 +601,16 @@
     [self save];
 }
 
+// Upstream LiveContainer 3.8.14: per-guest background task identifier translation.
+- (bool)fixBackgroundTaskIdentifiers {
+    return [_info[@"fixBackgroundTaskIdentifiers"] boolValue];
+}
+
+- (void)setFixBackgroundTaskIdentifiers:(bool)enabled {
+    _info[@"fixBackgroundTaskIdentifiers"] = @(enabled);
+    [self save];
+}
+
 - (LCOrientationLock)orientationLock {
     return (LCOrientationLock) [((NSNumber*) _info[@"LCOrientationLock"]) intValue];
 }

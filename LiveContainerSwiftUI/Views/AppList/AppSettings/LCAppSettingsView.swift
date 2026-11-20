@@ -316,6 +316,13 @@ struct LCAppSettingsView: View {
                 Toggle(isOn: $model.uiFixLocalNotification) {
                     Text("lc.appSettings.fixLocalNotification".loc)
                 }
+                if #available(iOS 26.0, *) {
+                    Toggle(isOn: $model.uiFixBackgroundTaskIdentifiers) {
+                        Text(Locale.current.language.languageCode?.identifier == "es"
+                             ? "Corregir tareas en segundo plano"
+                             : "Fix Background Processing Tasks")
+                    }
+                }
                 Toggle(isOn: $model.uiUseLCBundleId) {
                     Text("lc.appSettings.useLCBundleId".loc)
                 }
