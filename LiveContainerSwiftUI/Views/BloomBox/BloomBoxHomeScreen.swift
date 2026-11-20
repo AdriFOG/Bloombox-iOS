@@ -331,8 +331,7 @@ struct BloomBoxHomeScreen: View {
                 } else {
                     background
                 }
-                // Dock belongs to each Home page, not a floating overlay.
-                // Swiping to News or App Library moves the Dock away with Home.
+                // Page contents swipe independently; Dock and controls are shared overlays.
                 TabView(selection: $page) {
                     BloomBoxNewsPage(openSettings: { desktopSettings = true },
                                      openGameBox: openGameBox,
@@ -444,6 +443,7 @@ struct BloomBoxHomeScreen: View {
                 }
             }
             .onChange(of: page) { _ in stopAlivePlayfulness() }
+            .onChange(of: motionWallpaper) { _ in resolveMotionWallpaper() }
             .onChange(of: editing) { _ in stopAlivePlayfulness() }
             .onChange(of: searching) { _ in stopAlivePlayfulness() }
             .onChange(of: openFolder) { _ in stopAlivePlayfulness() }
@@ -521,7 +521,8 @@ struct BloomBoxHomeScreen: View {
                     } catch { break }
                     guard scenePhase == .active, aliveEnabled, aliveIdleEnabled,
                           Date().timeIntervalSince(aliveLastInteraction) >= 5,
-                          !reduceMotion, !aliveBooting, !editing, !searching,
+                          !reduceMotion, performance.allowsDecorations,
+                          !aliveBooting, !editing, !searching,
                           openFolder == nil, !pageManager, !customizing,
                           !desktopSettings, !appStorePresented, !tweakStorePresented,
                           !modulesPresented, !jitSetup,
@@ -760,11 +761,13 @@ struct BloomBoxHomeScreen: View {
                 }
                 .foregroundStyle(.white)
             }
-            .onAppear {
+            .task {
                 let url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
                     .appendingPathComponent("Manzana", isDirectory: true)
                     .appendingPathComponent("widget-photo.jpg")
-                miniatureWidgetPhoto = UIImage(contentsOfFile: url.path)
+                miniatureWidgetPhoto = await Task.detached(priority: .utility) {
+                    BloomBoxImageCache.downsample(url, maxPixelSize: 500)
+                }.value
             }
             .confirmationDialog("Eliminar página", isPresented: Binding(
                 get: { pendingPageRemoval != nil },
@@ -936,18 +939,33 @@ struct BloomBoxHomeScreen: View {
             LiveBoardWallpaperPicker { image in
                 choosingWallpaper = false
                 guard let image else { return }
-                do {
-                    let size = image.size
-                    let factor = min(1, 2400 / max(size.width, size.height))
-                    let format = UIGraphicsImageRendererFormat(); format.scale = 1
-                    let resized = UIGraphicsImageRenderer(size: CGSize(width: size.width * factor, height: size.height * factor), format: format).image { _ in
-                        image.draw(in: CGRect(x: 0, y: 0, width: size.width * factor, height: size.height * factor))
-                    }
-                    guard let data = resized.jpegData(compressionQuality: 0.9) else { throw CocoaError(.fileWriteUnknown) }
-                    try FileManager.default.createDirectory(at: wallpaperURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-                    try data.write(to: wallpaperURL, options: .atomic)
-                    wallpaper = resized; wallpaperStyle = "photo"
-                } catch { wallpaperError = error.localizedDescription }
+                let target = wallpaperURL
+                let screenPixels = Int(max(UIScreen.main.bounds.width, UIScreen.main.bounds.height)
+                    * UIScreen.main.scale)
+                Task {
+                    do {
+                        let resized = try await Task.detached(priority: .userInitiated) { () throws -> UIImage in
+                            let size = image.size
+                            let factor = min(1, CGFloat(screenPixels) / max(size.width, size.height))
+                            let outputSize = CGSize(width: max(1, size.width * factor),
+                                                    height: max(1, size.height * factor))
+                            let format = UIGraphicsImageRendererFormat()
+                            format.scale = 1
+                            let output = UIGraphicsImageRenderer(size: outputSize, format: format).image { _ in
+                                image.draw(in: CGRect(origin: .zero, size: outputSize))
+                            }
+                            guard let data = output.jpegData(compressionQuality: 0.9) else {
+                                throw CocoaError(.fileWriteUnknown)
+                            }
+                            try FileManager.default.createDirectory(
+                                at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+                            try data.write(to: target, options: .atomic)
+                            return output
+                        }.value
+                        wallpaper = resized
+                        wallpaperStyle = "photo"
+                    } catch { wallpaperError = error.localizedDescription }
+                }
             }
         }
         .sheet(item: $appearanceApp) { app in LiveBoardAppAppearance(app: app.app) }
@@ -1008,11 +1026,11 @@ struct BloomBoxHomeScreen: View {
 
     private func loadWallpaperImage() {
         let url = wallpaperURL
+        let maxPixelSize = Int(max(UIScreen.main.bounds.width, UIScreen.main.bounds.height)
+            * UIScreen.main.scale)
         Task {
             let image = await Task.detached(priority: .utility) {
-                BloomBoxImageCache.downsample(url,
-                    maxPixelSize: Int(max(UIScreen.main.bounds.width, UIScreen.main.bounds.height)
-                        * UIScreen.main.scale))
+                BloomBoxImageCache.downsample(url, maxPixelSize: maxPixelSize)
             }.value
             wallpaper = image
         }
@@ -1526,6 +1544,7 @@ struct BloomBoxHomeScreen: View {
     private func migrateLegacyPageWidgets() {
         guard !placedWidgetsMigrated else { return }
         var all = placedWidgets
+        var legacyPhotoIDs: [String] = []
         for (index, values) in pageWidgets where layout.pages.indices.contains(index) {
             for kind in values where ["clock", "photo", "notes"].contains(kind) {
                 let occupied = all[index, default: []].reduce(into: Set<Int>()) { result, widget in
@@ -1536,20 +1555,26 @@ struct BloomBoxHomeScreen: View {
                     columns: 4, rows: 2, occupied: occupied) else { continue }
                 var migrated = BloomBoxPlacedWidget(kind: kind == "photo" ? "media" : kind,
                                                     slot: slot, columns: 4, rows: 2)
-                if kind == "photo" {
-                    let oldPhoto = FileManager.default.urls(for: .applicationSupportDirectory,
-                                                            in: .userDomainMask)[0]
-                        .appendingPathComponent("BloomBox/widget-photo.jpg")
-                    if let data = try? Data(contentsOf: oldPhoto),
-                       let file = try? BloomBoxWidgetMedia.importData(data) {
-                        migrated.mediaName = file
-                    }
-                }
+                if kind == "photo" { legacyPhotoIDs.append(migrated.id) }
                 all[index, default: []].append(migrated)
             }
         }
         savePlacedWidgets(all)
         placedWidgetsMigrated = true
+        if !legacyPhotoIDs.isEmpty {
+            let oldPhoto = FileManager.default.urls(for: .applicationSupportDirectory,
+                                                    in: .userDomainMask)[0]
+                .appendingPathComponent("BloomBox/widget-photo.jpg")
+            Task {
+                let name = await Task.detached(priority: .utility) { () -> String? in
+                    guard let data = try? Data(contentsOf: oldPhoto) else { return nil }
+                    return try? BloomBoxWidgetMedia.importData(data)
+                }.value
+                if let name {
+                    for id in legacyPhotoIDs { setWidgetMedia(id, name: name) }
+                }
+            }
+        }
     }
     private func addPlacedWidget(_ kind: String, columns: Int = 2, rows: Int = 2, clockStyle: String? = nil) {
         guard page > 0, layout.pages.indices.contains(page - 1) else { return }
