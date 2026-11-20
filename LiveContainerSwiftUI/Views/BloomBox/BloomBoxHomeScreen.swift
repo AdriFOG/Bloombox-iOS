@@ -239,6 +239,7 @@ struct BloomBoxHomeScreen: View {
     }
     @State private var huskGames: [HuskGame] = []
     @State private var huskStartingGame: HuskGame?
+    @State private var huskLaunchingKey: String?
     @State private var huskStartingNote = ""
     @State private var orientationGame: HuskGame?
     @State private var askForThisLaunch = false
@@ -1381,8 +1382,13 @@ struct BloomBoxHomeScreen: View {
 
     private func openHuskGame(_ game: HuskGame, mode: String) {
         guard let host = husk, huskGames.contains(where: { $0.key == game.key }),
-              huskStartingGame == nil else { return }
+              huskLaunchingKey == nil else { return }
+        huskLaunchingKey = game.key
         Task { @MainActor in
+            defer {
+                AppSceneViewController.bloomBoxEndStartup(forContainer: game.containerFolder)
+                if huskLaunchingKey == game.key { huskLaunchingKey = nil }
+            }
             let appKey = host.appInfo.relativeBundlePath ?? ""
             let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
                 .flatMap { $0.windows }.first { $0.isKeyWindow }
@@ -1438,6 +1444,8 @@ struct BloomBoxHomeScreen: View {
                     defaults.set(true, forKey: "LCMaxOneAppOnStage")
                     UserDefaults.standard.set(true, forKey: "LCLaunchMultitaskMaximized")
                     UserDefaults.standard.removeObject(forKey: "launchAppUrlScheme")
+                    AppSceneViewController.bloomBoxBeginStartup(
+                        forContainer: game.containerFolder, title: game.title)
                     try await host.runApp(multitask: true, containerFolderName: game.containerFolder)
                     let debuggerConnected = try await waitForHuskDebugger(
                         appName: host.appInfo.displayName(), startedAt: started)
