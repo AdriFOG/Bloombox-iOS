@@ -3,6 +3,19 @@ import PhotosUI
 import UniformTypeIdentifiers
 import CryptoKit
 
+/// Avoid a permanent blur pipeline when the desired radius is zero.
+struct BloomBoxConditionalBlur: ViewModifier {
+    let active: Bool
+    let radius: CGFloat
+    @ViewBuilder func body(content: Content) -> some View {
+        if active {
+            content.blur(radius: radius)
+        } else {
+            content
+        }
+    }
+}
+
 // Reusable BloomBox launcher tiles, drag feedback, wallpaper pickers and glass.
 // Nothing below launches guests or changes persisted layout identifiers.
 
