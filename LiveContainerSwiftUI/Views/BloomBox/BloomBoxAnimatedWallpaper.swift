@@ -12,13 +12,15 @@ struct BloomBoxAnimatedWallpaper: View {
 
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var performance = BloomBoxPerformanceBudget.shared
     @State private var appeared = false
 
     var body: some View {
         BloomBoxMotionPlayer(
             url: url,
             fit: fit,
-            playing: appeared && scenePhase == .active && !paused && !reduceMotion,
+            playing: appeared && scenePhase == .active && !paused && !reduceMotion &&
+                performance.allowsVideo,
             transparentGIF: clearBackground
         )
         .onAppear { appeared = true }
