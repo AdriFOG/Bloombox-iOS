@@ -20,10 +20,14 @@ assert "if url.isFileURL" in tab and "sharedModel.deepLink = url" in tab
 assert '["ipa", "tipa"].contains(url.pathExtension.lowercased())' in app_list
 assert "receivedIPA = BloomBoxReceivedIPA(url: url)" in app_list
 assert "BloomBoxIPAOpenSheet(" in app_list
-assert "ShareLink(item: fileURL)" in app_list
+assert "isPreparingSideStoreIPA" in app_list
+assert "sourceURL.startAccessingSecurityScopedResource()" in app_list
+assert "fm.copyItem(at: sourceURL, to: destination)" in app_list
+assert "LCUtils.openSideStore(delegate: self, urlStr: handoffURL.absoluteString)" in app_list
+assert "ShareLink(item: fileURL)" not in app_list
 assert "await installFromUrl(urlStr: request.url.absoluteString)" in app_list
 assert "LCUtils.openSideStore(delegate: self)" in app_list
 assert '"Instalar dentro de BloomBox" = "Install in BloomBox";' in en
 assert '"Instalar con SideStore" = "Install with SideStore";' in en
 assert "espacios libres sin verificar" in app_list
-print("PASS: Files IPA routing, destination sheet, honest SideStore limits, and English labels")
+print("PASS: Files IPA routing, direct SideStore handoff, honest limits, and English labels")
