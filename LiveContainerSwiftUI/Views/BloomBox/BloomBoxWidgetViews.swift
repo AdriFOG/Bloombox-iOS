@@ -230,7 +230,7 @@ private struct BloomBoxClockFace: View {
             let second = components.second ?? 0
             let displayHour = (widget.clock24Hour ?? true) ? hour : (hour % 12 == 0 ? 12 : hour % 12)
             let value = String(format: "%02d:%02d", displayHour, minute)
-            Group {
+            return Group {
                 switch style {
                 case "flip":
                     flipFace(value: value, date: date)
