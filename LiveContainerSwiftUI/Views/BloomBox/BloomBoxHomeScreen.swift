@@ -1978,8 +1978,10 @@ struct BloomBoxHomeScreen: View {
             icons: homeIconGrid(index, width: width, height: height),
             tiles: ZStack(alignment: .topLeading) {
                 ForEach(widgets(on: index)) { widget in
-                    homeWidgetTile(widget, pageIndex: index,
-                                   cellWidth: cellWidth, pitch: pitch)
+                    if performance.level != .critical || widget.kind != "media" {
+                        homeWidgetTile(widget, pageIndex: index,
+                                       cellWidth: cellWidth, pitch: pitch)
+                    }
                 }
             }
         )
