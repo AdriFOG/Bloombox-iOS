@@ -1,6 +1,5 @@
 import Foundation
 
-@main
 struct NovaLayoutTests {
     static func main() {
         let apps = (1...14).map { "guest:\($0)" } + BloomBoxNovaLayout.builtIns
@@ -61,3 +60,5 @@ struct NovaLayoutTests {
         print("Nova layout profile isolation, folder, dock, drawer and reconciliation tests passed")
     }
 }
+
+NovaLayoutTests.main()
