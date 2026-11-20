@@ -6,7 +6,7 @@
   },
   "Resources/BundledRuntime/LiveExec32.ipa": {
     "url": "https://github.com/LiveContainer/LiveExec32/releases/download/nightly/com.kdt.liveexec32_0.0.1.ipa",
-    "sha256": "e690c6fdc97c249cb8b67f27cea753e7bb98ea7c874f8160844e58fe92e87dba",
+    "sha256": "73c416f284e9470faeef1965122718d626fa8b2857cd9c54ad7f7e34b94aff54",
     "max_bytes": 30000000
   },
   "tmp/SideStore.ipa": {
