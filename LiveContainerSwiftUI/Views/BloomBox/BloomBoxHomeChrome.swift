@@ -8,8 +8,8 @@ struct BloomBoxHomeInstallationNotice: View {
     let progress: Double
     let completed: Bool
     let reduceMotion: Bool
+    let accentColor: Color
     @State private var hop = false
-    @State private var shimmer = false
 
     private var amount: Double {
         progress.isFinite ? min(completed ? 1 : 0.98, max(0, progress)) : 0
@@ -27,7 +27,7 @@ struct BloomBoxHomeInstallationNotice: View {
                                 .font(.system(size: min(43, bounds.size.width / 9.7),
                                               weight: .black, design: .rounded))
                                 .foregroundStyle(.white)
-                                .shadow(color: Color(red: 0.95, green: 0.21, blue: 0.48), radius: 3, y: 4)
+                                .shadow(color: accentColor.opacity(0.85), radius: 3, y: 4)
                                 .shadow(color: .black.opacity(0.35), radius: 9, y: 3)
                                 .offset(y: reduceMotion || completed ? 0 :
                                     (hop == (index.isMultiple(of: 2)) ? -7 : 3))
@@ -43,13 +43,13 @@ struct BloomBoxHomeInstallationNotice: View {
                     GeometryReader { bar in
                         ZStack(alignment: .leading) {
                             Capsule().fill(Color.white.opacity(0.96))
-                                .shadow(color: Color.pink.opacity(0.50), radius: 16)
-                            Capsule().fill(Color(red: 0.94, green: 0.76, blue: 0.85))
+                                .shadow(color: accentColor.opacity(0.55), radius: 16)
+                            Capsule().fill(accentColor.opacity(0.20))
                                 .padding(8)
                             Capsule()
                                 .fill(LinearGradient(colors: [
-                                    Color(red: 1, green: 0.65, blue: 0.83),
-                                    Color(red: 0.99, green: 0.20, blue: 0.53)
+                                    accentColor.opacity(0.55),
+                                    accentColor
                                 ], startPoint: .topLeading, endPoint: .bottomTrailing))
                                 .frame(width: max(0, (bar.size.width - 16) * amount))
                                 .overlay(alignment: .leading) {
@@ -60,7 +60,7 @@ struct BloomBoxHomeInstallationNotice: View {
                             Text("\(Int(amount * 100))%")
                                 .font(.system(size: 24, weight: .black, design: .rounded))
                                 .monospacedDigit()
-                                .foregroundStyle(Color(red: 0.72, green: 0.06, blue: 0.35))
+                                .foregroundStyle(Color.black.opacity(0.78))
                                 .frame(maxWidth: .infinity, alignment: .trailing)
                                 .padding(.trailing, 19)
                         }
@@ -69,7 +69,7 @@ struct BloomBoxHomeInstallationNotice: View {
                     .padding(.horizontal, 22)
 
                     ZStack {
-                        Ellipse().fill(Color.pink.opacity(0.25))
+                        Ellipse().fill(accentColor.opacity(0.25))
                             .frame(width: 230, height: 30)
                             .blur(radius: 13)
                             .offset(y: 70)
@@ -93,7 +93,7 @@ struct BloomBoxHomeInstallationNotice: View {
                 .frame(maxWidth: .infinity)
                 .position(x: bounds.size.width / 2, y: bounds.size.height * 0.51)
             }
-            .onAppear { hop = true; shimmer = true }
+            .onAppear { hop = true }
         }
         .allowsHitTesting(false)
         .accessibilityElement(children: .ignore)
@@ -155,6 +155,7 @@ struct BloomBoxHomeGiftIcon: View {
     let reduceMotion: Bool
     let reveal: () -> Void
     @State private var opening = false
+    @State private var rattling = false
 
     var body: some View {
         Button {
@@ -201,7 +202,11 @@ struct BloomBoxHomeGiftIcon: View {
                 }
                 .frame(width: size, height: size)
                 .scaleEffect(opening ? 1.45 : 1)
-                .rotationEffect(.degrees(opening ? -12 : 0))
+                .rotationEffect(.degrees(opening ? -12 : (rattling ? 6 : 0)))
+                .offset(x: opening ? 0 : (rattling ? 2 : 0))
+                .animation(reduceMotion ? nil :
+                    .easeInOut(duration: 0.095).repeatCount(6, autoreverses: true),
+                    value: rattling)
                 .opacity(opening ? 0 : 1)
                 if showLabel {
                     Text(name)
@@ -213,6 +218,18 @@ struct BloomBoxHomeGiftIcon: View {
             }
         }
         .buttonStyle(.plain)
+        .task(id: reduceMotion) {
+            guard !reduceMotion else { return }
+            while !Task.isCancelled {
+                do { try await Task.sleep(nanoseconds: 2_700_000_000) }
+                catch { break }
+                guard !opening else { break }
+                rattling = true
+                do { try await Task.sleep(nanoseconds: 700_000_000) }
+                catch { break }
+                rattling = false
+            }
+        }
         .accessibilityLabel(BloomBoxL10n.isEnglish
             ? "Open gift to reveal \(name)"
             : "Abrir regalo para descubrir \(name)")
