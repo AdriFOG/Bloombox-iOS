@@ -1,7 +1,22 @@
 # BloomBox · Android Files (Takopi reuse)
 
-**State:** architecture prepared on a feature branch only; no UI/runtime integration yet.
+**State:** first **read-only** Android Files UI milestone implemented on a feature branch; final IPA build and iPhone verification pending. File import, Takopi's dual-pane operations and JIT Recovery remain design-only.
 **Base:** `main` as of 2026-11-21. Do not merge or publish release until compiled and tested on device.
+
+## Implementación inicial — 21 de noviembre de 2026
+
+Se añadió en la rama `feature/takopi-husk-files-20261121`:
+
+- Accesos **Archivos** y **Archivos Android** en Home y biblioteca, con IDs propios; sección Android también visible al abrir Archivos iOS.
+- Detector del bundle `com.husk.app` y contenedor del perfil activo. Estados «no instalado», «bloqueado», «sin acceso» y «detectado».
+- Enlace a la guía y releases oficiales de Husk, con botón para volver a comprobar su presencia.
+- Explorador nativo **de solo lectura**, agrupado por APK de Husk en `Documents/TranslationLayer`, con título e identificador de paquete tomados de archivos reales. Incluye lectura de `Documents/Shared Storage` si existe.
+- Navegación de archivos limitada a la raíz correspondiente y sin seguir enlaces simbólicos; vistas previas sin escritura.
+- Regresiones en `Tests/android-files/test_android_files.py`, conectadas al workflow de build.
+
+**No implementado todavía:** importaciones y movimiento de datos entre aplicaciones, vista del huésped QEMU, extracción, OBB inteligentes, backups, motor de Takopi completo ni **JIT Recovery**. El botón de «Comprobar» reevalúa los contenedores visibles; **no solicita permisos nuevos ni instala Husk por sí solo**.
+
+La validación de compilación no reemplaza pruebas reales de accesibilidad y rutas del contenedor en iPhone. No fusionar ni publicar hasta entonces.
 
 ## Sources inspected
 
