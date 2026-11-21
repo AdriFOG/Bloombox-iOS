@@ -1390,12 +1390,16 @@ struct BloomBoxHomeScreen: View {
     // especially when the debugger is attaching. Retry only the delivery,
     // never spawn Husk a second time.
     @available(iOS 16.1, *)
-    @MainActor private func deliverHuskGameLink(_ game: HuskGame) async throws -> Bool {
-        let deadline = Date().addingTimeInterval(5)
+    @MainActor private func deliverHuskGameLink(_ game: HuskGame, mode: String) async throws -> Bool {
+        // Husk's native Metal games lock their first framebuffer size at
+        // startup. Wait for LiveProcess's actual visible, correctly oriented
+        // scene, not merely the existence of a scene/presenter object.
+        let deadline = Date().addingTimeInterval(12)
         repeat {
             try Task.checkCancellation()
             if AppSceneViewController.bloomBoxSendURL(
-                game.launchURL.absoluteString, toContainer: game.containerFolder) {
+                game.launchURL.absoluteString, toContainer: game.containerFolder,
+                landscape: mode == "landscape") {
                 return true
             }
             try await Task.sleep(nanoseconds: 150_000_000)
@@ -1456,9 +1460,9 @@ struct BloomBoxHomeScreen: View {
                 if #available(iOS 16.1, *), MultitaskManager.isUsing(container: game.containerFolder) {
                     // Husk is already running. Forward the game link into its
                     // existing scene without launching another JIT session.
-                    guard try await deliverHuskGameLink(game) else {
-                        throw englishUI ? "Husk is busy. Close its existing window and retry."
-                            : "Husk está ocupado. Cierra su ventana y vuelve a intentarlo."
+                    guard try await deliverHuskGameLink(game, mode: mode) else {
+                        throw englishUI ? "Husk's game window is not ready. Open Husk from the icon menu, or close the existing window and retry."
+                            : "La ventana de Husk aún no está lista. Abre Husk desde el menú del icono o cierra la ventana anterior e inténtalo otra vez."
                     }
                 } else if stagedJIT, #available(iOS 16.1, *) {
                     huskStartingNote = englishUI ? "Starting the JIT debugger…" : "Activando el depurador JIT…"
@@ -1483,9 +1487,9 @@ struct BloomBoxHomeScreen: View {
                     if remaining > 0 {
                         try await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
                     }
-                    guard try await deliverHuskGameLink(game) else {
-                        throw englishUI ? "Husk did not expose its running game scene. Close Husk and retry."
-                            : "No se encontró la ventana activa de Husk. Ciérralo y vuelve a intentarlo."
+                    guard try await deliverHuskGameLink(game, mode: mode) else {
+                        throw englishUI ? "The Husk window did not reach a stable game orientation. Close it and retry, or open the game manually inside Husk."
+                            : "La ventana de Husk no terminó de acomodarse para el juego. Ciérrala e inténtalo otra vez, o abre el juego desde Husk."
                     }
                     // The JIT helper continues waiting for the GAME's memory
                     // breakpoint. Its later success/failure still owns the log.
@@ -1562,7 +1566,32 @@ struct BloomBoxHomeScreen: View {
         }
     }
 
+    // Recovery path for games whose JIT/Metal renderer is not yet compatible
+    // with BloomBox's automatic shortcut. Opens Husk's library instead of
+    // forcing a native game to start against an unready hosted window.
+    private func openHuskLibrary(_ game: HuskGame) {
+        guard let host = husk, huskGames.contains(where: { $0.key == game.key }),
+              huskLaunchingKey == nil else { return }
+        huskLaunchingKey = game.key
+        Task { @MainActor in
+            defer { if huskLaunchingKey == game.key { huskLaunchingKey = nil } }
+            do {
+                // This is an explicit manual fallback: let Husk manage its
+                // own JIT setup rather than starting another BloomBox debugger.
+                try await host.runApp(multitask: true,
+                                      containerFolderName: game.containerFolder,
+                                      forceJIT: false)
+            } catch {
+                huskError = error.localizedDescription
+            }
+        }
+    }
+
     @ViewBuilder private func huskMenu(_ game: HuskGame) -> some View {
+        Button(englishUI ? "Open in Husk (manual)" : "Abrir en Husk (manual)",
+               systemImage: "gamecontroller") {
+            openHuskLibrary(game)
+        }
         Menu(englishUI ? "Orientation" : "Orientación", systemImage: "rotate.right") {
             ForEach(["portrait", "landscape", "hybrid"], id: \.self) { mode in
                 Button { UserDefaults.standard.set(mode, forKey: orientationKey(game)) } label: {
