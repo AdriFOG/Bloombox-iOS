@@ -282,7 +282,7 @@ struct BloomBoxHomeScreen: View {
 
     private var appKeys: [String] {
         LiveContainerHomeAdapter.visibleKeys(apps) + huskGames.map(\.key)
-            + [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey, Self.appStoreKey, Self.portStoreKey, Self.portStoreKey, Self.modulesKey, Self.themesKey]
+            + [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey, Self.appStoreKey, Self.portStoreKey, Self.modulesKey, Self.themesKey]
     }
     private var appMap: [String: LCAppModel] {
         LiveContainerHomeAdapter.modelsByKey(apps)
@@ -2718,7 +2718,7 @@ struct BloomBoxHomeScreen: View {
         Group {
             if let folder = layout.folders.first(where: { $0.id == key }) {
                 folderIcon(folder, showLabel: showLabel)
-            } else if [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey, Self.appStoreKey, Self.portStoreKey, Self.portStoreKey, Self.modulesKey, Self.themesKey].contains(key) {
+            } else if [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey, Self.appStoreKey, Self.portStoreKey, Self.modulesKey, Self.themesKey].contains(key) {
                 shortcutIcon(key, showLabel: showLabel)
             } else if let game = huskGames.first(where: { $0.key == key }) {
                 Button { if !editing { launchLibraryKey(key) } } label: {
@@ -3518,7 +3518,7 @@ struct BloomBoxHomeScreen: View {
         let hadSavedLayout = layout.initialized
         let knownKeys = Set(layout.pages.flatMap { $0.compactMap { $0 } }
             + layout.dock + layout.folders.flatMap { $0.apps } + layout.hidden)
-        let needsShortcuts = [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey, Self.appStoreKey, Self.portStoreKey, Self.portStoreKey, Self.modulesKey, Self.themesKey]
+        let needsShortcuts = [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey, Self.appStoreKey, Self.portStoreKey, Self.modulesKey, Self.themesKey]
             .filter { !knownKeys.contains($0) }
         // Only installed guest apps not seen before, never icons the user hid.
         let huskKeys = Set(huskGames.map(\.key))
