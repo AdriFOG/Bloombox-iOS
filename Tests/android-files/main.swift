@@ -15,12 +15,13 @@ try fm.createDirectory(at: elsewhere, withIntermediateDirectories: true)
 
 func assertInside(_ candidate: URL, expected: [String], label: String) throws {
     let actual = try BloomBoxHuskPathPolicy.relativeComponents(of: candidate, under: root)
+    try BloomBoxHuskPathPolicy.validateDestination(candidate, under: root)
     precondition(actual == expected, "\(label): got \(actual), expected \(expected)")
 }
 func assertOutside(_ candidate: URL, label: String) {
     do {
-        let components = try BloomBoxHuskPathPolicy.relativeComponents(of: candidate, under: root)
-        fatalError("\(label): unexpectedly accepted \(components)")
+        try BloomBoxHuskPathPolicy.validateDestination(candidate, under: root)
+        fatalError("\(label): unexpectedly accepted")
     } catch BloomBoxHuskPathPolicy.Failure.outsideRoot {
         // Correct: never let data escape the selected game's directory.
     } catch {
@@ -52,9 +53,42 @@ let aliasedRoot = alias.appendingPathComponent("Documents/TranslationLayer/test-
 let canonicalOBB = root.appendingPathComponent("obb", isDirectory: true)
 let parts = try BloomBoxHuskPathPolicy.relativeComponents(of: canonicalOBB, under: aliasedRoot)
 precondition(parts == ["obb"], "system alias path should resolve to same game")
+try BloomBoxHuskPathPolicy.validateDestination(canonicalOBB, under: aliasedRoot)
+try BloomBoxHuskPathPolicy.validateDestination(
+    aliasedRoot.appendingPathComponent("obb", isDirectory: true), under: aliasedRoot)
 let escapingLink = root.appendingPathComponent("escape", isDirectory: true)
 try fm.createSymbolicLink(at: escapingLink, withDestinationURL: elsewhere)
 assertOutside(escapingLink.appendingPathComponent("malicious.obb"), label: "symlink escape")
+
+// Copy raw files through the same destination guard used by the UI.
+let staged = sandbox.appendingPathComponent("picked-files", isDirectory: true)
+try fm.createDirectory(at: staged, withIntermediateDirectories: true)
+for (relative, bytes) in [
+    ("obb/main.1.com.bloombox.testapp.obb", Data(repeating: 0x4F, count: 1024)),
+    ("sdcard/Android/data/com.bloombox.testapp/bloombox_test.dat",
+     Data(repeating: 0x44, count: 2048))
+] {
+    let expected = root.appendingPathComponent(relative)
+    let source = staged.appendingPathComponent(expected.lastPathComponent)
+    try bytes.write(to: source)
+    try BloomBoxHuskPathPolicy.validateDestination(expected, under: root)
+    try fm.createDirectory(at: expected.deletingLastPathComponent(),
+                           withIntermediateDirectories: true)
+    try BloomBoxHuskPathPolicy.validateDestination(expected, under: root)
+    try fm.copyItem(at: source, to: expected)
+    precondition(try Data(contentsOf: expected) == bytes, "incorrect imported data")
+}
+
+// A destination may be missing, but an existing data file may not be a folder.
+let fileInsteadOfFolder = root.appendingPathComponent("sdcard/Android/data/com.bloombox.testapp/conflict")
+try Data([0x42]).write(to: fileInsteadOfFolder)
+do {
+    try BloomBoxHuskPathPolicy.validateDestination(
+        fileInsteadOfFolder.appendingPathComponent("nested.dat"), under: root)
+    fatalError("must refuse existing file as parent directory")
+} catch BloomBoxHuskPathPolicy.ValidationFailure.nonDirectoryAncestor {
+    // Correct.
+}
 
 do {
     _ = try BloomBoxHuskPathPolicy.relativeComponents(
@@ -63,4 +97,4 @@ do {
 } catch BloomBoxHuskPathPolicy.Failure.notFileURL {
     // Expected.
 }
-print("PASS: Husk path containment allows new OBB/data directories and rejects escapes")
+print("PASS: exact Husk import preflight, raw OBB/data copy, new directories, alias and escape protection")
