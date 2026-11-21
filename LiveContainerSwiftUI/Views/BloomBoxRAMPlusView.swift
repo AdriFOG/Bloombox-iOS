@@ -357,7 +357,11 @@ struct BloomBoxRAMPlusView: View {
                     tint: Color(red: 0.94, green: 0.17, blue: 0.23),
                     secondary: Color(red: 0.38, green: 0.04, blue: 0.12)
                 ) {
-                    externalInstallLogs = ["[INFO] Solicitando GetMoreRam desde su repositorio oficial…"]
+                    // Testing GetMoreRam must remain independent of the installed
+                    // RAM+ entitlement. Never short-circuit when confirmed.
+                    externalInstallLogs = ram.validation.confirmed
+                        ? ["[TEST] RAM+ ya está activa; ejecutando Método 2 completo de todos modos."]
+                        : ["[INFO] Solicitando GetMoreRam desde su repositorio oficial…"]
                     NotificationCenter.default.post(name: Notification.Name("BloomBoxRAMInstallGetMoreRam"), object: nil)
                 }
                 .accessibilityIdentifier("bloombox.ram.alternativeInstall")
