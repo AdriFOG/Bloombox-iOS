@@ -115,3 +115,28 @@ BloomBox > Archivos
 ## Next implementation milestone
 
 Build a mount/provider protocol for (a) native Husk Shared Storage, (b) per-app scoped directories, and (c) any supported guest file bridge, then integrate Takopi's isolated navigation components. Require a failing/passing test for traversal and symlink protection before enabling writes.
+
+## Exploración por juego versus almacenamiento compartido
+
+La interfaz principal tendrá dos vistas visibles:
+- **Por juego** (predeterminada): tarjeta por APK instalada con icono, título real, nombre de paquete, ruta del contenedor y acciones «Ver datos», «Ver OBB» y «Importar archivos» cuando la ruta exista y sea accesible.
+- **Almacenamiento**: explorar únicamente el almacenamiento Android compartido comprobado (`/sdcard`, `/storage/emulated/0`) y sus carpetas reales (Download, DCIM, Documents, Games, etc. solo si existen).
+
+### Lo que confirma la implementación actual de Husk
+- **Capa nativa / translation layer**: `Documents/TranslationLayer/<app-uuid>` contiene un directorio por app. `label.txt`, `package.txt`, `icon.png`, `report.json` y los APK ayudan a identificarla. `Documents/Shared Storage` funciona como `/sdcard` compartido.
+- **Rutas privadas**: `/data/data/<package>`, `/data/user/0/<package>`, `/sdcard/Android/data/<package>` y `/sdcard/Android/obb/<package>` pueden redirigirse al directorio privado de ejecución de esa app. Los OBB importados pueden permanecer junto al APK en `obb/` y la traducción redirige lecturas cuando corresponda.
+- **Emulador / guest**: Husk tiene también una vista de archivos del huésped desde `/sdcard` (`FilesTab.swift`). No asumir que esa vista comparte ubicación física o reglas de permisos con la capa nativa.
+- BloomBox ya detecta `com.husk.app` y utiliza el contenedor seleccionado de Husk bajo `Documents/TranslationLayer`, de modo que se puede reutilizar la identificación existente. Debe validarse si existe permiso real para leer/editar cada contenedor antes de listar.
+
+### Atribución exacta, sin confundir al usuario
+1. Vincular un directorio a una app **solo con una referencia inequívoca** a su directorio de Husk y/o su `package.txt`. Mostrar el título de `label.txt`, el icono real si existe y el paquete completo.
+2. Si hay dos juegos con el mismo paquete o diferentes contenedores/perfiles, **no mezclar sus datos**: la identidad incluye contenedor y directorio interno.
+3. Los archivos de `Shared Storage` pueden pertenecer a varios juegos o haber sido importados manualmente. **No adjudicarlos automáticamente por cercanía o nombre**. Si una ruta coincide con un paquete identificado, mostrar «Posible carpeta de este juego» hasta confirmación; si no, dejarla en «Compartidos / Sin identificar».
+4. Mostrar secciones **Datos privados**, **Archivos del juego**, **OBB** y **Almacenamiento compartido** solamente cuando la ruta real correspondiente esté disponible. No crear `Android/data`, `Android/obb` o `DCIM` ficticios para llenar la lista.
+5. Para importar, ofrecer destino recomendado **con vista previa de ruta real**, espacio libre, posibles duplicados y confirmación. Nunca sobrescribir guardados automáticamente.
+6. El modo navegador de APKs y carpetas de usuario debe mantenerse funcional aunque el acceso a datos privados esté restringido. Explicar «Esta carpeta no se puede abrir desde BloomBox» en lugar de «vacío».
+7. No enumerar o exponer datos de otras apps de iOS; limitar todo al contenedor autorizado de Husk.
+
+**Criterio de prueba:** instalar al menos dos apps en Husk con diferente package ID; comprobar que sus archivos privados y sus OBB no se intercambian, que los compartidos quedan en el explorador general y que la vista sigue siendo útil sin tener un juego instalado.
+
+**Archivos de referencia:** `Leviidev/Husk/src/app/Husk/TranslationLayer.swift`, `Leviidev/Husk/src/translation-layer-next/husk-tl-bionic-io.c`, `Leviidev/Husk/src/app/Husk/FilesTab.swift`, `AdriFOG/Bloombox-iOS/LiveContainerSwiftUI/Views/BloomBox/BloomBoxHomeScreen.swift`.
