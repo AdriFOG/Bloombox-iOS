@@ -878,6 +878,18 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 if preferredExperience == "hybrid" { liveBoardMode = "ios" }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("BloomBoxPortStoreAPKReady"))) { note in
+            // Downloads from Port Store always return to the existing Husk
+            // confirmation sheet. Never silently install a remote APK.
+            guard let file = note.object as? URL, file.isFileURL,
+                  file.pathExtension.lowercased() == "apk",
+                  let documents = FileManager.default.urls(for: .documentDirectory,
+                                                         in: .userDomainMask).first,
+                  file.deletingLastPathComponent().standardizedFileURL ==
+                    documents.appendingPathComponent("Inbox").standardizedFileURL,
+                  FileManager.default.fileExists(atPath: file.path) else { return }
+            handleURL(url: file)
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.InstallAppNotification)) { obj in
             if let obj2 = obj.object as? [String: Any], let installUrl = obj2["url"] as? URL {
                 let expectedSHA = obj2["sha256"] as? String
