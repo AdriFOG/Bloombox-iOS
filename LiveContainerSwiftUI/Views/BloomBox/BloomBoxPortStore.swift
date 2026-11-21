@@ -290,6 +290,8 @@ struct BloomBoxPortStore: View {
                         Text(english ? "\(displayed.count) of \(catalog.ports.count) Android ports" :
                                 "\(displayed.count) de \(catalog.ports.count) ports Android")
                             .font(.subheadline).foregroundStyle(.secondary)
+                        // Adaptive columns size the grid cells. Each cover is then
+                        // bounded to its *actual* cell width by GeometryReader below.
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 145, maximum: 210), spacing: 12)], spacing: 16) {
                             ForEach(displayed) { port in
                                 NavigationLink(destination: BloomBoxPortDetail(
@@ -297,7 +299,10 @@ struct BloomBoxPortStore: View {
                                     hasHusk: hasHusk, onAPKReady: onAPKReady
                                 )) {
                                     BloomBoxPortCard(port: port, check: catalog.check(for: port))
-                                }.buttonStyle(.plain)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -315,7 +320,7 @@ struct BloomBoxPortStore: View {
                 }.padding(16)
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("Port Store")
+            .navigationTitle("ApkStore")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, prompt: english ? "Search Android ports" : "Buscar ports Android")
             .toolbar {
@@ -335,7 +340,7 @@ struct BloomBoxPortStore: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("BloomBox Port Store", systemImage: "gamecontroller.fill")
+            Label("BloomBox ApkStore", systemImage: "gamecontroller.fill")
                 .font(.title2.bold())
             Text(english ? "Native Android ports, decompilations and recompilations." :
                     "Ports nativos, decompilaciones y recompilaciones para Android.")
@@ -380,30 +385,52 @@ private struct BloomBoxPortCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             artwork
-            Text(port.title).font(.subheadline.bold()).lineLimit(2)
+            Text(port.title)
+                .font(.subheadline.bold())
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
             Text(port.originalSystems?.first ?? "Android")
                 .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 4) {
                 Image(systemName: badgeIcon)
-                Text(badgeText)
-            }.font(.caption2.weight(.semibold))
-             .foregroundStyle(check == nil ? Color.secondary :
-                              check?.status == "verified" ? Color.green : Color.orange)
-        }.frame(maxWidth: .infinity, alignment: .leading)
+                Text(badgeText).lineLimit(1).minimumScaleFactor(0.75)
+            }
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(check == nil ? Color.secondary :
+                             check?.status == "verified" ? Color.green : Color.orange)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
     }
 
     private var artwork: some View {
-        AsyncImage(url: port.coverURL) { image in
-            image.resizable().scaledToFill()
-        } placeholder: {
-            ZStack {
-                Color.indigo.opacity(0.2)
-                Image(systemName: "gamecontroller.fill").foregroundStyle(.secondary)
+        // scaledToFill() alone can report an image's natural width to a LazyVGrid.
+        // Constrain the image *before* clipping, using the proposed grid-cell width.
+        // This prevents wider images from overflowing neighboring columns.
+        GeometryReader { cell in
+            AsyncImage(url: port.coverURL) { phase in
+                if case .success(let image) = phase {
+                    image.resizable()
+                        .scaledToFill()
+                        .frame(width: cell.size.width, height: 138)
+                        .clipped()
+                } else {
+                    ZStack {
+                        Color.indigo.opacity(0.2)
+                        Image(systemName: "gamecontroller.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(width: cell.size.width, height: 138)
+                }
             }
+            .frame(width: cell.size.width, height: 138)
+            .clipped()
         }
-        .frame(maxWidth: .infinity).frame(height: 138)
-        .clipped()
+        .frame(height: 138)
         .clipShape(RoundedRectangle(cornerRadius: 13))
+        .accessibilityHidden(true)
     }
 
     private var badgeIcon: String {
