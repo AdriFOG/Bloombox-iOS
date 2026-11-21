@@ -979,3 +979,5 @@
 "RAM+ no aumenta la RAM física; iOS comprueba el permiso después de firmar e instalar." = "RAM+ does not add physical memory; iOS checks the entitlement after signing and installation.";
 "RAM+ activa" = "RAM+ active";
 "Método 2" = "Method 2";
+"Probar RAM+" = "Test RAM+";
+"Método 1 · comprobación real con Apple" = "Method 1 · live check with Apple";
