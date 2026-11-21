@@ -246,7 +246,7 @@ private enum BloomBoxPortError: LocalizedError {
 
 struct BloomBoxPortStore: View {
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("BloomBoxPreferredLanguage", store: LCUtils.appGroupUserDefault)
+    @AppStorage("BloomBoxPreferredLanguage", store: LiveContainerPreferencesAdapter.defaults)
     private var preferredLanguage = "system"
     @StateObject private var catalog = BloomBoxPortCatalog()
     @State private var query = ""
