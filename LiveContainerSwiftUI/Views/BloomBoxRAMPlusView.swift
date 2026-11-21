@@ -313,6 +313,8 @@ struct BloomBoxRAMPlusView: View {
     @State private var showWarning = false
     @State private var activationError: String?
     @State private var chooseOriginalIPA = false
+    @State private var externalInstallLogs: [String] = []
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("BloomBoxRAMPlusExperimentalControls", store: LCUtils.appGroupUserDefault)
     private var experimentalControlsEnabled = false
     private let statusTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
@@ -320,21 +322,51 @@ struct BloomBoxRAMPlusView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Label("Memoria ampliada", systemImage: "cpu").font(.title2.bold())
-                Toggle("Solicitar RAM+", isOn: Binding(get: { ram.requested }, set: {
-                    ram.setRequested($0)
-                    showWarning = ram.needsAttention
-                }))
-                .accessibilityIdentifier("bloombox.modules.ram.activate")
-                Label(BloomBoxL10n.t(ram.status), systemImage: ram.validation.confirmed ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
-                    .foregroundStyle(ram.validation.confirmed ? Color.green : Color.orange)
-                if ram.needsAttention {
-                    Text("El switch está encendido, pero RAM+ todavía no está confirmada. Completa la activación y vuelve a comprobar.")
-                        .font(.callout).foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Memoria ampliada", systemImage: "cpu")
+                        .font(.system(size: 27, weight: .bold, design: .rounded))
+                    Text("Elige un método para solicitar RAM+. El permiso se aplica al volver a firmar e instalar BloomBox.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
-                Text("iOS aplica el permiso al firmar e instalar la app. Apagar el switch cancela una solicitud pendiente; no retira un permiso ya instalado.")
-                    .font(.footnote).foregroundStyle(.secondary)
-                GroupBox("Validaciones de esta instalación") {
+                .padding(.top, 10)
+
+                ramActionTile(
+                    title: ram.validation.confirmed ? "RAM+ activa" : "Activar RAM+",
+                    subtitle: "Método BloomBox recomendado",
+                    symbol: ram.validation.confirmed ? "checkmark.seal.fill" : "bolt.fill",
+                    tint: Color(red: 0.10, green: 0.80, blue: 0.31),
+                    secondary: Color(red: 0.02, green: 0.36, blue: 0.16)
+                ) {
+                    if ram.validation.confirmed {
+                        ram.refresh()
+                    } else if ram.activationStatus == "approved" {
+                        ram.retryReinstall()
+                        Task { await ram.resumeAfterAppleApproval() }
+                    } else if ram.activationPending {
+                        openSideStore()
+                    } else {
+                        activate()
+                    }
+                }
+                .accessibilityIdentifier("bloombox.ram.primaryActivate")
+
+                ramActionTile(
+                    title: "Método 2",
+                    subtitle: "Descargar, instalar y abrir GetMoreRam",
+                    symbol: "arrow.down.app.fill",
+                    tint: Color(red: 0.94, green: 0.17, blue: 0.23),
+                    secondary: Color(red: 0.38, green: 0.04, blue: 0.12)
+                ) {
+                    externalInstallLogs = ["[INFO] Solicitando GetMoreRam desde su repositorio oficial…"]
+                    NotificationCenter.default.post(name: Notification.Name("BloomBoxRAMInstallGetMoreRam"), object: nil)
+                }
+                .accessibilityIdentifier("bloombox.ram.alternativeInstall")
+
+                ramConsole
+                ramCurrentStatus
+
+                DisclosureGroup("Validaciones de esta instalación") {
                     VStack(alignment: .leading, spacing: 12) {
                         check("Permiso del proceso BloomBox", ram.validation.runtimeGranted)
                         check("Permiso incluido en el perfil", ram.validation.profileGranted)
@@ -343,8 +375,14 @@ struct BloomBoxRAMPlusView: View {
                         check("Firma de LiveProcess", ram.extensionSigned)
                         Text("LiveProcess se comprueba por separado en su firma; esto no confirma su proceso en ejecución ni el permiso de cada app invitada.")
                             .font(.caption).foregroundStyle(.secondary)
-                    }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
+                    }
+                    .padding(.top, 12)
                 }
+                .font(.subheadline)
+                .padding(16)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
+                .accessibilityIdentifier("bloombox.ram.validations")
+
                 GroupBox("Activar con la sesión de SideStore") {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("BloomBox solicitará Increased Memory Limit para su App ID y para LiveProcess si tiene uno separado. Se conservarán los demás permisos.")
@@ -469,7 +507,24 @@ struct BloomBoxRAMPlusView: View {
                 }
                 Text("Memoria disponible para el proceso ahora: \(ByteCountFormatter.string(fromByteCount: Int64(clamping: ram.available), countStyle: .memory)). Cambia con el uso; no demuestra por sí sola que RAM+ esté activa ni añade RAM física.")
                     .font(.caption).foregroundStyle(.secondary)
-            }.padding(22)
+            }
+            .padding(20)
+        }
+        .background {
+            ZStack {
+                Color(red: 0.055, green: 0.058, blue: 0.078)
+                RadialGradient(
+                    colors: [BloomBoxWizardPalette.color(BloomBoxProfileStore.active.accentHex).opacity(0.20), .clear],
+                    center: .topTrailing, startRadius: 8, endRadius: 470
+                )
+                // Reuse the exact ambient artwork from onboarding, not a copy.
+                BloomBoxWizardAmbientSymbols(
+                    isDark: true, accentHex: BloomBoxProfileStore.active.accentHex
+                )
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
         .navigationTitle("RAM+")
         .navigationBarTitleDisplayMode(.inline)
@@ -484,6 +539,12 @@ struct BloomBoxRAMPlusView: View {
             }
         }
         .onReceive(statusTimer) { _ in if scenePhase == .active && ram.activationPending { ram.refresh() } }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("BloomBoxRAMExternalInstallLog"))) { notification in
+            guard let message = notification.userInfo?["message"] as? String else { return }
+            externalInstallLogs.append(message)
+            if externalInstallLogs.count > 30 { externalInstallLogs.removeFirst(externalInstallLogs.count - 30) }
+            if (notification.userInfo?["refreshRAM"] as? Bool) == true { ram.refresh() }
+        }
         .fileImporter(isPresented: $chooseOriginalIPA, allowedContentTypes: [.item], allowsMultipleSelection: false) { result in
             switch result {
             case .success(let files):
@@ -498,6 +559,151 @@ struct BloomBoxRAMPlusView: View {
         } message: {
             Text("El switch está encendido, pero esta instalación no supera las validaciones. Solicita el permiso con SideStore y reinstala BloomBox. Encender el switch no aumenta la memoria por sí solo.")
         }
+    }
+
+    private var ramCurrentStatus: some View {
+        let active = ram.validation.confirmed
+        let processing = ram.activationPending || ram.reinstallBusy
+        return HStack(spacing: 14) {
+            Image(systemName: active ? "checkmark.circle.fill" :
+                  (processing ? "hourglass.circle.fill" : "circle.dotted.circle.fill"))
+                .font(.system(size: 32))
+                .foregroundStyle(active ? .green : (processing ? .orange : .secondary))
+            VStack(alignment: .leading, spacing: 5) {
+                Text(active ? "Estado actual: RAM+ verificada" :
+                     (processing ? "Estado actual: en proceso" : "Estado actual: listo para activar"))
+                    .font(.subheadline.bold())
+                Text(active ? "La firma y el perfil de esta instalación confirman RAM+." :
+                     "RAM+ no aumenta la RAM física; iOS comprueba el permiso después de firmar e instalar.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(15)
+        .background(Color.green.opacity(active ? 0.11 : 0.055),
+                    in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18)
+            .strokeBorder(Color.green.opacity(active ? 0.35 : 0.14), lineWidth: 1))
+    }
+
+    private var consoleLines: [String] {
+        var lines = ["[BloomBox] Diagnóstico RAM+ (datos reales)"]
+        func validationLine(_ title: String, _ state: Bool?) -> String {
+            "[\(state == true ? "OK" : (state == false ? "WARN" : "INFO"))] \(title): " +
+            (state == true ? "sí" : (state == false ? "no" : "sin confirmar"))
+        }
+        lines.append(validationLine("Permiso de BloomBox", ram.validation.runtimeGranted))
+        lines.append(validationLine("Perfil con RAM+", ram.validation.profileGranted))
+        lines.append(validationLine("Perfil vigente", ram.validation.profileCurrent))
+        lines.append(validationLine("Identidad de la app", ram.validation.profileMatches))
+        lines.append(validationLine("Firma de LiveProcess", ram.extensionSigned))
+        if !ram.activationStatus.isEmpty {
+            lines.append("[INFO] Solicitud Apple: \(ram.activationStatus)")
+        }
+        if !ram.activationMessage.isEmpty {
+            lines.append("[INFO] \(ram.activationMessage)")
+        }
+        if !ram.reinstallStage.isEmpty {
+            lines.append("[INFO] Reinstalación: \(ram.reinstallStage)")
+            if !ram.reinstallMessage.isEmpty {
+                lines.append("[INFO] \(ram.reinstallMessage)")
+            }
+        }
+        lines.append(contentsOf: externalInstallLogs)
+        lines.append(ram.validation.confirmed
+            ? "[OK] RAM+ verificada en esta instalación"
+            : "[INFO] RAM+ aún no confirmada en esta instalación")
+        return lines
+    }
+
+    private var ramConsole: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 7) {
+                Circle().fill(Color.red).frame(width: 10, height: 10)
+                Circle().fill(Color.yellow).frame(width: 10, height: 10)
+                Circle().fill(Color.green).frame(width: 10, height: 10)
+                Text("Consola de proceso RAM+")
+                    .font(.subheadline.bold())
+                    .padding(.leading, 7)
+                Spacer()
+                Image(systemName: "terminal")
+                    .foregroundStyle(.secondary)
+            }
+            .padding(14)
+
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(consoleLines.enumerated()), id: \.offset) { index, line in
+                            Text(line)
+                                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                .foregroundStyle(line.hasPrefix("[OK]") ? Color.green :
+                                                 (line.hasPrefix("[WARN]") || line.hasPrefix("[ERROR]") ? Color.orange :
+                                                  Color.white.opacity(0.79)))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .id(index)
+                        }
+                    }
+                    .padding(14)
+                }
+                .onChange(of: consoleLines.count) { count in
+                    guard count > 0 else { return }
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.22)) {
+                        proxy.scrollTo(count - 1, anchor: .bottom)
+                    }
+                }
+            }
+            .frame(height: 225)
+            .background(Color.black.opacity(0.93),
+                        in: RoundedRectangle(cornerRadius: 15))
+            .padding([.horizontal, .bottom], 7)
+        }
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 19))
+        .overlay(RoundedRectangle(cornerRadius: 19).strokeBorder(.white.opacity(0.10)))
+        .accessibilityIdentifier("bloombox.ram.console")
+    }
+
+    private func ramActionTile(
+        title: String, subtitle: String, symbol: String,
+        tint: Color, secondary: Color, action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 16) {
+                Image(systemName: symbol)
+                    .font(.system(size: 31, weight: .semibold))
+                    .frame(width: 43)
+                Rectangle().fill(Color.white.opacity(0.55))
+                    .frame(width: 1, height: 54)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(title)
+                        .font(.system(size: 23, weight: .heavy, design: .rounded))
+                    Text(subtitle)
+                        .font(.system(size: 12, weight: .medium))
+                        .opacity(0.88)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 17, weight: .bold))
+            }
+            .foregroundStyle(Color.white)
+            .padding(.horizontal, 18)
+            .frame(maxWidth: .infinity, minHeight: 113)
+            .background(
+                LinearGradient(colors: [secondary, tint, secondary.opacity(0.87)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing),
+                in: RoundedRectangle(cornerRadius: 25, style: .continuous)
+            )
+            .overlay(RoundedRectangle(cornerRadius: 25).strokeBorder(tint.opacity(0.80), lineWidth: 1.6))
+            .overlay {
+                BloomBoxRAMButtonParticles(tint: tint)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+            .shadow(color: tint.opacity(0.36), radius: 13)
+        }
+        .buttonStyle(.plain)
     }
 
     private func activate() {
@@ -518,5 +724,30 @@ struct BloomBoxRAMPlusView: View {
             Spacer()
             Text(value.map { $0 ? "Sí" : "No" } ?? "Sin confirmar").font(.caption)
         }.font(.footnote)
+    }
+}
+
+
+/// Lightweight particles around the action tiles. The screen background itself
+/// uses BloomBoxWizardAmbientSymbols from onboarding.
+private struct BloomBoxRAMButtonParticles: View {
+    let tint: Color
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 20.0, paused: reduceMotion)) { timeline in
+            Canvas(opaque: false) { context, size in
+                let time = reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate
+                for index in 0..<15 {
+                    let phase = Double(index) * 2.21
+                    let x = CGFloat((Double(index * 37 % 101) / 101 + sin(time * 0.31 + phase) * 0.018)) * size.width
+                    let y = CGFloat((Double(index * 41 % 99) / 99 + cos(time * 0.38 + phase) * 0.05)) * size.height
+                    let diameter: CGFloat = index.isMultiple(of: 4) ? 4.8 : 2.5
+                    context.fill(Path(ellipseIn: CGRect(x: x, y: y, width: diameter, height: diameter)),
+                                 with: .color(tint.opacity(0.85)))
+                }
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 25))
     }
 }
