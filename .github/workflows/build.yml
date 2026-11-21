@@ -102,6 +102,8 @@ jobs:
         run: |
           swiftc LiveContainerSwiftUI/Views/BloomBox/BloomBoxIntegrationContracts.swift Tests/integration-contracts/main.swift -o "$RUNNER_TEMP/bloombox-integration-tests"
           "$RUNNER_TEMP/bloombox-integration-tests"
+      - name: Validate offline BloomBox News store logos
+        run: python3 Tests/news-brand-icons/test_icons.py
       - name: Test BloomBox Home app-policy persistence and localized search
         run: |
           swiftc LiveContainerSwiftUI/Views/BloomBox/BloomBoxHomeAppPolicy.swift Tests/home-app-policy/main.swift -o "$RUNNER_TEMP/bloombox-home-app-policy-tests"

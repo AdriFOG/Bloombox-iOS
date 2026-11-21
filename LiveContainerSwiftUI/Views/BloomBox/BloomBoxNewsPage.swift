@@ -256,15 +256,31 @@ private struct BloomBoxNewsAppIcon: View {
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .fill(Color.white)
                     .overlay {
-                        Image("BloomBoxGooglePlayMark")
-                            .resizable()
-                            .scaledToFit()
-                            .padding(8)
+                        if let icon = BloomBoxNewsBrandIcons.googlePlay {
+                            Image(uiImage: icon)
+                                .resizable()
+                                .scaledToFit()
+                                .padding(8)
+                        } else {
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 29))
+                                .foregroundStyle(.green)
+                        }
                     }
             case .appStore:
-                Image("BloomBoxAppleAppStoreMark")
-                    .resizable()
-                    .scaledToFill()
+                if let icon = BloomBoxNewsBrandIcons.appleAppStore {
+                    Image(uiImage: icon)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    RoundedRectangle(cornerRadius: radius, style: .continuous)
+                        .fill(shortcut.tint)
+                        .overlay {
+                            Image(systemName: "a")
+                                .font(.system(size: 28, weight: .semibold))
+                                .foregroundStyle(.white)
+                        }
+                }
             case .sideStore:
                 if let icon = LiveContainerHomeAdapter.builtInSignerIcon(dark: false) {
                     Image(uiImage: icon)
