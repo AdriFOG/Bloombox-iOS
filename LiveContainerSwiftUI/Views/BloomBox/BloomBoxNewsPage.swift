@@ -243,112 +243,55 @@ private struct BloomBoxNewsQuickAccess: View {
     }
 }
 
-/// Native, offline brand marks. SideStore is sourced from the real embedded app
-/// icon, so its artwork always matches the installed SideStore edition.
+/// Store brand artwork is bundled locally for offline display.
+/// SideStore is loaded from its actual embedded app bundle, not a guessed logo.
 private struct BloomBoxNewsAppIcon: View {
     let shortcut: BloomBoxNewsShortcut
     private let radius: CGFloat = 15
 
     var body: some View {
         Group {
-            if shortcut == .sideStore,
-               let icon = LiveContainerHomeAdapter.builtInSignerIcon(dark: false) {
-                Image(uiImage: icon)
+            switch shortcut {
+            case .apkStore:
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .fill(Color.white)
+                    .overlay {
+                        Image("BloomBoxGooglePlayMark")
+                            .resizable()
+                            .scaledToFit()
+                            .padding(8)
+                    }
+            case .appStore:
+                Image("BloomBoxAppleAppStoreMark")
                     .resizable()
                     .scaledToFill()
-                    .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
-            } else {
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .fill(shortcut == .apkStore ? Color.white : shortcut.tint)
-                    .overlay {
-                        switch shortcut {
-                        case .apkStore:
-                            BloomBoxGooglePlayMark()
-                                .frame(width: 43, height: 43)
-                        case .appStore:
-                            BloomBoxAppleAppStoreMark()
-                                .frame(width: 43, height: 43)
-                        default:
-                            Image(systemName: shortcut == .sideStore
-                                  ? "square.stack.3d.up.fill" : shortcut.symbol)
-                                .font(.system(size: 27, weight: .regular))
+            case .sideStore:
+                if let icon = LiveContainerHomeAdapter.builtInSignerIcon(dark: false) {
+                    Image(uiImage: icon)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    RoundedRectangle(cornerRadius: radius, style: .continuous)
+                        .fill(shortcut.tint)
+                        .overlay {
+                            Image(systemName: "square.stack.3d.up.fill")
+                                .font(.system(size: 26, weight: .regular))
                                 .foregroundStyle(.white)
                         }
+                }
+            default:
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .fill(shortcut.tint)
+                    .overlay {
+                        Image(systemName: shortcut.symbol)
+                            .font(.system(size: 27, weight: .regular))
+                            .foregroundStyle(.white)
                     }
             }
         }
-        .shadow(color: .black.opacity(0.12), radius: 2, x: 0, y: 1)
+        .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+        .shadow(color: .black.opacity(0.11), radius: 2, x: 0, y: 1)
         .accessibilityHidden(true)
-    }
-}
-
-/// Multicolor Google Play prism, drawn at the standard 40-point brand mark grid.
-/// Drawing natively avoids network icons and heavy glow/shader effects.
-private struct BloomBoxGooglePlayMark: View {
-    var body: some View {
-        Canvas { context, size in
-            context.scaleBy(x: size.width / 40, y: size.height / 40)
-            var blue = Path()
-            blue.move(to: CGPoint(x: 4.3, y: 4.7))
-            blue.addLine(to: CGPoint(x: 19.8, y: 20))
-            blue.addLine(to: CGPoint(x: 4.3, y: 35.3))
-            blue.addQuadCurve(to: CGPoint(x: 4.2, y: 34.3), control: CGPoint(x: 4.2, y: 35))
-            blue.addLine(to: CGPoint(x: 4.2, y: 5.8))
-            blue.closeSubpath()
-            context.fill(blue, with: .color(Color(red: 0.259, green: 0.522, blue: 0.957)))
-
-            var green = Path()
-            green.move(to: CGPoint(x: 4.3, y: 4.7))
-            green.addCurve(to: CGPoint(x: 10.5, y: 2.3),
-                           control1: CGPoint(x: 4.8, y: 2.9), control2: CGPoint(x: 8.1, y: 0.8))
-            green.addLine(to: CGPoint(x: 27.8, y: 12.1))
-            green.addLine(to: CGPoint(x: 19.8, y: 20))
-            green.closeSubpath()
-            context.fill(green, with: .color(Color(red: 0.204, green: 0.659, blue: 0.325)))
-
-            var red = Path()
-            red.move(to: CGPoint(x: 19.8, y: 20))
-            red.addLine(to: CGPoint(x: 27.8, y: 27.8))
-            red.addLine(to: CGPoint(x: 10.4, y: 37.7))
-            red.addCurve(to: CGPoint(x: 4.3, y: 35.3),
-                         control1: CGPoint(x: 7.5, y: 39.3), control2: CGPoint(x: 4.8, y: 37))
-            red.closeSubpath()
-            context.fill(red, with: .color(Color(red: 0.918, green: 0.263, blue: 0.208)))
-
-            var yellow = Path()
-            yellow.move(to: CGPoint(x: 27.8, y: 12.1))
-            yellow.addLine(to: CGPoint(x: 35.3, y: 16.4))
-            yellow.addCurve(to: CGPoint(x: 35.4, y: 23.6),
-                            control1: CGPoint(x: 38.2, y: 18.1), control2: CGPoint(x: 38.2, y: 21.9))
-            yellow.addLine(to: CGPoint(x: 27.8, y: 27.8))
-            yellow.addLine(to: CGPoint(x: 19.8, y: 20))
-            yellow.closeSubpath()
-            context.fill(yellow, with: .color(Color(red: 0.984, green: 0.737, blue: 0.016)))
-        }
-    }
-}
-
-/// Apple's App Store writing-tools "A" mark, rather than a plain text letter.
-private struct BloomBoxAppleAppStoreMark: View {
-    var body: some View {
-        Canvas { context, size in
-            context.scaleBy(x: size.width / 44, y: size.height / 44)
-            var left = Path()
-            left.move(to: CGPoint(x: 11, y: 34))
-            left.addLine(to: CGPoint(x: 27, y: 7))
-            context.stroke(left, with: .color(.white),
-                           style: StrokeStyle(lineWidth: 5.4, lineCap: .round))
-            var right = Path()
-            right.move(to: CGPoint(x: 17, y: 7))
-            right.addLine(to: CGPoint(x: 33, y: 34))
-            context.stroke(right, with: .color(.white),
-                           style: StrokeStyle(lineWidth: 5.4, lineCap: .round))
-            var bar = Path()
-            bar.move(to: CGPoint(x: 7, y: 29))
-            bar.addLine(to: CGPoint(x: 37, y: 29))
-            context.stroke(bar, with: .color(.white),
-                           style: StrokeStyle(lineWidth: 5.2, lineCap: .round))
-        }
     }
 }
 
