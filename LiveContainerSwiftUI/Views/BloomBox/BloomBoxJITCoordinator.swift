@@ -187,6 +187,7 @@ enum BloomBoxBuiltInJIT {
         do { data = try BloomBoxJITPairingStorage().load() }
         catch { report(error.localizedDescription); return false }
         guard let group = LCSharedUtils.appGroupID(), let root = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) else { report("The shared app container is unavailable."); return false }
+        var verifiedGuestLaunch: TimeInterval = 0
         if operation == "enable" {
             let file = root.appendingPathComponent("Library/BloomBoxJIT/Targets/\(pid).json")
             report("Checking the running LiveProcess signature (PID \(pid))…")
@@ -208,6 +209,7 @@ enum BloomBoxBuiltInJIT {
                 report("LiveProcess did not report its signature. Keep all extensions when reinstalling; close the guest and try again.")
                 return false
             }
+            verifiedGuestLaunch = target["timestamp"] as? Double ?? 0
             guard target["debug"] as? Bool == true else {
                 report("LiveProcess lacks confirmed get-task-allow. SideStore must preserve the extension's debugging permission. No debugger connection was attempted.")
                 return false
@@ -217,6 +219,7 @@ enum BloomBoxBuiltInJIT {
         }
         let token = UUID().uuidString
         let status = root.appendingPathComponent("Library/BloomBoxJIT/\(token).json")
+        let guestDebugFlag = root.appendingPathComponent("Library/BloomBoxJIT/Debugged/\(pid).json")
         let manualPortText = (LCUtils.appGroupUserDefault.string(forKey: "BloomBoxJITRemotePort") ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let manualPort = manualPortText.isEmpty ? nil : UInt16(manualPortText)
@@ -228,9 +231,14 @@ enum BloomBoxBuiltInJIT {
                                           "token": token, "pid": pid, "pairing": data, "script": script ?? ""]
         if let manualPort { helperInput["remotePort"] = Int(manualPort) }
         var helper: NSObject?
+        var handedOffHelper = false
         defer {
-            if let helper { LCUtils.bloomBoxStopJITHelper(helper) }
-            try? FileManager.default.removeItem(at: status)
+            // CS_DEBUGGED may appear before a TXM JIT script finishes. Keep the
+            // helper alive to finish its memory preparation even if the UI resumes.
+            if !handedOffHelper {
+                if let helper { LCUtils.bloomBoxStopJITHelper(helper) }
+                try? FileManager.default.removeItem(at: status)
+            }
         }
         do {
             helper = try LCUtils.bloomBoxStartJITHelper(helperInput)
@@ -242,6 +250,7 @@ enum BloomBoxBuiltInJIT {
             let deadline = started.addingTimeInterval(300)
             var receivedStatus = false
             while Date() < deadline {
+                var completedResult: Bool?
                 try Task.checkCancellation()
                 if let bytes = try? Data(contentsOf: status), let result = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any] {
                     receivedStatus = true
@@ -258,14 +267,49 @@ enum BloomBoxBuiltInJIT {
                         if message != lastMessage { report(message); lastMessage = message }
                     }
                     if let finished = result["done"] as? Bool, finished {
-                        let completed = (result["success"] as? Bool) ?? false
-                        if completed {
-                            // Debugger success alone is not proof of executable JIT memory.
-                            report("Debugger script finished. Verify executable JIT memory inside the guest before launching a game.")
-                        }
-                        return completed
+                        completedResult = (result["success"] as? Bool) ?? false
                     }
                 }
+                if completedResult == true {
+                    report("Debugger script finished. Verify executable JIT memory inside the guest before launching a game.")
+                    return true
+                }
+                // Inspect the actual LiveProcess code-signing status, recorded by
+                // csops(getpid(), CS_OPS_STATUS). Checking the host PID here would
+                // incorrectly report BloomBox's own permissions.
+                if operation == "enable",
+                   let flagData = try? Data(contentsOf: guestDebugFlag),
+                   let observed = try? JSONSerialization.jsonObject(with: flagData) as? [String: Any],
+                   observed["pid"] as? Int32 == pid,
+                   observed["csDebugged"] as? Bool == true,
+                   let seenAt = observed["timestamp"] as? Double,
+                   verifiedGuestLaunch > 0,
+                   seenAt >= verifiedGuestLaunch,
+                   seenAt <= Date().timeIntervalSince1970 + 1 {
+                    report("LiveProcess CS_DEBUGGED (0x10000000) confirmed. Resuming guest; the helper may still be preparing executable memory.")
+                    handedOffHelper = true
+                    // Don't terminate an in-flight TXM script on the fast path.
+                    // Reap the helper and its temporary status once it finishes.
+                    let runningHelper = helper
+                    Task { @MainActor in
+                        let cleanupDeadline = Date().addingTimeInterval(300)
+                        while Date() < cleanupDeadline {
+                            if let bytes = try? Data(contentsOf: status),
+                               let result = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+                               result["done"] as? Bool == true {
+                                if result["success"] as? Bool != true {
+                                    report("Warning: CS_DEBUGGED was granted, but the JIT helper did not confirm executable memory preparation.")
+                                }
+                                break
+                            }
+                            try? await Task.sleep(nanoseconds: 500_000_000)
+                        }
+                        if let runningHelper { LCUtils.bloomBoxStopJITHelper(runningHelper) }
+                        try? FileManager.default.removeItem(at: status)
+                    }
+                    return true
+                }
+                if let completedResult { return completedResult }
                 if !receivedStatus {
                     let elapsed = Date().timeIntervalSince(started)
                     if elapsed > 12 {
