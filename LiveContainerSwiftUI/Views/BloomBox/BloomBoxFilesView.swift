@@ -70,10 +70,34 @@ struct BloomBoxFilesView: View {
     @State private var sharing: BloomBoxFileSelection?
     @State private var transferring: BloomBoxFileTransfer?
     @State private var search = ""
+    @State private var showingAndroidFiles = false
 
     var body: some View {
         NavigationView {
             List {
+                Section {
+                    Button { showingAndroidFiles = true } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "folder.badge.gearshape")
+                                .font(.title2).foregroundStyle(.green)
+                                .frame(width: 34)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(BloomBoxL10n.isEnglish ? "Android files · Husk" : "Archivos Android · Husk")
+                                    .font(.headline)
+                                Text(BloomBoxL10n.isEnglish
+                                     ? "Game folders, downloads and OBB"
+                                     : "Carpetas de juegos, descargas y OBB")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                        }.padding(.vertical, 5)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("bloombox.files.android.entry")
+                } header: {
+                    Text(BloomBoxL10n.isEnglish ? "Storage" : "Almacenamiento")
+                }
                 if model.busy { ProgressView("Importando archivos…") }
                 if model.entries.isEmpty && !model.busy {
                     Text(model.isTrash ? "La papelera está vacía." : "Importa documentos o crea tu primera carpeta.").foregroundStyle(.secondary)
@@ -108,6 +132,7 @@ struct BloomBoxFilesView: View {
         }
         .navigationViewStyle(.stack)
         .interactiveDismissDisabled(model.busy)
+        .sheet(isPresented: $showingAndroidFiles) { BloomBoxAndroidFilesView() }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.data], allowsMultipleSelection: true) { result in
             switch result {
             case .success(let urls): model.importFiles(urls)
@@ -253,3 +278,306 @@ private struct BloomBoxFolderPicker: View {
 
 // Compatibility for views referenced by older launcher modules while the UI migrates.
 typealias ManzanaFilesView = BloomBoxFilesView
+
+
+// MARK: - Husk files: read-only first milestone.
+//
+// Takopi Explorer inspired the root-bound folder navigation. No writes or
+// synthetic Android directories are performed. Husk's native TranslationLayer
+// and its emulated Android guest are separate storage backends.
+private enum BloomBoxHuskFiles {
+    struct Game: Identifiable {
+        let id: String
+        let name: String
+        let packageID: String?
+        let directory: URL
+        let icon: URL?
+    }
+    enum Status {
+        case missing
+        case locked
+        case inaccessible(String)
+        case ready(container: String, games: [Game], shared: URL?)
+    }
+
+    static func inspect(apps: [LCAppModel], unlocked: Bool) -> Status {
+        guard let host = apps.first(where: { $0.bundleIdentifier == "com.husk.app" })
+        else { return .missing }
+        guard !host.appInfo.isLocked || unlocked else { return .locked }
+
+        let profile = BloomBoxProfileStore.active
+        let selected: String?
+        if profile.id == BloomBoxUserProfile.primaryID {
+            selected = host.uiDefaultDataFolder ?? host.appInfo.dataUUID
+                ?? host.uiContainers.first?.folderName
+        } else {
+            let key = (host.uiIsShared ? "shared/" : "private/")
+                + (host.appInfo.relativeBundlePath ?? "") + "/" + host.bundleIdentifier
+            selected = BloomBoxProfileStore.mapping(for: profile.id, appKey: key)
+                ?? host.uiContainers.first(where: {
+                    $0.name.hasPrefix("[BloomBox:\(profile.id)]")
+                        && $0.appIdentifier == host.bundleIdentifier
+                })?.folderName
+        }
+        guard let selected,
+              let container = host.uiContainers.first(where: { $0.folderName == selected })
+        else {
+            return .inaccessible("Husk no tiene un contenedor accesible en este perfil.")
+        }
+        let documents = container.containerURL.appendingPathComponent("Documents", isDirectory: true)
+        guard isDirectory(documents) else {
+            return .inaccessible("No podemos leer los documentos de Husk. Ábrelo una vez y revisa el acceso.")
+        }
+        let native = documents.appendingPathComponent("TranslationLayer", isDirectory: true)
+        let shared = documents.appendingPathComponent("Shared Storage", isDirectory: true)
+        let games: [Game] = (try? files(in: native, root: native))?.compactMap { folder in
+            guard isDirectory(folder),
+                  let contents = try? files(in: folder, root: native),
+                  contents.contains(where: { $0.pathExtension.lowercased() == "apk" })
+            else { return nil }
+            let label = (try? String(contentsOf: folder.appendingPathComponent("label.txt"),
+                                      encoding: .utf8))?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let package = (try? String(contentsOf: folder.appendingPathComponent("package.txt"),
+                                        encoding: .utf8))?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let icon = folder.appendingPathComponent("icon.png")
+            return Game(id: folder.lastPathComponent,
+                        name: label?.isEmpty == false ? label! : folder.lastPathComponent,
+                        packageID: package?.isEmpty == false ? package : nil,
+                        directory: folder,
+                        icon: FileManager.default.isReadableFile(atPath: icon.path) ? icon : nil)
+        }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending } ?? []
+        return .ready(container: selected, games: games, shared: isDirectory(shared) ? shared : nil)
+    }
+
+    static func isDirectory(_ url: URL) -> Bool {
+        let flags = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        return flags?.isDirectory == true && flags?.isSymbolicLink != true
+            && FileManager.default.isReadableFile(atPath: url.path)
+    }
+
+    static func files(in folder: URL, root: URL) throws -> [URL] {
+        let safeRoot = root.standardizedFileURL.resolvingSymlinksInPath()
+        let safeFolder = folder.standardizedFileURL.resolvingSymlinksInPath()
+        guard safeFolder.path == safeRoot.path || safeFolder.path.hasPrefix(safeRoot.path + "/")
+        else { throw CocoaError(.fileReadNoPermission) }
+        return try FileManager.default.contentsOfDirectory(
+            at: safeFolder, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles]
+        ).filter { item in
+            guard (try? item.resourceValues(forKeys: [.isSymbolicLinkKey]))?
+                .isSymbolicLink != true else { return false }
+            return item.standardizedFileURL.resolvingSymlinksInPath().path
+                .hasPrefix(safeRoot.path + "/")
+        }.sorted { lhs, rhs in
+            let l = (try? lhs.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+            let r = (try? rhs.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+            return l == r
+                ? lhs.lastPathComponent.localizedStandardCompare(rhs.lastPathComponent) == .orderedAscending
+                : l
+        }
+    }
+}
+
+struct BloomBoxAndroidFilesView: View {
+    @EnvironmentObject private var sharedModel: SharedModel
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var mode = 0
+    @State private var refreshVersion = 0
+
+    private var english: Bool { BloomBoxL10n.isEnglish }
+    private var status: BloomBoxHuskFiles.Status {
+        _ = refreshVersion
+        return BloomBoxHuskFiles.inspect(
+            apps: sharedModel.apps, unlocked: sharedModel.isHiddenAppUnlocked)
+    }
+
+    var body: some View {
+        NavigationView {
+            List {
+                Section {
+                    HStack(spacing: 12) {
+                        Image(systemName: "folder.badge.gearshape")
+                            .font(.largeTitle).foregroundStyle(.green)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(english ? "Android files" : "Archivos Android").font(.headline)
+                            Text(english ? "Game data, downloads and OBB"
+                                         : "Datos de juegos, descargas y OBB")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                switch status {
+                case .missing:
+                    Section(header: Text("Husk")) {
+                        Text(english ? "Android emulator · APK installer"
+                                     : "Emulador Android · Instalador de APK")
+                            .font(.headline)
+                        Text(english ? "Install Husk to explore Android files."
+                                     : "Instala Husk para explorar los archivos Android.")
+                        if let url = URL(string: "https://itslevii.dev/docs/install") {
+                            Link(english ? "Install Husk" : "Instalar Husk", destination: url)
+                        }
+                        if let url = URL(string: "https://github.com/Leviidev/Husk/releases") {
+                            Link(english ? "Official IPA download" : "Descargar IPA oficial",
+                                 destination: url)
+                        }
+                        Button(english ? "I installed Husk · Check" : "Ya instalé Husk · Comprobar") {
+                            refreshVersion += 1
+                        }
+                    }
+                case .locked:
+                    Section {
+                        Label(english ? "Husk is locked" : "Husk está bloqueado", systemImage: "lock")
+                        Text(english ? "Unlock Husk in BloomBox to access its files."
+                                     : "Desbloquea Husk en BloomBox para acceder a sus archivos.")
+                    }
+                case .inaccessible(let reason):
+                    Section {
+                        Label(english ? "Husk detected · No access"
+                                      : "Husk detectado · Sin acceso",
+                              systemImage: "exclamationmark.triangle")
+                        Text(reason)
+                        Button(english ? "Check again" : "Comprobar de nuevo") { refreshVersion += 1 }
+                    }
+                case .ready(let container, let games, let shared):
+                    Section {
+                        Label(english ? "Husk detected" : "Husk detectado",
+                              systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        Text(container).font(.caption).foregroundStyle(.secondary)
+                        Picker(english ? "View" : "Vista", selection: $mode) {
+                            Text(english ? "By game" : "Por juego").tag(0)
+                            Text(english ? "Storage" : "Almacenamiento").tag(1)
+                        }.pickerStyle(.segmented)
+                    }
+                    if mode == 0 {
+                        Section(header: Text(english ? "Installed games" : "Juegos instalados")) {
+                            if games.isEmpty {
+                                Text(english ? "No native games in this Husk container."
+                                             : "No hay juegos nativos en este contenedor de Husk.")
+                                    .foregroundStyle(.secondary)
+                            }
+                            ForEach(games) { game in
+                                NavigationLink(destination: BloomBoxHuskFolderView(
+                                    root: game.directory, current: game.directory, title: game.name)) {
+                                    HStack(spacing: 10) {
+                                        if let url = game.icon, let image = UIImage(contentsOfFile: url.path) {
+                                            Image(uiImage: image).resizable().scaledToFill()
+                                                .frame(width: 40, height: 40)
+                                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                        } else {
+                                            Image(systemName: "gamecontroller.fill")
+                                                .foregroundStyle(.green).frame(width: 40, height: 40)
+                                        }
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(game.name).font(.headline)
+                                            if let package = game.packageID {
+                                                Text(package).font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                                    .lineLimit(1).truncationMode(.middle)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        Section(header: Text(english ? "Shared storage · /sdcard"
+                                                      : "Almacenamiento compartido · /sdcard")) {
+                            if let shared {
+                                NavigationLink(destination: BloomBoxHuskFolderView(
+                                    root: shared, current: shared, title: "Shared Storage")) {
+                                    Label(english ? "Browse shared folders"
+                                                  : "Explorar carpetas compartidas",
+                                          systemImage: "folder.fill")
+                                }
+                            } else {
+                                Text(english ? "No shared storage yet. Open Husk to initialize it."
+                                             : "Aún no hay almacenamiento compartido. Abre Husk para crearlo.")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Section {
+                            Text(english
+                                 ? "Husk's emulated Android storage is separate and may need a different bridge."
+                                 : "El Android emulado por Husk usa un almacenamiento separado que requiere otro acceso.")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                    Section {
+                        Label(english ? "Read-only first version"
+                                      : "Primera versión de solo lectura",
+                              systemImage: "eye")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .navigationTitle(english ? "Android files" : "Archivos Android")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(english ? "Done" : "Listo") { dismiss() }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { refreshVersion += 1 } label: { Image(systemName: "arrow.clockwise") }
+                }
+            }
+        }
+        .navigationViewStyle(.stack)
+        .onChange(of: scenePhase) { phase in
+            if phase == .active { refreshVersion += 1 }
+        }
+    }
+}
+
+private struct BloomBoxHuskFolderView: View {
+    let root: URL
+    let current: URL
+    let title: String
+    @State private var entries: [URL] = []
+    @State private var error: String?
+    @State private var preview: BloomBoxFileSelection?
+
+    var body: some View {
+        List {
+            if let error { Text(error).foregroundStyle(.red) }
+            if entries.isEmpty && error == nil {
+                Text(BloomBoxL10n.isEnglish ? "This folder is empty."
+                                            : "Esta carpeta está vacía.")
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(entries, id: \.path) { file in
+                let directory = (try? file.resourceValues(forKeys: [.isDirectoryKey]))?
+                    .isDirectory == true
+                if directory {
+                    NavigationLink(destination: BloomBoxHuskFolderView(
+                        root: root, current: file, title: file.lastPathComponent)) {
+                        Label(file.lastPathComponent, systemImage: "folder.fill")
+                    }
+                } else {
+                    Button { preview = BloomBoxFileSelection(url: file) } label: {
+                        Label(file.lastPathComponent, systemImage: "doc.fill")
+                    }
+                }
+            }
+        }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear(perform: reload)
+        .refreshable { reload() }
+        .sheet(item: $preview) { BloomBoxFilePreview(url: $0.url) }
+    }
+
+    private func reload() {
+        do {
+            entries = try BloomBoxHuskFiles.files(in: current, root: root)
+            error = nil
+        } catch {
+            entries = []
+            self.error = error.localizedDescription
+        }
+    }
+}
