@@ -53,12 +53,12 @@ for expected in (
     "case androidData",
     "case privateFiles",
     "case shared",
-    'root.appendingPathComponent("obb"',
-    'root.appendingPathComponent("sdcard/Android/data/" + package',
-    'root.appendingPathComponent("files"',
+    'case .obb: return ["obb"]',
+    'return ["sdcard", "Android", "data", package]',
+    'return ["files"]',
     'sharedRoot.lastPathComponent == "Shared Storage"',
-    "safeFolder.path",  # path confinement and root-bound traversal
-    "try verify(target, in: root)",
+    "BloomBoxHuskPathPolicy.scopedURL(",  # fixed-root relative import paths
+    "let targetParts = try relativeParts(for: game, mode: mode)",
     "isSymbolicLink == true",
     "source.startAccessingSecurityScopedResource()",
     "source.stopAccessingSecurityScopedResource()",
@@ -77,6 +77,17 @@ for expected in (
     assert expected in writer or expected in files, f"Missing safe importer contract: {expected}"
 assert "FileManager.default.removeItem(at: game.directory)" not in writer
 assert "FileManager.default.removeItem(at: target)" not in writer
+# The old raw absolute-path comparison rejected every real Husk import.
+# Never bring it back while importing app-constructed OBB/data destinations.
+assert "RUTA-02" not in writer
+assert "try verify(target, in: root)" not in writer
+assert "static func scopedURL(in root:" not in writer
+assert 'components: targetParts + [file.lastPathComponent]' in writer
+assert 'copyContents(from: content, into: root, components: targetParts' in writer
+assert 'return try checkedURL(in: root,' in writer
+assert 'static func scopedURL(in root:' in original_store
+assert 'if isSymbolicLink(current)' in original_store
+
 
 for token in (
     'private static let filesKey = "manzana:files"',
