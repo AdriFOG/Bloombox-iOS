@@ -1,6 +1,6 @@
-"""Contracts for the first read-only, per-game Husk browser.
+"""Contracts for Husk browsing and opt-in OBB/data imports.
 
-These tests guard routing and containment; they are not on-device proof of Husk access.
+These are structural regression checks, not proof of on-device file-provider behavior.
 """
 from pathlib import Path
 
@@ -33,15 +33,50 @@ for token in (
     "Emulador Android · Instalador de APK",
     "https://itslevii.dev/docs/install",
     "https://github.com/Leviidev/Husk/releases",
-    "Primera versión de solo lectura",
+    "Explora archivos e importa datos de juegos",
     "bloombox.files.android.entry",
 ):
     assert token in files, f"Missing Android browser contract: {token}"
 
-new_browser = files.split("// MARK: - Husk files: read-only first milestone.", 1)[1]
+# Navigation does not mutate the game; only the explicit importer may write.
+readonly_browser = files.split("// MARK: - Husk files: read-only first milestone.", 1)[1].split(
+    "// MARK: - Native Husk data import", 1
+)[0]
 for unsafe in ("FileManager.default.removeItem", "FileManager.default.moveItem",
                "FileManager.default.copyItem", "FileManager.default.createDirectory"):
-    assert unsafe not in new_browser, f"Android browser must be read-only: {unsafe}"
+    assert unsafe not in readonly_browser, f"Navigation must be read-only: {unsafe}"
+
+writer = files.split("// MARK: - Native Husk data import", 1)[1]
+for expected in (
+    "private enum BloomBoxHuskImportMode",
+    "case obb",
+    "case androidData",
+    "case privateFiles",
+    "case shared",
+    'root.appendingPathComponent("obb"',
+    'root.appendingPathComponent("sdcard/Android/data/" + package',
+    'root.appendingPathComponent("files"',
+    'sharedRoot.lastPathComponent == "Shared Storage"',
+    "safeFolder.path",  # path confinement and root-bound traversal
+    "try verify(target, in: root)",
+    "isSymbolicLink == true",
+    "source.startAccessingSecurityScopedResource()",
+    "source.stopAccessingSecurityScopedResource()",
+    "NSFileCoordinator().coordinate(readingItemAt:",
+    "BloomBoxArchive.unpack(source: readable, destination: prepared)",
+    "fm.fileExists(atPath: target.path)",
+    "result.skipped += 1",
+    "fm.copyItem(at: item, to: target)",
+    "created.reversed()",
+    "MultitaskManager.isUsing(container: containerID)",
+    "LCSharedUtils.getContainerUsingLCScheme(withFolderName: containerID)",
+    "BloomBoxHuskGameView(",
+    'fileImporter(isPresented: $picking, allowedContentTypes: [.item, .folder]',
+    "Importar · Conservar archivos existentes",
+):
+    assert expected in writer or expected in files, f"Missing safe importer contract: {expected}"
+assert "FileManager.default.removeItem(at: game.directory)" not in writer
+assert "FileManager.default.removeItem(at: target)" not in writer
 
 for token in (
     'private static let filesKey = "manzana:files"',
@@ -58,4 +93,4 @@ for token in (
 assert 'appendingPathComponent("BloomBox Files"' in original_store
 assert 'appendingPathComponent("Manzana Files"' in original_store
 assert "typealias ManzanaFilesView = BloomBoxFilesView" in files
-print("PASS: read-only Husk explorer, exact-container game mapping and visible Home links")
+print("PASS: Husk browser, scoped OBB/data importer, conflict protection, and Home links")
