@@ -461,8 +461,8 @@ struct BloomBoxAndroidFilesView: View {
                                     .foregroundStyle(.secondary)
                             }
                             ForEach(games) { game in
-                                NavigationLink(destination: BloomBoxHuskFolderView(
-                                    root: game.directory, current: game.directory, title: game.name)) {
+                                NavigationLink(destination: BloomBoxHuskGameView(
+                                    game: game, containerID: container, sharedRoot: shared)) {
                                     HStack(spacing: 10) {
                                         if let url = game.icon, let image = UIImage(contentsOfFile: url.path) {
                                             Image(uiImage: image).resizable().scaledToFill()
@@ -508,9 +508,9 @@ struct BloomBoxAndroidFilesView: View {
                         }
                     }
                     Section {
-                        Label(english ? "Read-only first version"
-                                      : "Primera versión de solo lectura",
-                              systemImage: "eye")
+                        Label(english ? "Browse files and import game data"
+                                      : "Explora archivos e importa datos de juegos",
+                              systemImage: "folder.badge.plus")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                 }
@@ -578,6 +578,419 @@ private struct BloomBoxHuskFolderView: View {
         } catch {
             entries = []
             self.error = error.localizedDescription
+        }
+    }
+}
+
+
+// MARK: - Native Husk data import (Takopi-inspired guarded copying)
+//
+// Native Husk maps Android/obb to the APK directory's obb/ fallback and
+// Android/data/<package> to the *game-local* sdcard/Android/data/<package>.
+// Do not route these into iOS Downloads or another game's directory.
+private enum BloomBoxHuskImportMode: String, CaseIterable, Identifiable {
+    case obb
+    case androidData
+    case privateFiles
+    case shared
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .obb: return BloomBoxL10n.isEnglish ? "OBB expansions" : "Archivos OBB"
+        case .androidData: return BloomBoxL10n.isEnglish ? "Android/data" : "Datos Android"
+        case .privateFiles: return BloomBoxL10n.isEnglish ? "Private game files" : "Archivos privados"
+        case .shared: return BloomBoxL10n.isEnglish ? "Shared storage" : "Almacenamiento compartido"
+        }
+    }
+    var subtitle: String {
+        switch self {
+        case .obb: return "Android/obb/"
+        case .androidData: return "Android/data/"
+        case .privateFiles: return "/data/data/…/files/"
+        case .shared: return "/sdcard/"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .obb: return "archivebox.fill"
+        case .androidData: return "externaldrive.fill"
+        case .privateFiles: return "lock.doc.fill"
+        case .shared: return "folder.fill"
+        }
+    }
+}
+
+private enum BloomBoxHuskDataImport {
+    struct Result {
+        var copied = 0
+        var skipped = 0
+    }
+
+    enum ImportError: LocalizedError {
+        case invalidGame, invalidPackage, invalidSource, invalidTarget
+        case noOBB, obbPackageMismatch, unsafeLink, gameBusy
+        var errorDescription: String? {
+            switch self {
+            case .invalidGame: return "El juego o el contenedor cambió. Vuelve a abrir Archivos Android."
+            case .invalidPackage: return "Husk no informó el paquete de este juego. No se pueden asignar sus datos."
+            case .invalidSource: return "Selecciona archivos, carpetas o un ZIP válido."
+            case .invalidTarget: return "La carpeta de destino no es segura o no se puede usar."
+            case .noOBB: return "No se encontraron archivos .obb en la selección."
+            case .obbPackageMismatch: return "Este OBB parece pertenecer a otro juego. No se importó."
+            case .unsafeLink: return "Hay un enlace o una ruta insegura. No se importó."
+            case .gameBusy: return "Cierra Husk y sus juegos antes de importar datos."
+            }
+        }
+    }
+
+    static func destination(for game: BloomBoxHuskFiles.Game, mode: BloomBoxHuskImportMode,
+                            sharedRoot: URL?) throws -> URL {
+        let root = game.directory
+        guard root.deletingLastPathComponent().lastPathComponent == "TranslationLayer",
+              BloomBoxHuskFiles.isDirectory(root),
+              let children = try? BloomBoxHuskFiles.files(in: root, root: root),
+              children.contains(where: { $0.pathExtension.lowercased() == "apk" })
+        else { throw ImportError.invalidGame }
+        switch mode {
+        case .obb: return root.appendingPathComponent("obb", isDirectory: true)
+        case .androidData:
+            guard let package = validPackage(game.packageID) else { throw ImportError.invalidPackage }
+            return root.appendingPathComponent("sdcard/Android/data/" + package, isDirectory: true)
+        case .privateFiles:
+            guard validPackage(game.packageID) != nil else { throw ImportError.invalidPackage }
+            return root.appendingPathComponent("files", isDirectory: true)
+        case .shared:
+            guard let sharedRoot,
+                  sharedRoot.lastPathComponent == "Shared Storage",
+                  BloomBoxHuskFiles.isDirectory(sharedRoot)
+            else { throw ImportError.invalidTarget }
+            return sharedRoot
+        }
+    }
+
+    static func validPackage(_ value: String?) -> String? {
+        guard let value, value.count < 240, !value.isEmpty,
+              !value.hasPrefix("."), !value.hasSuffix("."),
+              value.contains("."),
+              value.unicodeScalars.allSatisfy({
+                  CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.").contains($0)
+              })
+        else { return nil }
+        return value
+    }
+
+    // A previous permission check is not a guarantee of safety: every
+    // existing path component is rechecked for symlinks before writing.
+    private static func verify(_ url: URL, in root: URL) throws {
+        let base = root.standardizedFileURL
+        let target = url.standardizedFileURL
+        guard target.path == base.path || target.path.hasPrefix(base.path + "/")
+        else { throw ImportError.invalidTarget }
+        let relative = target.path == base.path ? "" : String(target.path.dropFirst(base.path.count + 1))
+        var step = base
+        let fm = FileManager.default
+        let baseValues = try base.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        guard baseValues.isDirectory == true, baseValues.isSymbolicLink != true
+        else { throw ImportError.invalidTarget }
+        for segment in relative.split(separator: "/") {
+            step.appendPathComponent(String(segment))
+            if fm.fileExists(atPath: step.path) {
+                let v = try step.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+                if v.isSymbolicLink == true { throw ImportError.unsafeLink }
+            }
+        }
+    }
+
+    private static func makeTarget(_ dir: URL, root: URL) throws {
+        try verify(dir, in: root)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try verify(dir, in: root)
+    }
+
+    private static func allFiles(in folder: URL) throws -> [URL] {
+        let fm = FileManager.default
+        var result: [URL] = []
+        func walk(_ dir: URL) throws {
+            let urls = try fm.contentsOfDirectory(at: dir, includingPropertiesForKeys:
+                [.isDirectoryKey, .isSymbolicLinkKey], options: [.skipsHiddenFiles])
+            for file in urls {
+                let values = try file.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+                if values.isSymbolicLink == true { throw ImportError.unsafeLink }
+                if values.isDirectory == true { try walk(file) }
+                else if values.isRegularFile == true { result.append(file) }
+                else { throw ImportError.invalidSource }
+            }
+        }
+        try walk(folder)
+        return result
+    }
+
+    private static func preparedDataRoot(_ folder: URL, package: String?, mode: BloomBoxHuskImportMode) -> URL {
+        guard let package else { return folder }
+        let fm = FileManager.default
+        let android = folder.appendingPathComponent("Android/data/" + package)
+        let privateData = folder.appendingPathComponent("data/data/" + package + "/files")
+        if mode == .androidData, fm.fileExists(atPath: android.path) { return android }
+        if mode == .privateFiles, fm.fileExists(atPath: privateData.path) { return privateData }
+        let packaged = folder.appendingPathComponent(package)
+        if fm.fileExists(atPath: packaged.path) { return packaged }
+        // A ZIP whose only top-level folder contains the conventional Android path.
+        if let items = try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil),
+           items.count == 1, BloomBoxHuskFiles.isDirectory(items[0]) {
+            let nested = items[0]
+            let android = nested.appendingPathComponent("Android/data/" + package)
+            let privateData = nested.appendingPathComponent("data/data/" + package + "/files")
+            if mode == .androidData, fm.fileExists(atPath: android.path) { return android }
+            if mode == .privateFiles, fm.fileExists(atPath: privateData.path) { return privateData }
+            if mode != .shared { return nested }
+        }
+        return folder
+    }
+
+    private static func copyContents(from source: URL, into dest: URL, root: URL,
+                                     result: inout Result, created: inout [URL]) throws {
+        let fm = FileManager.default
+        for item in try fm.contentsOfDirectory(at: source, includingPropertiesForKeys:
+            [.isDirectoryKey, .isSymbolicLinkKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]) {
+            let flags = try item.resourceValues(forKeys:
+                [.isDirectoryKey, .isSymbolicLinkKey, .isRegularFileKey])
+            if flags.isSymbolicLink == true { throw ImportError.unsafeLink }
+            let target = dest.appendingPathComponent(item.lastPathComponent)
+            try verify(target, in: root)
+            if flags.isDirectory == true {
+                if fm.fileExists(atPath: target.path) {
+                    guard BloomBoxHuskFiles.isDirectory(target) else {
+                        result.skipped += 1; continue
+                    }
+                } else {
+                    try fm.createDirectory(at: target, withIntermediateDirectories: false)
+                    created.append(target)
+                }
+                try copyContents(from: item, into: target, root: root,
+                                 result: &result, created: &created)
+            } else if flags.isRegularFile == true {
+                if fm.fileExists(atPath: target.path) {
+                    result.skipped += 1 // Never overwrite existing saves or data.
+                    continue
+                }
+                try fm.copyItem(at: item, to: target)
+                created.append(target)
+                result.copied += 1
+            } else {
+                throw ImportError.invalidSource
+            }
+        }
+    }
+
+    static func install(_ sources: [URL], game: BloomBoxHuskFiles.Game,
+                        mode: BloomBoxHuskImportMode, sharedRoot: URL?) throws -> Result {
+        let fm = FileManager.default
+        let target = try destination(for: game, mode: mode, sharedRoot: sharedRoot)
+        let root = mode == .shared ? (sharedRoot ?? game.directory) : game.directory
+        try verify(target, in: root)
+        var summary = Result()
+        for source in sources {
+            let access = source.startAccessingSecurityScopedResource()
+            defer { if access { source.stopAccessingSecurityScopedResource() } }
+            let scratch = fm.temporaryDirectory.appendingPathComponent(
+                "BloomBox-Husk-Import-" + UUID().uuidString, isDirectory: true)
+            try fm.createDirectory(at: scratch, withIntermediateDirectories: false)
+            defer { try? fm.removeItem(at: scratch) }
+            let prepared = scratch.appendingPathComponent("prepared", isDirectory: true)
+            var coordinationError: NSError?
+            var readError: Error?
+            NSFileCoordinator().coordinate(readingItemAt: source, options: [],
+                                           error: &coordinationError) { readable in
+                do {
+                    let flags = try readable.resourceValues(forKeys:
+                        [.isDirectoryKey, .isSymbolicLinkKey, .isRegularFileKey])
+                    guard flags.isSymbolicLink != true else { throw ImportError.unsafeLink }
+                    if readable.pathExtension.lowercased() == "zip", flags.isRegularFile == true {
+                        // Existing, path-traversal-checked BloomBox ZIP extractor.
+                        try BloomBoxArchive.unpack(source: readable, destination: prepared)
+                    } else {
+                        guard flags.isDirectory == true || flags.isRegularFile == true
+                        else { throw ImportError.invalidSource }
+                        try fm.createDirectory(at: prepared, withIntermediateDirectories: false)
+                        try fm.copyItem(at: readable, to: prepared.appendingPathComponent(source.lastPathComponent))
+                    }
+                } catch { readError = error }
+            }
+            if let coordinationError { throw coordinationError }
+            if let readError { throw readError }
+            try makeTarget(target, root: root)
+            var created: [URL] = []
+            do {
+                if mode == .obb {
+                    let obbFiles = try allFiles(in: prepared).filter {
+                        $0.pathExtension.lowercased() == "obb"
+                    }
+                    guard !obbFiles.isEmpty else { throw ImportError.noOBB }
+                    for file in obbFiles {
+                        if let package = validPackage(game.packageID) {
+                            let filename = file.lastPathComponent
+                            if filename.hasPrefix("main.") || filename.hasPrefix("patch.") {
+                                let components = filename.split(separator: ".", maxSplits: 2)
+                                if components.count == 3 {
+                                    let namePackage = String(components[2].dropLast(4))
+                                    if namePackage != package { throw ImportError.obbPackageMismatch }
+                                }
+                            }
+                        }
+                        let dest = target.appendingPathComponent(file.lastPathComponent)
+                        try verify(dest, in: root)
+                        if fm.fileExists(atPath: dest.path) { summary.skipped += 1; continue }
+                        try fm.copyItem(at: file, to: dest)
+                        created.append(dest)
+                        summary.copied += 1
+                    }
+                } else {
+                    let content = preparedDataRoot(prepared, package: validPackage(game.packageID),
+                                                   mode: mode)
+                    try copyContents(from: content, into: target, root: root,
+                                     result: &summary, created: &created)
+                }
+            } catch {
+                for item in created.reversed() { try? fm.removeItem(at: item) }
+                throw error
+            }
+        }
+        return summary
+    }
+}
+
+private struct BloomBoxHuskGameView: View {
+    let game: BloomBoxHuskFiles.Game
+    let containerID: String
+    let sharedRoot: URL?
+
+    @EnvironmentObject private var sharedModel: SharedModel
+    @State private var choice: BloomBoxHuskImportMode = .obb
+    @State private var picking = false
+    @State private var confirming = false
+    @State private var chosen: [URL] = []
+    @State private var busy = false
+    @State private var notice: String?
+    private var english: Bool { BloomBoxL10n.isEnglish }
+
+    private var hostBusy: Bool {
+        let host = sharedModel.apps.first(where: { $0.bundleIdentifier == "com.husk.app" })
+        return host == nil || host?.isAppRunning == true
+            || MultitaskManager.isUsing(container: containerID)
+            || LCSharedUtils.getContainerUsingLCScheme(withFolderName: containerID) != nil
+    }
+
+    var body: some View {
+        List {
+            Section {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(game.name).font(.title3.bold())
+                    if let package = game.packageID {
+                        Text(package).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Text(english ? "Import OBB and game data directly into Husk."
+                                 : "Importa OBB y datos directamente a Husk.")
+                        .font(.subheadline)
+                }.padding(.vertical, 5)
+                if hostBusy {
+                    Label(english ? "Close Husk before importing."
+                                  : "Cierra Husk antes de importar archivos.",
+                          systemImage: "lock.fill").foregroundStyle(.orange)
+                }
+            }
+            Section(header: Text(english ? "Import game data" : "Importar datos del juego")) {
+                ForEach(BloomBoxHuskImportMode.allCases) { mode in
+                    if mode != .shared || sharedRoot != nil {
+                        Button {
+                            choice = mode
+                            picking = true
+                        } label: {
+                            HStack(spacing: 13) {
+                                Image(systemName: mode.symbol).foregroundStyle(.green)
+                                    .frame(width: 29)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(mode.title).foregroundStyle(.primary)
+                                    Text(mode.subtitle).font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "square.and.arrow.down")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }.disabled(busy || hostBusy
+                                   || ((mode == .androidData || mode == .privateFiles)
+                                       && BloomBoxHuskDataImport.validPackage(game.packageID) == nil))
+                    }
+                }
+            }
+            Section(header: Text(english ? "Explore files" : "Explorar archivos")) {
+                NavigationLink(destination: BloomBoxHuskFolderView(
+                    root: game.directory, current: game.directory, title: game.name)) {
+                    Label(english ? "View game folder" : "Ver carpeta del juego", systemImage: "folder")
+                }
+            }
+            Section {
+                Text(english
+                     ? "Supports .obb, ZIP, and folders. Files are copied without overwriting existing game data."
+                     : "Admite .obb, ZIP y carpetas. Copia los datos sin sobrescribir archivos existentes.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            if busy { Section { ProgressView(english ? "Importing…" : "Importando…") } }
+        }
+        .navigationTitle(english ? "Game files" : "Archivos del juego")
+        .navigationBarTitleDisplayMode(.inline)
+        .fileImporter(isPresented: $picking, allowedContentTypes: [.item, .folder],
+                      allowsMultipleSelection: true) { result in
+            switch result {
+            case .success(let urls):
+                chosen = urls
+                confirming = !urls.isEmpty
+            case .failure(let error): notice = error.localizedDescription
+            }
+        }
+        .confirmationDialog(english ? "Import these files?" : "¿Importar estos archivos?",
+                            isPresented: $confirming, titleVisibility: .visible) {
+            Button(english ? "Import · Keep existing files" : "Importar · Conservar archivos existentes") {
+                importChosen()
+            }
+            Button(english ? "Cancel" : "Cancelar", role: .cancel) { chosen = [] }
+        } message: {
+            let count = chosen.count
+            let dest = (try? BloomBoxHuskDataImport.destination(
+                for: game, mode: choice, sharedRoot: sharedRoot))?.path ?? "—"
+            Text("\(count) archivo(s) → \(dest)")
+        }
+        .alert(english ? "Game data" : "Datos del juego",
+               isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
+            Button("OK") { notice = nil }
+        } message: { Text(notice ?? "") }
+    }
+
+    private func importChosen() {
+        guard !busy, !hostBusy, !chosen.isEmpty else {
+            notice = english ? "Close Husk before importing." : "Cierra Husk antes de importar."
+            return
+        }
+        let selected = chosen
+        chosen = []
+        let mode = choice
+        let game = game
+        let shared = sharedRoot
+        busy = true
+        Task {
+            do {
+                let result = try await Task.detached(priority: .userInitiated) {
+                    try BloomBoxHuskDataImport.install(selected, game: game, mode: mode,
+                                                       sharedRoot: shared)
+                }.value
+                notice = english
+                    ? "Imported \(result.copied) files. Kept \(result.skipped) existing files."
+                    : "Se importaron \(result.copied) archivos. Se conservaron \(result.skipped) archivos existentes."
+            } catch {
+                notice = error.localizedDescription
+            }
+            busy = false
         }
     }
 }
