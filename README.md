@@ -6,7 +6,7 @@
 
 A personal home for your apps, widgets and files — with room to experiment.
 
-[**Download BloomBox 3.2.0**](https://github.com/AdriFOG/Bloombox-iOS/releases/tag/v3.2.0) · [Builds](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml) · [Report an issue](https://github.com/AdriFOG/Bloombox-iOS/issues)
+[**Download BloomBox 3.2.1**](https://github.com/AdriFOG/Bloombox-iOS/releases/tag/v3.2.1) · [Builds](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml) · [Report an issue](https://github.com/AdriFOG/Bloombox-iOS/issues)
 
 [![Build](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-purple.svg)](LICENSE) · [Original-work attribution](LICENSE-ADDITIONAL-TERMS.md)
@@ -16,6 +16,15 @@ A personal home for your apps, widgets and files — with room to experiment.
 **BloomBox is an independently maintained iOS launcher and application container built on LiveContainer technology.** Bring compatible apps into one customizable space, organize your desktop, discover community projects and manage files without leaving BloomBox.
 
 Its home screen lives **inside the app**; it does not replace the iOS Home Screen. Experimental features are clearly identified below so you can choose what to try.
+
+## BloomBox 3.2.1 — Compact News Home & Store Icons
+- **Eight shortcuts in two rows:** APK Store, App Store, Themes, Modules, SideStore, Files, RAM+ and Settings; reorder, hide or reset them.
+- **Cleaner profiles:** compact matte card without Liquid Glass.
+- **Store logos fixed:** bundled Google Play and Apple App Store logos render offline, with SideStore's real embedded icon and graceful fallback if an icon fails to load.
+- **Compact GameBox and news:** one news item at a time, with arrows and full article view.
+- Husk, JIT and guest installation logic remains unchanged; previous known issues still apply.
+
+[3.2.1 release notes and installation guide](docs/BloomBox-3.2.1-Release-Notes.md).
 
 ## BloomBox 3.2.0 — Port Stores & RAM+
 
