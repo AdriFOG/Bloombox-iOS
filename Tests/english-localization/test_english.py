@@ -83,7 +83,7 @@ for expected in [
     "Text(BloomBoxL10n.t(section.title))",
     "name: BloomBoxL10n.t(title(key, appsByKey: appsByKey))",
     "Text(BloomBoxL10n.t(title(key)))",
-    'Text(BloomBoxL10n.t(isSideStore ? "SideStore"',
+    'if key == Self.androidFilesKey { return englishUI ? "Android Files" : "Archivos Android" }',
     'englishUI ? "Page \\(index + 1)"',
 ]:
     assert expected in home, f"Home English runtime path lost: {expected}"
@@ -108,7 +108,8 @@ assert 'translation_path = app + "en.lproj/Localizable.strings"' in verifier
 assert "expected_table" in verifier
 assert 'BloomBoxL10n.t(message)' in chrome
 assert 'Text(BloomBoxL10n.t(section.title))' in home
-assert 'Text(BloomBoxL10n.t(isSideStore ?' in home
+assert 'Text(BloomBoxL10n.t(title(key)))' in home
+assert 'else if isAndroidFiles { androidFilesPresented = true }' in home
 for entry in ("Módulos", "Temas", "Juegos", "Sugerencias", "Añadidas recientemente",
               "Instalando aplicación", "Salir de simulación", "RAM+ confirmado en la instalación actual"):
     # Source-file String literals also exist in nested helpers with their own
