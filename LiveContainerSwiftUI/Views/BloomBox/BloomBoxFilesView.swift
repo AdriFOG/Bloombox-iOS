@@ -742,7 +742,8 @@ private enum BloomBoxHuskDataImport {
             let privateData = nested.appendingPathComponent("data/data/" + package + "/files")
             if mode == .androidData, fm.fileExists(atPath: android.path) { return android }
             if mode == .privateFiles, fm.fileExists(atPath: privateData.path) { return privateData }
-            if mode != .shared { return nested }
+            // Preserve an ordinary folder such as "files" or "cache": it is
+            // part of Android's destination tree, not a wrapper to discard.
         }
         return folder
     }
@@ -800,8 +801,13 @@ private enum BloomBoxHuskDataImport {
             let prepared = scratch.appendingPathComponent("prepared", isDirectory: true)
             var coordinationError: NSError?
             var readError: Error?
-            NSFileCoordinator().coordinate(readingItemAt: source, options: [],
-                                           error: &coordinationError) { readable in
+            // iCloud/document providers may need a coordinated upload snapshot
+            // for folders; this yields a readable ZIP without touching originals.
+            let sourceFolder = (try? source.resourceValues(
+                forKeys: [.isDirectoryKey]))?.isDirectory == true
+            NSFileCoordinator().coordinate(
+                readingItemAt: source, options: sourceFolder ? [.forUploading] : [],
+                error: &coordinationError) { readable in
                 do {
                     let flags = try readable.resourceValues(forKeys:
                         [.isDirectoryKey, .isSymbolicLinkKey, .isRegularFileKey])
