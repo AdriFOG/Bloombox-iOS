@@ -12,6 +12,10 @@ assert "archive_read_support_format_zip" in validator
 assert "archive_read_data_skip(reader)" in validator
 assert "AndroidManifest.xml" not in validator.split("struct archive *reader", 1)[1]
 assert "archive_entry_filetype(entry) != AE_IFDIR" in validator
+assert "looksLikeNonemptyAPKZIP(source)" in validator
+assert "unsigned int entries" in archive
+assert "tailSize" in archive and "memcmp(header" in archive
+assert "excessiveEntries" in validator
 
 assert 'settings["orientation"] = mode' in home
 assert "LiveBoardOrientation.beginGuest(appKey: appKey" in home
@@ -22,10 +26,21 @@ assert "waitForHuskDebugger(" in home
 assert '"debugger_attached", "awaiting_guest", "completed"' in home
 assert "max(0, 3 - Date().timeIntervalSince(started))" in home
 assert "AppSceneViewController.bloomBoxSendURL(" in home
+assert 'landscape: mode == "landscape"' in home
+assert "let deadline = Date().addingTimeInterval(12)" in home
+assert "deliverHuskGameLink(game, mode: mode)" in home
+assert "openHuskLibrary(_ game: HuskGame)" in home
+assert "forceJIT: false" in home.split("private func openHuskLibrary(", 1)[1].split("@ViewBuilder private func huskMenu", 1)[0]
+assert '"Open in Husk (manual)"' in home
 assert "huskStartingGame" in home
 assert "return success" not in home.split("private func openHuskGame(", 1)[1].split("@ViewBuilder private func huskMenu", 1)[0]
 
 assert "+ (BOOL)bloomBoxSendURL:" in scene_h
+assert "toContainer:(NSString *)dataUUID landscape:(BOOL)landscape" in scene_h
+assert "target.view.window" in scene_m and "target.contentView.window" in scene_m
+assert "target.bloomBoxHuskStableSince" in scene_m
+assert "CACurrentMediaTime() - target.bloomBoxHuskStableSince < 1.0" in scene_m
+assert "[self bloomBoxSendURL:urlString toContainer:dataUUID]" in scene_m
 assert "[target openURLScheme:urlString]" in scene_m
 assert "strongToWeakObjectsMapTable" in scene_m
 assert "BloomBoxGuestSceneDidExit" in scene_m
@@ -42,5 +57,12 @@ for guardrail in ("!host.isAppRunning", "huskLaunchingKey == nil", "huskStarting
                   "refreshHuskGames()", "layout.removePlacement(game.key)", "reconcile()"):
     assert guardrail in uninstall, f"Missing safe APK uninstall behavior: {guardrail}"
 assert '"The APK, its settings, and all local game data stored in Husk will be permanently deleted.' in home
+
+guest = (root / "LiveContainerSwiftUI/Models/LCAppModel.swift").read_text()
+assert "if wantsJIT, let fn = currentDataFolder" in guest
+assert "for _ in 0..<16" in guest
+assert "try await Task.sleep(nanoseconds: 250_000_000)" in guest
+assert "if LCSharedUtils.getContainerUsingLCScheme(withFolderName: fn) == nil { break }" in guest
+assert 'throw "Otro LiveContainer está usando los datos de esta app.' in guest
 assert 'performGuest(.uninstall(key: LiveContainerHomeAdapter.key(app))' in home
 print("PASS: Husk APK import, orientation, staged debugger, deep-link and uninstall contract")

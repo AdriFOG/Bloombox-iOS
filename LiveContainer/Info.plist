@@ -19,7 +19,7 @@
 		<dict>
 			<key>UTTypeIdentifier</key><string>com.android.package-archive</string>
 			<key>UTTypeDescription</key><string>Android APK</string>
-			<key>UTTypeConformsTo</key><array><string>public.archive</string></array>
+			<key>UTTypeConformsTo</key><array><string>public.data</string><string>public.content</string></array>
 			<key>UTTypeTagSpecification</key><dict>
 				<key>public.filename-extension</key><array><string>apk</string></array>
 				<key>public.mime-type</key><string>application/vnd.android.package-archive</string>
