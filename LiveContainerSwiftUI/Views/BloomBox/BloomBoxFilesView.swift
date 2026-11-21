@@ -645,29 +645,61 @@ private enum BloomBoxHuskDataImport {
         }
     }
 
-    static func destination(for game: BloomBoxHuskFiles.Game, mode: BloomBoxHuskImportMode,
-                            sharedRoot: URL?) throws -> URL {
-        let root = game.directory
-        guard root.deletingLastPathComponent().lastPathComponent == "TranslationLayer",
-              BloomBoxHuskFiles.isDirectory(root),
-              let children = try? BloomBoxHuskFiles.files(in: root, root: root),
-              children.contains(where: { $0.pathExtension.lowercased() == "apk" })
-        else { throw ImportError.invalidGame }
+    /// Only the selected Husk game's inspected directory can be a write root.
+    /// OBB/data destinations use fixed segments; no iOS absolute-path guesses.
+    static func relativeParts(for game: BloomBoxHuskFiles.Game,
+                              mode: BloomBoxHuskImportMode) throws -> [String] {
         switch mode {
-        case .obb: return root.appendingPathComponent("obb", isDirectory: true)
+        case .obb: return ["obb"]
         case .androidData:
             guard let package = validPackage(game.packageID) else { throw ImportError.invalidPackage }
-            return root.appendingPathComponent("sdcard/Android/data/" + package, isDirectory: true)
+            return ["sdcard", "Android", "data", package]
         case .privateFiles:
             guard validPackage(game.packageID) != nil else { throw ImportError.invalidPackage }
-            return root.appendingPathComponent("files", isDirectory: true)
-        case .shared:
+            return ["files"]
+        case .shared: return []
+        }
+    }
+
+    static func checkedURL(in root: URL, components: [String], isDirectory: Bool) throws -> URL {
+        do {
+            return try BloomBoxHuskPathPolicy.scopedURL(
+                in: root, components: components, isDirectory: isDirectory)
+        } catch BloomBoxHuskPathPolicy.Failure.outsideRoot {
+            throw ImportError.invalidTarget("DEST-01: nombre de carpeta o archivo no válido.")
+        } catch BloomBoxHuskPathPolicy.Failure.notFileURL {
+            throw ImportError.invalidTarget("DEST-02: el contenedor de Husk no es una carpeta local.")
+        } catch BloomBoxHuskPathPolicy.ValidationFailure.missingGameDirectory {
+            throw ImportError.invalidTarget("DEST-03: no se encontró la carpeta de Husk.")
+        } catch BloomBoxHuskPathPolicy.ValidationFailure.nonDirectoryAncestor {
+            throw ImportError.invalidTarget("DEST-04: una ruta intermedia es un archivo.")
+        } catch BloomBoxHuskPathPolicy.ValidationFailure.unsafeLink {
+            throw ImportError.unsafeLink
+        }
+    }
+
+    static func destination(for game: BloomBoxHuskFiles.Game, mode: BloomBoxHuskImportMode,
+                            sharedRoot: URL?) throws -> URL {
+        let gameRoot = game.directory
+        guard gameRoot.deletingLastPathComponent().lastPathComponent == "TranslationLayer",
+              BloomBoxHuskFiles.isDirectory(gameRoot),
+              let children = try? BloomBoxHuskFiles.files(in: gameRoot, root: gameRoot),
+              children.contains(where: { $0.pathExtension.lowercased() == "apk" })
+        else { throw ImportError.invalidGame }
+        let root: URL
+        if mode == .shared {
             guard let sharedRoot,
                   sharedRoot.lastPathComponent == "Shared Storage",
-                  BloomBoxHuskFiles.isDirectory(sharedRoot)
-            else { throw ImportError.invalidTarget("No se encontró el almacenamiento compartido de Husk.") }
-            return sharedRoot
+                  BloomBoxHuskFiles.isDirectory(sharedRoot) else {
+                throw ImportError.invalidTarget("No se encontró el almacenamiento compartido de Husk.")
+            }
+            root = sharedRoot
+        } else {
+            root = gameRoot
         }
+        return try checkedURL(in: root,
+                              components: relativeParts(for: game, mode: mode),
+                              isDirectory: true)
     }
 
     static func validPackage(_ value: String?) -> String? {
@@ -681,34 +713,16 @@ private enum BloomBoxHuskDataImport {
         return value
     }
 
-    // Shared with the executable Swift regression tests. No second,
-    // inconsistent path check is maintained in this UI module.
-    private static func verify(_ url: URL, in root: URL) throws {
-        do {
-            try BloomBoxHuskPathPolicy.validateDestination(url, under: root)
-        } catch BloomBoxHuskPathPolicy.Failure.notFileURL {
-            throw ImportError.invalidTarget("RUTA-01: no es una ruta local.")
-        } catch BloomBoxHuskPathPolicy.Failure.outsideRoot {
-            throw ImportError.invalidTarget(
-                "RUTA-02: la subcarpeta no pertenece al contenedor seleccionado de Husk.")
-        } catch BloomBoxHuskPathPolicy.ValidationFailure.missingGameDirectory {
-            throw ImportError.invalidTarget("RUTA-03: ya no existe la carpeta del juego.")
-        } catch BloomBoxHuskPathPolicy.ValidationFailure.nonDirectoryAncestor {
-            throw ImportError.invalidTarget("RUTA-04: hay un archivo donde debería haber una carpeta.")
-        } catch BloomBoxHuskPathPolicy.ValidationFailure.unsafeLink {
-            throw ImportError.unsafeLink
-        }
-    }
-
-    private static func makeTarget(_ dir: URL, root: URL) throws {
-        try verify(dir, in: root)
+    private static func makeTarget(root: URL, components: [String]) throws -> URL {
+        let dir = try checkedURL(in: root, components: components, isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         } catch {
-            throw ImportError.invalidTarget("No se pudo crear " + dir.lastPathComponent +
-                                             ": " + error.localizedDescription)
+            throw ImportError.invalidTarget(
+                "DEST-05: no se pudo crear " + dir.lastPathComponent +
+                ": " + error.localizedDescription)
         }
-        try verify(dir, in: root)
+        return try checkedURL(in: root, components: components, isDirectory: true)
     }
 
     private static func allFiles(in folder: URL) throws -> [URL] {
@@ -752,8 +766,9 @@ private enum BloomBoxHuskDataImport {
         return folder
     }
 
-    private static func copyContents(from source: URL, into dest: URL, root: URL,
-                                     result: inout Result, created: inout [URL]) throws {
+    private static func copyContents(from source: URL, into root: URL,
+                                     components: [String], result: inout Result,
+                                     created: inout [URL]) throws {
         let fm = FileManager.default
         for item in try fm.contentsOfDirectory(at: source, includingPropertiesForKeys:
             [.isDirectoryKey, .isSymbolicLinkKey, .isRegularFileKey],
@@ -761,9 +776,10 @@ private enum BloomBoxHuskDataImport {
             let flags = try item.resourceValues(forKeys:
                 [.isDirectoryKey, .isSymbolicLinkKey, .isRegularFileKey])
             if flags.isSymbolicLink == true { throw ImportError.unsafeLink }
-            let target = dest.appendingPathComponent(item.lastPathComponent)
-            try verify(target, in: root)
-            if flags.isDirectory == true {
+            let next = components + [item.lastPathComponent]
+            let isFolder = flags.isDirectory == true
+            let target = try checkedURL(in: root, components: next, isDirectory: isFolder)
+            if isFolder {
                 if fm.fileExists(atPath: target.path) {
                     guard BloomBoxHuskFiles.isDirectory(target) else {
                         result.skipped += 1; continue
@@ -772,7 +788,7 @@ private enum BloomBoxHuskDataImport {
                     try fm.createDirectory(at: target, withIntermediateDirectories: false)
                     created.append(target)
                 }
-                try copyContents(from: item, into: target, root: root,
+                try copyContents(from: item, into: root, components: next,
                                  result: &result, created: &created)
             } else if flags.isRegularFile == true {
                 if fm.fileExists(atPath: target.path) {
@@ -791,9 +807,10 @@ private enum BloomBoxHuskDataImport {
     static func install(_ sources: [URL], game: BloomBoxHuskFiles.Game,
                         mode: BloomBoxHuskImportMode, sharedRoot: URL?) throws -> Result {
         let fm = FileManager.default
-        let target = try destination(for: game, mode: mode, sharedRoot: sharedRoot)
+        // Validate the selected game identity before writing anything.
+        _ = try destination(for: game, mode: mode, sharedRoot: sharedRoot)
         let root = mode == .shared ? (sharedRoot ?? game.directory) : game.directory
-        try verify(target, in: root)
+        let targetParts = try relativeParts(for: game, mode: mode)
         var summary = Result()
         for source in sources {
             let access = source.startAccessingSecurityScopedResource()
@@ -829,7 +846,7 @@ private enum BloomBoxHuskDataImport {
             }
             if let coordinationError { throw coordinationError }
             if let readError { throw readError }
-            try makeTarget(target, root: root)
+            let target = try makeTarget(root: root, components: targetParts)
             var created: [URL] = []
             do {
                 if mode == .obb {
@@ -848,8 +865,9 @@ private enum BloomBoxHuskDataImport {
                                 }
                             }
                         }
-                        let dest = target.appendingPathComponent(file.lastPathComponent)
-                        try verify(dest, in: root)
+                        let dest = try checkedURL(
+                            in: root, components: targetParts + [file.lastPathComponent],
+                            isDirectory: false)
                         if fm.fileExists(atPath: dest.path) { summary.skipped += 1; continue }
                         try fm.copyItem(at: file, to: dest)
                         created.append(dest)
@@ -858,7 +876,7 @@ private enum BloomBoxHuskDataImport {
                 } else {
                     let content = preparedDataRoot(prepared, package: validPackage(game.packageID),
                                                    mode: mode)
-                    try copyContents(from: content, into: target, root: root,
+                    try copyContents(from: content, into: root, components: targetParts,
                                      result: &summary, created: &created)
                 }
             } catch {
