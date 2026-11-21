@@ -171,6 +171,11 @@ enum BloomBoxRAMPortal {
             }
         }
     }
+    /// A repeat test of an already installed RAM+ entitlement must never
+    /// perform a write to the Apple Developer Services App ID.
+    static func shouldPatch(_ snapshot: Snapshot, testOnly: Bool) -> Bool {
+        !testOnly && !snapshot.enabled
+    }
     static func strictBool(_ value: Any?) -> Bool? {
         guard let n = value as? NSNumber, CFGetTypeID(n) == CFBooleanGetTypeID() else { return nil }
         return n.boolValue
