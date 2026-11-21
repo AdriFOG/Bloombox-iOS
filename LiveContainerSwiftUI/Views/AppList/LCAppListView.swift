@@ -186,6 +186,25 @@ private struct BloomBoxIPAOpenSheet: View {
                 }
                 .padding(20)
             }
+            .background {
+                ZStack {
+                    Color(red: 0.055, green: 0.058, blue: 0.078)
+                    RadialGradient(
+                        colors: [
+                            BloomBoxWizardPalette.color(BloomBoxProfileStore.active.accentHex).opacity(0.18),
+                            .clear
+                        ],
+                        center: .topTrailing, startRadius: 0, endRadius: 430
+                    )
+                    // Same moving profile-colored shapes as the first-run wizard.
+                    BloomBoxWizardAmbientSymbols(
+                        isDark: true, accentHex: BloomBoxProfileStore.active.accentHex
+                    )
+                }
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
             .navigationTitle(isAPK ? (BloomBoxL10n.isEnglish ? "Install APK" : "Instalar APK") : BloomBoxL10n.t("Instalar IPA"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -885,6 +904,9 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                   url.pathExtension.lowercased() == "apk" else { return }
             receivedIPA = BloomBoxReceivedIPA(url: url)
         }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("BloomBoxRAMInstallGetMoreRam"))) { _ in
+            Task { await installGetMoreRamForRAMPlus() }
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.InstallAppNotification)) { obj in
             if let obj2 = obj.object as? [String: Any], let installUrl = obj2["url"] as? URL {
                 let expectedSHA = obj2["sha256"] as? String
@@ -1301,6 +1323,132 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         guard token == installationCelebrationID else { return }
         withAnimation(.easeOut(duration: 0.35)) {
             installationCelebrationVisible = false
+        }
+    }
+
+    /// Install the original GetMoreRam IPA through BloomBox's existing guest-app installer.
+    /// Never treat the app's install as proof that BloomBox itself has RAM+.
+    private func ramExternalLog(_ message: String) {
+        NotificationCenter.default.post(
+            name: Notification.Name("BloomBoxRAMExternalInstallLog"),
+            object: nil,
+            userInfo: ["message": message]
+        )
+    }
+
+    func installGetMoreRamForRAMPlus() async {
+        guard !installprogressVisible else {
+            ramExternalLog("[WARN] El instalador está ocupado. Reintenta al terminar.")
+            return
+        }
+        guard sharedModel.multiLCStatus != 2 else {
+            ramExternalLog("[ERROR] Instala apps desde BloomBox principal.")
+            return
+        }
+
+        let targetBundleID = "com.aigch.getMoreRam"
+        let apiURL = URL(string: "https://api.github.com/repos/hugeBlack/GetMoreRam/releases/tags/nightly")!
+        let fm = FileManager.default
+        let archive = fm.temporaryDirectory.appendingPathComponent("BloomBox-GetMoreRam-\(UUID().uuidString).ipa")
+        defer { try? fm.removeItem(at: archive) }
+
+        beginInstallationCelebration()
+        installprogressVisible = true
+        defer {
+            installprogressVisible = false
+            Task { await finishInstallationCelebration() }
+        }
+        do {
+            ramExternalLog("[INFO] Buscando la IPA oficial de hugeBlack/GetMoreRam…")
+            var request = URLRequest(url: apiURL)
+            request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+            request.timeoutInterval = 25
+            let (payload, apiResponse) = try await URLSession.shared.data(for: request)
+            guard (apiResponse as? HTTPURLResponse)?.statusCode == 200,
+                  let release = try JSONSerialization.jsonObject(with: payload) as? [String: Any],
+                  let assets = release["assets"] as? [[String: Any]],
+                  let asset = assets.first(where: { ($0["name"] as? String) == "GetMoreRam.ipa" }),
+                  let remoteString = asset["browser_download_url"] as? String,
+                  let remoteURL = URL(string: remoteString),
+                  remoteURL.scheme == "https",
+                  remoteURL.host == "github.com",
+                  remoteURL.path.hasPrefix("/hugeBlack/GetMoreRam/releases/download/"),
+                  let expectedSize = asset["size"] as? Int, expectedSize > 0,
+                  let digest = asset["digest"] as? String,
+                  digest.hasPrefix("sha256:") else {
+                throw NSError(domain: "BloomBoxRAM", code: 10, userInfo: [
+                    NSLocalizedDescriptionKey: "No hay una IPA oficial verificable disponible. No se instalará otro archivo."
+                ])
+            }
+
+            let expectedHash = String(digest.dropFirst("sha256:".count)).lowercased()
+            guard expectedHash.count == 64,
+                  expectedHash.unicodeScalars.allSatisfy({
+                      CharacterSet(charactersIn: "0123456789abcdef").contains($0)
+                  }) else {
+                throw NSError(domain: "BloomBoxRAM", code: 11, userInfo: [
+                    NSLocalizedDescriptionKey: "GitHub no proporcionó un SHA-256 válido."
+                ])
+            }
+
+            ramExternalLog("[INFO] Descargando GetMoreRam.ipa…")
+            try await downloadHelper.download(url: remoteURL, to: archive)
+            if downloadHelper.cancelled {
+                ramExternalLog("[WARN] Descarga cancelada.")
+                return
+            }
+            let actualSize = (try fm.attributesOfItem(atPath: archive.path)[.size] as? NSNumber)?.intValue ?? -1
+            guard actualSize == expectedSize else {
+                throw NSError(domain: "BloomBoxRAM", code: 12, userInfo: [
+                    NSLocalizedDescriptionKey: "El tamaño de la IPA no coincide con el publicado."
+                ])
+            }
+            let handle = try FileHandle(forReadingFrom: archive)
+            defer { try? handle.close() }
+            var hash = SHA256()
+            while let block = try handle.read(upToCount: 1024 * 1024), !block.isEmpty {
+                hash.update(data: block)
+            }
+            let checksum = hash.finalize().map { String(format: "%02x", $0) }.joined()
+            guard checksum == expectedHash else {
+                throw NSError(domain: "BloomBoxRAM", code: 13, userInfo: [
+                    NSLocalizedDescriptionKey: "Falló la verificación SHA-256. Instalación cancelada."
+                ])
+            }
+            ramExternalLog("[OK] Descarga y SHA-256 verificados.")
+
+            // GetMoreRam is a normal guest IPA, NOT a BloomBox self-update.
+            // Never use inspectIPA here: that strict validator requires
+            // BloomBox's own SideStore framework and LiveProcess extensions.
+            let metadata = try BloomBoxArchive.inspectGuestIPA(archive)
+            guard metadata["bundle"] as? String == targetBundleID else {
+                throw NSError(domain: "BloomBoxRAM", code: 14, userInfo: [
+                    NSLocalizedDescriptionKey: "La IPA no corresponde al GetMoreRam original. Instalación cancelada."
+                ])
+            }
+            ramExternalLog("[INFO] Instalando GetMoreRam con el instalador de BloomBox…")
+            try await installIpaFile(archive)
+            ramExternalLog("[OK] Instalación de GetMoreRam completada.")
+
+            // installIpaFile publishes the new model on the main queue.
+            // Give that update a chance to finish before attempting launch.
+            for _ in 0..<12 {
+                if let app = sharedModel.apps.first(where: {
+                    $0.appInfo.bundleIdentifier() == targetBundleID
+                }) {
+                    ramExternalLog("[INFO] Abriendo GetMoreRam…")
+                    try await app.runApp(multitask: nil, containerFolderName: nil,
+                                         urlStr: nil, forceJIT: nil)
+                    ramExternalLog("[OK] GetMoreRam abierto. Configura tu App ID y luego reinstala BloomBox.")
+                    return
+                }
+                try await Task.sleep(nanoseconds: 150_000_000)
+            }
+            ramExternalLog("[WARN] GetMoreRam se instaló, pero no se encontró para abrirlo. Búscalo en tus apps.")
+        } catch {
+            ramExternalLog("[ERROR] " + error.localizedDescription)
+            errorInfo = error.localizedDescription
+            errorShow = true
         }
     }
 

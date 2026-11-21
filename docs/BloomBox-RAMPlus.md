@@ -226,3 +226,22 @@ re-signing on certain account setups. This upstream issue is separate
 from latest-release discovery; it cannot be bypassed by downloading
 another IPA. Device validation and a new public release are required
 before existing users can benefit from this hotfix.
+
+## Verified-install Method 1 retest (2026-11-21)
+
+The green Method 1 action remains available on an installation whose RAM+ entitlement
+and provisioning profile are already confirmed. It shows **Probar RAM+** and starts
+the **same** bundled SideStore session capture and authenticated Apple App ID lookup.
+The request plan marks this run as `testOnly`. In this mode the SideStore bridge:
+
+- Reads the matching Apple App ID and its capabilities twice and requires consistent,
+  enabled Increased Memory Limit results, with the same team and bundle checks.
+- **Never calls PATCH** (even if Apple reports RAM+ missing); test failure does not
+  remove or attempt to change the installed entitlement.
+- Reports `verified` rather than `approved`, with separate diagnostic feedback.
+- Does **not** clear prior reinstall state, start an update, or require another IPA.
+
+This is a real server readback, not a mock activation. Since an already-enabled App ID
+cannot be enabled again without first disabling it, the retest never toggles Apple's
+capability. Full write-path activation still requires a non-enabled App ID. Physical
+memory is not increased by repeating the test; on-device verification remains separate.

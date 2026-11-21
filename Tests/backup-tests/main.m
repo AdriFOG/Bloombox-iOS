@@ -13,6 +13,48 @@ static void hostile(NSURL *zip, const char *path, mode_t type, int64_t size) {
     archive_write_header(a, e);
     archive_entry_free(e); archive_write_close(a); archive_write_free(a);
 }
+static void guestIPAEntry(struct archive *writer, const char *path, NSData *content) {
+    struct archive_entry *entry = archive_entry_new();
+    archive_entry_set_pathname(entry, path);
+    archive_entry_set_filetype(entry, AE_IFREG);
+    archive_entry_set_perm(entry, 0644);
+    archive_entry_set_size(entry, (la_int64_t)content.length);
+    check(archive_write_header(writer, entry) == ARCHIVE_OK, @"guest IPA header");
+    if (content.length) {
+        check(archive_write_data(writer, content.bytes, content.length) == (la_ssize_t)content.length,
+              @"guest IPA content");
+    }
+    archive_entry_free(entry);
+}
+static void guestIPAFixture(NSURL *ipa, BOOL hasExecutable, BOOL secondApp) {
+    NSDictionary *info = @{
+        @"CFBundleIdentifier": @"com.aigch.getMoreRam",
+        @"CFBundleExecutable": @"GetMoreRam",
+        @"CFBundleVersion": @"1",
+        @"CFBundleShortVersionString": @"1.0"
+    };
+    NSError *error = nil;
+    NSData *plist = [NSPropertyListSerialization dataWithPropertyList:info
+                                                                format:NSPropertyListXMLFormat_v1_0
+                                                               options:0 error:&error];
+    check(plist != nil, error.description ?: @"guest info plist");
+    struct archive *writer = archive_write_new();
+    archive_write_set_format_zip(writer);
+    check(archive_write_open_filename(writer, ipa.fileSystemRepresentation) == ARCHIVE_OK,
+          @"create guest IPA");
+    guestIPAEntry(writer, "Payload/GetMoreRam.app/Info.plist", plist);
+    if (hasExecutable) {
+        guestIPAEntry(writer, "Payload/GetMoreRam.app/GetMoreRam",
+                      [@"binary-fixture" dataUsingEncoding:NSUTF8StringEncoding]);
+    }
+    if (secondApp) {
+        guestIPAEntry(writer, "Payload/Other.app/Other",
+                      [@"another-executable" dataUsingEncoding:NSUTF8StringEncoding]);
+    }
+    check(archive_write_close(writer) == ARCHIVE_OK, @"close guest IPA");
+    archive_write_free(writer);
+}
+
 int main(void) { @autoreleasepool {
     NSFileManager *fm = NSFileManager.defaultManager;
     NSURL *root = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString]];
@@ -52,7 +94,33 @@ int main(void) { @autoreleasepool {
     check(![BloomBoxArchive packDirectory:source toURL:bad error:&error], @"reject source link rather than read outside data");
     check(![fm fileExistsAtPath:bad.path], @"cleanup failed export");
     check(![fm fileExistsAtPath:[root URLByAppendingPathComponent:@"escape"].path], @"no traversal write");
+    // Regression: GetMoreRam is a normal guest IPA. It must not be forced
+    // through the strict BloomBox/SideStore self-update validator.
+    NSURL *guestURL = [root URLByAppendingPathComponent:@"GetMoreRam.ipa"];
+    guestIPAFixture(guestURL, YES, NO);
+    NSError *guestError = nil;
+    NSDictionary *guest = [BloomBoxArchive inspectGuestIPA:guestURL error:&guestError];
+    check([guest[@"bundle"] isEqualToString:@"com.aigch.getMoreRam"],
+          guestError.description ?: @"guest IPA bundle");
+    check([guest[@"executable"] isEqualToString:@"GetMoreRam"], @"guest executable");
+    check([BloomBoxArchive inspectIPA:guestURL error:&guestError] == nil,
+          @"strict BloomBox self-update inspector must still reject GetMoreRam");
+
+    NSURL *incompleteGuest = [root URLByAppendingPathComponent:@"IncompleteGetMoreRam.ipa"];
+    guestIPAFixture(incompleteGuest, NO, NO);
+    check([BloomBoxArchive inspectGuestIPA:incompleteGuest error:&guestError] == nil,
+          @"reject guest IPA without executable");
+
+    NSURL *multipleGuest = [root URLByAppendingPathComponent:@"MultipleGetMoreRam.ipa"];
+    guestIPAFixture(multipleGuest, YES, YES);
+    check([BloomBoxArchive inspectGuestIPA:multipleGuest error:&guestError] == nil,
+          @"reject guest IPA with multiple apps");
+    NSURL *unsafeGuest = [root URLByAppendingPathComponent:@"UnsafeGetMoreRam.ipa"];
+    hostile(unsafeGuest, "../escape", AE_IFREG, 0);
+    check([BloomBoxArchive inspectGuestIPA:unsafeGuest error:&guestError] == nil,
+          @"reject traversal in guest IPA");
+
     [fm removeItemAtURL:root error:nil];
-    NSLog(@"PASS: backup roundtrip, hidden files, empty directories, streaming, traversal, symlinks, truncation, cleanup");
+    NSLog(@"PASS: backups + guest IPA accepts GetMoreRam safely without weakening strict BloomBox host checks");
     return 0;
 } }

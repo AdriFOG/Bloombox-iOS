@@ -289,6 +289,119 @@ static BOOL looksLikeNonemptyAPKZIP(NSURL *source) {
     return YES;
 }
 
+// Guest IPA inspection is intentionally separate from the much stricter BloomBox
+// self-update inspector below. In particular, a guest must NOT embed SideStore
+// or BloomBox's own extension set.
++ (nullable NSDictionary<NSString *, id> *)inspectGuestIPA:(NSURL *)source error:(NSError **)error {
+    struct archive *reader = archive_read_new();
+    if (!reader) {
+        if (error) *error = [NSError errorWithDomain:@"BloomBoxGuestIPA" code:1
+                                         userInfo:@{NSLocalizedDescriptionKey: @"No se pudo leer la IPA invitada."}];
+        return nil;
+    }
+    archive_read_support_format_zip(reader);
+    BOOL ok = archive_read_open_filename(reader, source.fileSystemRepresentation, 65536) == ARCHIVE_OK;
+    NSString *reason = ok ? @"La IPA invitada está incompleta." : archiveMessage(reader);
+    NSMutableSet<NSString *> *paths = [NSMutableSet set];
+    NSString *appDirectory = nil;
+    NSDictionary *appInfo = nil;
+    const uint64_t maxExpanded = 1024ULL * 1024 * 1024;
+    uint64_t total = 0;
+    NSUInteger entries = 0;
+    struct archive_entry *entry = NULL;
+    int status = ARCHIVE_OK;
+
+    while (ok && (status = archive_read_next_header(reader, &entry)) == ARCHIVE_OK) {
+        const char *raw = archive_entry_pathname(entry);
+        NSString *path = raw ? [NSString stringWithUTF8String:raw] : nil;
+        mode_t type = archive_entry_filetype(entry);
+        int64_t advertised = archive_entry_size(entry);
+        NSString *canonical = path.stringByStandardizingPath;
+        if (!safePath(path) || [paths containsObject:canonical] ||
+            archive_entry_symlink(entry) || archive_entry_hardlink(entry) ||
+            (type != AE_IFREG && type != AE_IFDIR) ||
+            advertised < 0 || ++entries > 20000 ||
+            (uint64_t)advertised > maxExpanded - total) {
+            ok = NO;
+            reason = @"La IPA invitada contiene rutas, enlaces o tamaños inseguros.";
+            break;
+        }
+        [paths addObject:canonical];
+
+        NSArray<NSString *> *parts = [path componentsSeparatedByString:@"/"];
+        if (parts.count >= 2 && [parts[0] isEqualToString:@"Payload"] &&
+            [parts[1] hasSuffix:@".app"]) {
+            NSString *candidate = [@"Payload/" stringByAppendingString:parts[1]];
+            if (appDirectory && ![appDirectory isEqualToString:candidate]) {
+                ok = NO;
+                reason = @"La IPA invitada contiene más de una aplicación.";
+                break;
+            }
+            appDirectory = candidate;
+        }
+        if (type == AE_IFDIR) continue;
+
+        BOOL isRootInfo = (appDirectory != nil &&
+                           [path isEqualToString:[appDirectory stringByAppendingString:@"/Info.plist"]]);
+        if (isRootInfo && advertised > 1024 * 1024) {
+            ok = NO;
+            reason = @"El Info.plist de la IPA invitada excede el límite permitido.";
+            break;
+        }
+        NSMutableData *infoData = isRootInfo ? [NSMutableData dataWithCapacity:(NSUInteger)advertised] : nil;
+        char buffer[65536];
+        la_ssize_t count = 0;
+        int64_t received = 0;
+        while ((count = archive_read_data(reader, buffer, sizeof(buffer))) > 0) {
+            if ((uint64_t)count > maxExpanded - total) { ok = NO; break; }
+            total += (uint64_t)count;
+            received += count;
+            if (infoData) [infoData appendBytes:buffer length:(NSUInteger)count];
+        }
+        if (count < 0 || received != advertised || !ok) {
+            ok = NO;
+            reason = @"La IPA invitada contiene archivos truncados o dañados.";
+            break;
+        }
+        if (infoData) {
+            id decoded = [NSPropertyListSerialization propertyListWithData:infoData
+                                                                  options:NSPropertyListImmutable
+                                                                   format:NULL error:nil];
+            if (![decoded isKindOfClass:NSDictionary.class]) {
+                ok = NO;
+                reason = @"El Info.plist de la IPA invitada es inválido.";
+                break;
+            }
+            appInfo = decoded;
+        }
+    }
+    if (ok && status != ARCHIVE_EOF) {
+        ok = NO;
+        reason = archiveMessage(reader);
+    }
+    archive_read_free(reader);
+
+    NSString *identifier = appInfo[@"CFBundleIdentifier"];
+    NSString *executable = appInfo[@"CFBundleExecutable"];
+    if (ok && (!appDirectory ||
+               ![identifier isKindOfClass:NSString.class] || !identifier.length ||
+               ![executable isKindOfClass:NSString.class] || !executable.length ||
+               ![executable isEqualToString:executable.lastPathComponent] ||
+               [executable isEqualToString:@"."] || [executable isEqualToString:@".."] ||
+               ![paths containsObject:[appDirectory stringByAppendingFormat:@"/%@", executable]])) {
+        ok = NO;
+        reason = @"La IPA invitada no contiene una aplicación completa con identificador y ejecutable.";
+    }
+    if (!ok) {
+        if (error) *error = [NSError errorWithDomain:@"BloomBoxGuestIPA" code:1
+                                         userInfo:@{NSLocalizedDescriptionKey: reason}];
+        return nil;
+    }
+    return @{@"bundle": identifier,
+             @"executable": executable,
+             @"appDirectory": appDirectory};
+}
+
 + (nullable NSDictionary<NSString *, id> *)inspectIPA:(NSURL *)source error:(NSError **)error {
     struct archive *a = archive_read_new();
     archive_read_support_format_zip(a);

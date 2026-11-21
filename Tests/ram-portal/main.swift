@@ -27,6 +27,10 @@ func fixture(_ caps: [[String: Any]]) -> [String: Any] {
 func snapshot(_ response: [String: Any]) throws -> BloomBoxRAMPortal.Snapshot { try portal.snapshot(response, id: "ABC123", bundle: "app.bloom", team: "TEAM") }
 let before = try snapshot(fixture([existing]))
 assert(!before.enabled)
+// A currently-active user can rerun the real SideStore/Apple flow.
+// This must never send a PATCH, even when the server reports no capability.
+assert(portal.shouldPatch(before, testOnly: false))
+assert(!portal.shouldPatch(before, testOnly: true))
 let payload = portal.payload(before, id: "ABC123", bundle: "app.bloom", team: "TEAM")
 let resource = payload["data"] as! [String: Any]
 let relation = (resource["relationships"] as! [String: Any])["bundleIdCapabilities"] as! [String: Any]
@@ -34,6 +38,12 @@ let changed = relation["data"] as! [[String: Any]]
 assert(changed.count == 2)
 assert(NSDictionary(dictionary: changed[0]).isEqual(to: existing))
 let approved = try snapshot(fixture([existing, cap(portal.capability, enabled: true)])); assert(approved.enabled)
+assert(!portal.shouldPatch(approved, testOnly: false))
+assert(!portal.shouldPatch(approved, testOnly: true))
+let liveTestReadback = try snapshot(fixture([existing, cap(portal.capability, enabled: true)]))
+assert(approved.sameCapabilities(as: liveTestReadback))
+let changedInTest = try snapshot(fixture([existing, cap(portal.capability, enabled: false)]))
+assert(!approved.sameCapabilities(as: changedInTest))
 let refused = try snapshot(fixture([existing, cap(portal.capability, enabled: false)])); assert(!refused.enabled)
 let disabled = try snapshot(fixture([existing, cap(portal.capability, enabled: false)]))
 let enabledPayload = portal.payload(disabled, id: "ABC123", bundle: "app.bloom", team: "TEAM")
