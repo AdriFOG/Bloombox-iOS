@@ -28,8 +28,15 @@ final class BloomBoxRAMPlus: ObservableObject {
     @Published private(set) var reinstallBusy = false
     var activationPending: Bool { ["awaitingSession", "checking", "requesting"].contains(activationStatus) }
 
-    func requestActivation() throws {
-        guard !activationPending else { return }
+    /// Use the same live SideStore -> Apple permission flow for activation and
+    /// for a read-only rerun when the installed entitlement is already valid.
+    func requestActivation(testWhenActive: Bool = false) throws {
+        guard !activationPending else {
+            throw NSError(domain: "BloomBoxRAM", code: 8, userInfo: [NSLocalizedDescriptionKey: "Ya hay una solicitud RAM+ en curso. Abre SideStore para continuarla."])
+        }
+        if testWhenActive && !validation.confirmed {
+            throw NSError(domain: "BloomBoxRAM", code: 9, userInfo: [NSLocalizedDescriptionKey: "La prueba de un permiso ya activo requiere una instalación con RAM+ verificada."])
+        }
         guard let signature = Self.signature(Bundle.main.executablePath),
               let team = signature["com.apple.developer.team-identifier"] as? String, !team.isEmpty,
               let appIdentifier = signature["application-identifier"] as? String,
@@ -48,9 +55,14 @@ final class BloomBoxRAMPlus: ObservableObject {
         }
         let id = UUID().uuidString
         defaults.set(true, forKey: key)
-        defaults.set(["id": id, "team": team, "bundles": bundles, "expires": Date().addingTimeInterval(300)], forKey: "BloomBoxRAMPlusRequest")
-        defaults.set(["id": id, "status": "awaitingSession", "message": "Abre Mis apps en SideStore. Se usará su sesión para solicitar RAM+; si te pide iniciar sesión, hazlo allí.", "date": Date()], forKey: "BloomBoxRAMPlusResult")
-        defaults.removeObject(forKey: reinstallKey)
+        defaults.set(["id": id, "team": team, "bundles": bundles,
+                      "expires": Date().addingTimeInterval(300),
+                      "testOnly": testWhenActive], forKey: "BloomBoxRAMPlusRequest")
+        let initialMessage = testWhenActive
+            ? "Prueba real del Método BloomBox: abre Mis apps en SideStore. Consultaremos Apple con tu sesión, sin volver a instalar ni modificar permisos."
+            : "Abre Mis apps en SideStore. Se usará su sesión para solicitar RAM+; si te pide iniciar sesión, hazlo allí."
+        defaults.set(["id": id, "status": "awaitingSession", "message": initialMessage, "date": Date()], forKey: "BloomBoxRAMPlusResult")
+        if !testWhenActive { defaults.removeObject(forKey: reinstallKey) }
         defaults.synchronize()
         refresh()
     }
@@ -331,14 +343,20 @@ struct BloomBoxRAMPlusView: View {
                 .padding(.top, 10)
 
                 ramActionTile(
-                    title: ram.validation.confirmed ? "RAM+ activa" : "Activar RAM+",
-                    subtitle: "Método BloomBox recomendado",
+                    title: ram.validation.confirmed ? "Probar RAM+" : "Activar RAM+",
+                    subtitle: ram.validation.confirmed
+                        ? "Método 1 · comprobación real con Apple"
+                        : "Método BloomBox recomendado",
                     symbol: ram.validation.confirmed ? "checkmark.seal.fill" : "bolt.fill",
                     tint: Color(red: 0.10, green: 0.80, blue: 0.31),
                     secondary: Color(red: 0.02, green: 0.36, blue: 0.16)
                 ) {
                     if ram.validation.confirmed {
-                        ram.refresh()
+                        if ram.activationPending {
+                            openSideStore()
+                        } else {
+                            activate(testWhenActive: true)
+                        }
                     } else if ram.activationStatus == "approved" {
                         ram.retryReinstall()
                         Task { await ram.resumeAfterAppleApproval() }
@@ -707,13 +725,18 @@ struct BloomBoxRAMPlusView: View {
         .buttonStyle(.plain)
     }
 
-    private func activate() {
+    private func activate(testWhenActive: Bool = false) {
         do {
             activationError = nil
-            try ram.requestActivation()
+            try ram.requestActivation(testWhenActive: testWhenActive)
+            if testWhenActive {
+                externalInstallLogs = ["[TEST] Método BloomBox: comprobando el permiso real en Apple con SideStore…",
+                                       "[INFO] Esta prueba es de solo lectura y no reinstalará BloomBox."]
+            }
             openSideStore()
         } catch {
             activationError = error.localizedDescription
+            externalInstallLogs.append("[ERROR] " + error.localizedDescription)
         }
     }
 
