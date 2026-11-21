@@ -1417,7 +1417,10 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             }
             ramExternalLog("[OK] Descarga y SHA-256 verificados.")
 
-            let metadata = try BloomBoxArchive.inspectIPA(archive)
+            // GetMoreRam is a normal guest IPA, NOT a BloomBox self-update.
+            // Never use inspectIPA here: that strict validator requires
+            // BloomBox's own SideStore framework and LiveProcess extensions.
+            let metadata = try BloomBoxArchive.inspectGuestIPA(archive)
             guard metadata["bundle"] as? String == targetBundleID else {
                 throw NSError(domain: "BloomBoxRAM", code: 14, userInfo: [
                     NSLocalizedDescriptionKey: "La IPA no corresponde al GetMoreRam original. Instalación cancelada."
