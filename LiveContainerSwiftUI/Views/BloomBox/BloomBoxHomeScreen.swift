@@ -2484,7 +2484,7 @@ struct BloomBoxHomeScreen: View {
                 Button("App Store", systemImage: "bag.fill") {
                     updateWidget(widget.id) { $0.tapActionKey = Self.appStoreKey }
                 }
-                Button("Port Store", systemImage: "gamecontroller.fill") {
+                Button("ApkStore", systemImage: "gamecontroller.fill") {
                     updateWidget(widget.id) { $0.tapActionKey = Self.portStoreKey }
                 }
                 Button("Módulos", systemImage: "square.stack.3d.up.fill") {
@@ -3577,7 +3577,7 @@ struct BloomBoxHomeScreen: View {
         if key == Self.installKey { return "Instalar app" }
         if key == Self.tweakStoreKey { return "Tweak Store" }
         if key == Self.appStoreKey { return "App Store" }
-        if key == Self.portStoreKey { return "Port Store" }
+        if key == Self.portStoreKey { return "ApkStore" }
         if key == Self.modulesKey { return "Módulos" }
         if key == Self.themesKey { return "Temas" }
         if let folder = layout.folders.first(where: { $0.id == key }) { return folder.name }
