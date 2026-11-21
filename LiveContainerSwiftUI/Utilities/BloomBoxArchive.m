@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <string.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 static BOOL fail(NSError **error, NSString *message) {
@@ -35,7 +36,7 @@ static BOOL looksLikeNonemptyAPKZIP(NSURL *source) {
     }
     unsigned char header[4] = {0};
     if (pread(fd, header, sizeof(header), 0) != sizeof(header) ||
-        memcmp(header, "PK\\x03\\x04", 4) != 0) {
+        memcmp(header, (const unsigned char[]){0x50, 0x4B, 0x03, 0x04}, 4) != 0) {
         close(fd);
         return NO;
     }
@@ -47,7 +48,7 @@ static BOOL looksLikeNonemptyAPKZIP(NSURL *source) {
     BOOL valid = NO;
     if (readCount == (ssize_t)tailSize) {
         for (ssize_t i = (ssize_t)tailSize - 22; i >= 0; --i) {
-            if (memcmp(tail + i, "PK\\x05\\x06", 4) != 0) continue;
+            if (memcmp(tail + i, (const unsigned char[]){0x50, 0x4B, 0x05, 0x06}, 4) != 0) continue;
             unsigned int entries = tail[i+10] | ((unsigned int)tail[i+11] << 8);
             unsigned int comment = tail[i+20] | ((unsigned int)tail[i+21] << 8);
             if (entries != 0 && (size_t)i + 22 + comment == tailSize) {
