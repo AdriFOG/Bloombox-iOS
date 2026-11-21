@@ -383,7 +383,8 @@ static BOOL looksLikeNonemptyAPKZIP(NSURL *source) {
 
     NSString *identifier = appInfo[@"CFBundleIdentifier"];
     NSString *executable = appInfo[@"CFBundleExecutable"];
-    if (ok && (![identifier isKindOfClass:NSString.class] || !identifier.length ||
+    if (ok && (!appDirectory ||
+               ![identifier isKindOfClass:NSString.class] || !identifier.length ||
                ![executable isKindOfClass:NSString.class] || !executable.length ||
                ![executable isEqualToString:executable.lastPathComponent] ||
                [executable isEqualToString:@"."] || [executable isEqualToString:@".."] ||
