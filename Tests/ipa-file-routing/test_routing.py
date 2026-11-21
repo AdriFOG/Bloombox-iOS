@@ -37,7 +37,7 @@ assert '["ipa", "tipa", "apk"].contains(url.pathExtension.lowercased())' in app_
 assert "receivedIPA = BloomBoxReceivedIPA(url: url)" in app_list
 assert "await importAPK(request.url, host: husk)" in app_list
 assert "BloomBoxIPAOpenSheet(" in app_list
-assert 'ShareLink(item: BloomBoxSideStoreIPA(fileURL: sideStoreIPA))' in app_list
+assert 'ShareLink(item: BloomBoxSideStoreIPA(fileURL: sideStoreIPA), preview: SharePreview(Text(fileURL.lastPathComponent)))' in app_list
 assert 'FileRepresentation(contentType: UTType(importedAs: "com.apple.itunes.ipa"))' in app_list
 assert "SentTransferredFile(item.fileURL)" in app_list
 assert "NSFileCoordinator().coordinate(readingItemAt: original" in app_list
