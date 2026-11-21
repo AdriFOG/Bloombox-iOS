@@ -767,3 +767,56 @@ jobs:
             release/BloomBox-SideStore-unsigned.ipa
             release/SHA256SUMS.txt
           body_path: docs/BloomBox-3.0.1-Release-Notes.md
+  release__v310:
+    name: Publish BloomBox v3.1.0
+    if: >-
+      ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'release: BloomBox v3.1.0') }}
+    needs: [build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exact tested source
+        uses: actions/checkout@v6
+      - name: Download tested unsigned BloomBox IPA
+        uses: actions/download-artifact@v8
+        with:
+          name: BloomBox-SideStore-unsigned.ipa
+          path: release
+      - name: Validate IPA identity, version and extension
+        run: |
+          set -euo pipefail
+          test -s release/BloomBox-SideStore-unsigned.ipa
+          python3 - <<'PY'
+          import plistlib
+          from zipfile import ZipFile
+          ipa="release/BloomBox-SideStore-unsigned.ipa"
+          with ZipFile(ipa) as z:
+              if z.testzip() is not None:
+                  raise SystemExit("Damaged IPA archive")
+              host=plistlib.loads(z.read("Payload/LiveContainer.app/Info.plist"))
+              if host.get("CFBundleShortVersionString") != "3.1.0":
+                  raise SystemExit("Not BloomBox v3.1.0")
+              if str(host.get("CFBundleVersion")) != "31000":
+                  raise SystemExit("Incorrect BloomBox build number")
+              ext=plistlib.loads(z.read("Payload/LiveContainer.app/PlugIns/ManzanaExpiryWidget.appex/Info.plist"))
+              if str(ext.get("CFBundleVersion")) != str(host.get("CFBundleVersion")) or ext.get("CFBundleShortVersionString") != "3.1.0":
+                  raise SystemExit("Widget version does not match host")
+              print("Verified BloomBox 3.1.0, build 31000 and matching widget")
+          PY
+          (cd release && sha256sum BloomBox-SideStore-unsigned.ipa > SHA256SUMS.txt)
+      - name: Publish BloomBox 3.1.0 Android launcher release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v3.1.0
+          name: "BloomBox 3.1.0 — Android APK & Husk integration"
+          target_commitish: ${{ github.sha }}
+          draft: false
+          prerelease: false
+          make_latest: true
+          generate_release_notes: false
+          fail_on_unmatched_files: true
+          files: |
+            release/BloomBox-SideStore-unsigned.ipa
+            release/SHA256SUMS.txt
+          body_path: docs/BloomBox-3.1.0-Release-Notes.md
