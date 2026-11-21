@@ -44,6 +44,49 @@ private struct BloomBoxReceivedIPA: Identifiable {
 }
 
 // Files opens BloomBox first. This is an in-app chooser, not a SpringBoard overlay.
+// SideStore's document importer accepts com.apple.itunes.ipa, not a shared
+// public.url. Share the IPA as an actual file representation with that UTI.
+@available(iOS 16.0, *)
+private struct BloomBoxSideStoreIPA: Transferable {
+    let fileURL: URL
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(contentType: UTType(importedAs: "com.apple.itunes.ipa")) { item in
+            SentTransferredFile(item.fileURL)
+        } importing: { file in
+            Self(fileURL: file.file)
+        }
+    }
+}
+
+private enum BloomBoxSideStoreHandoff {
+    static func prepareFile(_ original: URL) async throws -> URL {
+        try await Task.detached(priority: .userInitiated) {
+            guard original.isFileURL && original.pathExtension.lowercased() == "ipa" else {
+                throw CocoaError(.fileReadUnsupportedScheme)
+            }
+            let fm = FileManager.default
+            let scoped = original.startAccessingSecurityScopedResource()
+            defer { if scoped { original.stopAccessingSecurityScopedResource() } }
+            let dir = fm.temporaryDirectory.appendingPathComponent("BloomBoxSideStoreHandoff", isDirectory: true)
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            let destination = dir.appendingPathComponent(UUID().uuidString + ".ipa")
+            var coordinationError: NSError?
+            var copyError: Error?
+            NSFileCoordinator().coordinate(readingItemAt: original, options: [], error: &coordinationError) { source in
+                do { try fm.copyItem(at: source, to: destination) } catch { copyError = error }
+            }
+            if let error = coordinationError { throw error }
+            if let error = copyError { throw error }
+            let size = (try destination.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            guard size > 0 else { throw CocoaError(.fileReadCorruptFile) }
+            // Do not remove this file when the sheet closes: SideStore's document
+            // import can complete only after BloomBox has gone to background.
+            return destination
+        }.value
+    }
+}
+
 private struct BloomBoxIPAOpenSheet: View {
     let fileURL: URL
     let hasSideStore: Bool
@@ -52,6 +95,8 @@ private struct BloomBoxIPAOpenSheet: View {
     let dismiss: () -> Void
     var isAPK = false
     var hasHusk = false
+    @State private var sideStoreIPA: URL?
+    @State private var sideStoreHandoffError: String?
 
     var body: some View {
         NavigationView {
@@ -96,14 +141,30 @@ private struct BloomBoxIPAOpenSheet: View {
                     .buttonStyle(.borderedProminent)
 
                     if #available(iOS 16.0, *) {
-                        ShareLink(item: fileURL) {
-                            Label("Instalar con SideStore", systemImage: "square.and.arrow.up")
-                                .font(.headline)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 9)
+                        if let sideStoreIPA {
+                            ShareLink(item: BloomBoxSideStoreIPA(fileURL: sideStoreIPA)) {
+                                Label("Instalar con SideStore", systemImage: "square.and.arrow.up")
+                                    .font(.headline)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 9)
+                            }
+                            .buttonStyle(.bordered)
+                        } else if sideStoreHandoffError == nil {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                Text("Preparando IPA para SideStore…")
+                            }.font(.subheadline)
                         }
-                        .buttonStyle(.bordered)
-                        Text("Se abrirá Compartir: selecciona SideStore para importar el IPA.")
+                        if let sideStoreHandoffError {
+                            Label("No se pudo preparar la IPA: " + sideStoreHandoffError, systemImage: "exclamationmark.triangle")
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                            Button("Reintentar") {
+                                sideStoreHandoffError = nil
+                                Task { await prepareSideStoreShare() }
+                            }
+                        }
+                        Text("En Compartir, elige SideStore. BloomBox entrega la IPA como archivo, no solo un enlace.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
@@ -134,6 +195,18 @@ private struct BloomBoxIPAOpenSheet: View {
         }
         .navigationViewStyle(.stack)
         .modifier(BloomBoxIPACompactSheet())
+        .task(id: fileURL) {
+            if !isAPK { await prepareSideStoreShare() }
+        }
+    }
+
+    @MainActor private func prepareSideStoreShare() async {
+        guard !isAPK, sideStoreIPA == nil else { return }
+        do {
+            sideStoreIPA = try await BloomBoxSideStoreHandoff.prepareFile(fileURL)
+        } catch {
+            sideStoreHandoffError = error.localizedDescription
+        }
     }
 }
 
