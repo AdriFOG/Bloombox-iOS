@@ -95,6 +95,7 @@ private final class BloomBoxRAMJob: NSObject, URLSessionTaskDelegate {
     }()
     private var nonce: String { plan["id"] as? String ?? "" }
     private var team: String { plan["team"] as? String ?? "" }
+    private var testOnly: Bool { plan["testOnly"] as? Bool == true }
 
     static func receive(request: URLRequest, data: Data) {
         queue.async {
@@ -179,7 +180,20 @@ private final class BloomBoxRAMJob: NSObject, URLSessionTaskDelegate {
                     }
                     before = confirmation
                 }
-                if !before.enabled {
+                // A live test on an already-enabled app is read-only. Never
+                // enable, revoke, or rewrite capabilities just for testing.
+                if testOnly {
+                    guard before.enabled else {
+                        throw BloomBoxRAMPortal.fail("Prueba del Método 1: Apple no confirma RAM+ para \(bundle). No se modificaron permisos.")
+                    }
+                    try requireCurrent()
+                    save("checking", "Prueba real: confirmando nuevamente RAM+ con Apple para \(bundle)…")
+                    let secondRead = try await read(id: id, bundle: bundle)
+                    guard secondRead.enabled, before.sameCapabilities(as: secondRead) else {
+                        throw BloomBoxRAMPortal.fail("Prueba del Método 1: las respuestas de Apple no son consistentes. No se modificaron permisos.")
+                    }
+                }
+                if BloomBoxRAMPortal.shouldPatch(before, testOnly: testOnly) {
                     try requireCurrent()
                     save("requesting", "Solicitando a Apple el permiso para \(bundle)…")
                     didSubmit = true
@@ -193,9 +207,15 @@ private final class BloomBoxRAMJob: NSObject, URLSessionTaskDelegate {
                 }
                 approvedBundles.append(bundle)
             }
-            let note = optionalMissing ? " LiveProcess no tiene un App ID separado en esta cuenta; se verificará su firma tras reinstalar." : ""
-            let message = "Apple confirmó el permiso. Ahora reinstala BloomBox desde SideStore conservando sus extensiones y sin borrar la app. Después vuelve a RAM+ para comprobar la instalación." + note
-            save("approved", message)
+            let note = optionalMissing
+                ? (testOnly
+                    ? " LiveProcess no tiene un App ID separado en esta cuenta; su firma instalada no se ha modificado."
+                    : " LiveProcess no tiene un App ID separado en esta cuenta; se verificará su firma tras reinstalar.")
+                : ""
+            let message = testOnly
+                ? "Prueba real completada: Apple confirmó RAM+ para los App IDs encontrados. No se modificaron permisos ni se reinstaló BloomBox." + note
+                : "Apple confirmó el permiso. Ahora reinstala BloomBox desde SideStore conservando sus extensiones y sin borrar la app. Después vuelve a RAM+ para comprobar la instalación." + note
+            save(testOnly ? "verified" : "approved", message)
             await showResult(message)
         } catch {
             let partial = approvedBundles.isEmpty ? "" : " El permiso ya fue confirmado para: \(approvedBundles.joined(separator: ", "))."
