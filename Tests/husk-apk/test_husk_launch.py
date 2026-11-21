@@ -29,4 +29,18 @@ assert "+ (BOOL)bloomBoxSendURL:" in scene_h
 assert "[target openURLScheme:urlString]" in scene_m
 assert "strongToWeakObjectsMapTable" in scene_m
 assert "BloomBoxGuestSceneDidExit" in scene_m
-print("PASS: Husk APK import, orientation, staged debugger and deep-link contract")
+# Android game icons must expose a real, confirmed uninstall. iOS guests keep
+# their existing LiveContainer uninstall path.
+assert "pendingHuskUninstall = game" in home
+assert 'Button(englishUI ? "Uninstall app" : "Desinstalar app"' in home
+assert 'role: .destructive' in home.split("private func uninstallHuskGame(", 1)[0]
+assert "private func uninstallHuskGame(_ game: HuskGame)" in home
+uninstall = home.split("private func uninstallHuskGame(", 1)[1].split("@ViewBuilder private func huskMenu", 1)[0]
+for guardrail in ("!host.isAppRunning", "huskLaunchingKey == nil", "huskStartingGame == nil",
+                  "current.directory.standardizedFileURL", "target.deletingLastPathComponent() == root",
+                  "properties.isSymbolicLink != true", "FileManager.default.removeItem(at: target)",
+                  "refreshHuskGames()", "layout.removePlacement(game.key)", "reconcile()"):
+    assert guardrail in uninstall, f"Missing safe APK uninstall behavior: {guardrail}"
+assert '"The APK, its settings, and all local game data stored in Husk will be permanently deleted.' in home
+assert 'performGuest(.uninstall(key: LiveContainerHomeAdapter.key(app))' in home
+print("PASS: Husk APK import, orientation, staged debugger, deep-link and uninstall contract")
