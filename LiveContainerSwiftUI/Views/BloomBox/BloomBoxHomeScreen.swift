@@ -36,6 +36,9 @@ struct BloomBoxHomeScreen: View {
     @State private var queuedPortAPK: URL?
     @State private var modulesPresented = false
     @State private var themesPresented = false
+    @State private var newsFilesPresented = false
+    @State private var newsRAMPresented = false
+    @State private var newsOpenSideStoreAfterRAMDismiss = false
     @AppStorage("BloomBoxPreferredLanguage", store: LiveContainerPreferencesAdapter.defaults)
     private var preferredLanguage = "system"
     private var englishUI: Bool {
@@ -370,7 +373,19 @@ struct BloomBoxHomeScreen: View {
                 TabView(selection: $page) {
                     BloomBoxNewsPage(openSettings: { desktopSettings = true },
                                      openGameBox: openGameBox,
-                                     gameNames: newsGameNames)
+                                     gameNames: newsGameNames,
+                                     openShortcut: { shortcut in
+                                         switch shortcut {
+                                         case .apkStore: portStorePresented = true
+                                         case .appStore: appStorePresented = true
+                                         case .themes: themesPresented = true
+                                         case .modules: modulesPresented = true
+                                         case .sideStore: openSideStore()
+                                         case .files: newsFilesPresented = true
+                                         case .ramPlus: newsRAMPresented = true
+                                         case .settings: openTab(.settings)
+                                         }
+                                     })
                         .tag(0)
                     ForEach(visiblePageIndices, id: \.self) { index in
                         ZStack(alignment: .bottom) {
@@ -946,6 +961,30 @@ struct BloomBoxHomeScreen: View {
                 queuedPortAPK = url
                 portStorePresented = false
             })
+        }
+        .sheet(isPresented: $newsFilesPresented) {
+            BloomBoxFilesView()
+        }
+        .sheet(isPresented: $newsRAMPresented, onDismiss: {
+            if newsOpenSideStoreAfterRAMDismiss {
+                newsOpenSideStoreAfterRAMDismiss = false
+                openSideStore()
+            }
+        }) {
+            NavigationView {
+                BloomBoxRAMPlusView {
+                    newsOpenSideStoreAfterRAMDismiss = true
+                    newsRAMPresented = false
+                }
+                .navigationTitle("RAM+")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button(englishUI ? "Done" : "Listo") { newsRAMPresented = false }
+                    }
+                }
+            }
+            .navigationViewStyle(.stack)
         }
         .sheet(isPresented: $modulesPresented, onDismiss: performModuleAction) {
             BloomBoxModulesPanel(apps: LiveContainerHomeAdapter.moduleGuests(apps, sharedModel: sharedModel)) { destination in
