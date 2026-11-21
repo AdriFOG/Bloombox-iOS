@@ -20,7 +20,7 @@ apk_type = by_id["com.android.package-archive"]
 assert "public.data" in apk_type["UTTypeConformsTo"]
 assert "public.content" in apk_type["UTTypeConformsTo"]
 assert "public.archive" not in apk_type["UTTypeConformsTo"]
-assert apk_type["UTTypeTagSpecification"]["public.mime-type"] == ["application/vnd.android.package-archive"]
+assert apk_type["UTTypeTagSpecification"]["public.mime-type"] == "application/vnd.android.package-archive"
 apk_handlers = [item for item in document_types
                 if "com.android.package-archive" in item.get("LSItemContentTypes", [])]
 assert len(apk_handlers) == 1
