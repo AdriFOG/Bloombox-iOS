@@ -43,6 +43,9 @@ API_AVAILABLE(ios(16.0))
 // Deliver a deep link to an already running hosted guest, without restarting
 // it or requesting JIT a second time. Used by BloomBox's staged Husk launch.
 + (BOOL)bloomBoxSendURL:(NSString *)urlString toContainer:(NSString *)dataUUID;
+// An Android game with a fixed-size native Metal renderer must not receive
+// its launch URL until the hosted guest scene has a stable, visible surface.
++ (BOOL)bloomBoxSendURL:(NSString *)urlString toContainer:(NSString *)dataUUID landscape:(BOOL)landscape;
 + (void)bloomBoxBeginStartupForContainer:(NSString *)dataUUID title:(NSString *)title;
 + (void)bloomBoxEndStartupForContainer:(NSString *)dataUUID;
 - (void)handleStatusBarTapAction:(UIAction *)action;
