@@ -124,8 +124,10 @@ let rawData = try BloomBoxHuskPathPolicy.scopedURL(
     isDirectory: false)
 try Data(repeating: 0x4F, count: 256).write(to: rawOBB)
 try Data(repeating: 0x44, count: 512).write(to: rawData)
-precondition((try Data(contentsOf: rawOBB)).count == 256)
-precondition((try Data(contentsOf: rawData)).count == 512)
+let obbReadback = try Data(contentsOf: rawOBB)
+let dataReadback = try Data(contentsOf: rawData)
+precondition(obbReadback.count == 256)
+precondition(dataReadback.count == 512)
 
 // Shared storage is a separate, trusted root; empty parts resolve to itself.
 let shared = sandbox.appendingPathComponent(
