@@ -25,6 +25,8 @@
 
 @interface AppSceneViewController()
 @property(nonatomic,strong) UIView *bloomBoxStartupCover;
+@property(nonatomic) CGSize bloomBoxHuskStableSize;
+@property(nonatomic) CFTimeInterval bloomBoxHuskStableSince;
 @property(nonatomic) UIWindowScene *hostScene;
 @property(nonatomic) NSString *sceneID;
 @property(nonatomic) NSExtension* extension;
@@ -52,6 +54,41 @@
     if (!target || !target.isAppRunning || !target.presenter || !target.presenter.scene) return NO;
     [target openURLScheme:urlString];
     return YES;
+}
+
+// A native Android game binds a CAMetalLayer and its initial resolution during
+// first layout. Delivering the app link when a scene object merely exists can
+// start the engine against an unlaid-out / rotating surface, leaving a black
+// screen even though Husk reports that the runtime is "running".
+//
+// This gate is ONLY for BloomBox's Android shortcuts. Normal guest URLs keep
+// using the original handoff above.
++ (BOOL)bloomBoxSendURL:(NSString *)urlString toContainer:(NSString *)dataUUID landscape:(BOOL)landscape {
+    if (![NSThread isMainThread] || !urlString.length || !dataUUID.length) return NO;
+    AppSceneViewController *target = [[self bloomBoxActiveGuestScenes] objectForKey:dataUUID];
+    if (!target || !target.isAppRunning || !target.presenter || !target.presenter.scene ||
+        !target.isViewLoaded || !target.view.window || !target.contentView.window) return NO;
+
+    CGSize size = target.view.bounds.size;
+    // Enforce a real, orientation-correct drawing area before Husk is told to
+    // start a game. Its native renderer sizes itself on the first visible pass.
+    if (size.width < 200 || size.height < 200 ||
+        (landscape ? (size.width <= size.height) : (size.height <= size.width))) {
+        target.bloomBoxHuskStableSince = 0;
+        return NO;
+    }
+
+    // Two matching geometry samples over a full UIKit layout cycle avoid a
+    // premature link during the orientation animation on iOS 27.
+    CGSize last = target.bloomBoxHuskStableSize;
+    if (fabs(last.width - size.width) > 2 || fabs(last.height - size.height) > 2 ||
+        target.bloomBoxHuskStableSince <= 0) {
+        target.bloomBoxHuskStableSize = size;
+        target.bloomBoxHuskStableSince = CACurrentMediaTime();
+        return NO;
+    }
+    if (CACurrentMediaTime() - target.bloomBoxHuskStableSince < 1.0) return NO;
+    return [self bloomBoxSendURL:urlString toContainer:dataUUID];
 }
 
 + (NSMutableDictionary<NSString *, NSString *> *)bloomBoxPendingStartupTitles {
