@@ -155,7 +155,7 @@ private struct BloomBoxNewsQuickAccess: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 9) {
                 Image(systemName: "square.on.square")
                 Text(english ? "BloomBox Apps" : "Aplicaciones de BloomBox")
@@ -174,7 +174,7 @@ private struct BloomBoxNewsQuickAccess: View {
                 .accessibilityIdentifier("bloombox.news.shortcuts.customize")
             }
             if !visible.isEmpty {
-                LazyVGrid(columns: columns, spacing: 12) {
+                LazyVGrid(columns: columns, spacing: 11) {
                     ForEach(visible) { item in
                         Button { onOpen(item) } label: {
                             VStack(spacing: 5) {
@@ -185,8 +185,7 @@ private struct BloomBoxNewsQuickAccess: View {
                                             .font(.system(size: 25, weight: .regular))
                                             .foregroundStyle(.white)
                                     }
-                                    .frame(maxWidth: .infinity)
-                                    .aspectRatio(1, contentMode: .fit)
+                                    .frame(width: 60, height: 60)
                                 Text(item.title(english: english))
                                     .font(.system(size: 11, weight: .medium))
                                     .lineLimit(1)
@@ -201,7 +200,7 @@ private struct BloomBoxNewsQuickAccess: View {
                         .accessibilityLabel(item.title(english: english))
                     }
                 }
-                .padding(13)
+                .padding(11)
                 .background(.ultraThinMaterial,
                             in: RoundedRectangle(cornerRadius: 23, style: .continuous))
             }
@@ -433,7 +432,7 @@ private struct BloomBoxRemoteNewsSection: View {
                         if let media = post.media, let url = URL(string: media),
                            url.scheme?.lowercased() == "https" {
                             BloomBoxRemoteNewsImage(url: url)
-                                .frame(height: 145)
+                                .frame(height: 118)
                                 .frame(maxWidth: .infinity)
                                 .clipped()
                                 .clipShape(RoundedRectangle(cornerRadius: 13))
