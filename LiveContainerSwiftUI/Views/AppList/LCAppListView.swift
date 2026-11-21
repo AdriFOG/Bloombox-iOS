@@ -883,7 +883,6 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             // confirmation sheet. Never silently install a remote APK.
             guard let file = note.object as? URL, file.isFileURL,
                   file.pathExtension.lowercased() == "apk",
-                  file.lastPathComponent.hasPrefix("BloomBoxPortStore-"),
                   let documents = FileManager.default.urls(for: .documentDirectory,
                                                          in: .userDomainMask).first,
                   file.deletingLastPathComponent().standardizedFileURL ==
