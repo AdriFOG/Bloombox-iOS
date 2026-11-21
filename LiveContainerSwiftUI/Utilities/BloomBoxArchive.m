@@ -21,6 +21,45 @@ static BOOL safePath(NSString *path) {
     }
     return YES;
 }
+// APKs may include signing blocks and ZIP features that libarchive does not
+// fully enumerate. Husk does the actual APK parsing; our preflight should not
+// reject a plausible nonempty ZIP solely because the local reader failed.
+// This fallback reads only the first four bytes and at most 65,557 tail bytes.
+static BOOL looksLikeNonemptyAPKZIP(NSURL *source) {
+    int fd = open(source.fileSystemRepresentation, O_RDONLY);
+    if (fd < 0) return NO;
+    struct stat info = {0};
+    if (fstat(fd, &info) != 0 || !S_ISREG(info.st_mode) || info.st_size < 30) {
+        close(fd);
+        return NO;
+    }
+    unsigned char header[4] = {0};
+    if (pread(fd, header, sizeof(header), 0) != sizeof(header) ||
+        memcmp(header, "PK\\x03\\x04", 4) != 0) {
+        close(fd);
+        return NO;
+    }
+    size_t tailSize = (size_t)MIN(info.st_size, (off_t)65557);
+    unsigned char *tail = malloc(tailSize);
+    if (!tail) { close(fd); return NO; }
+    ssize_t readCount = pread(fd, tail, tailSize, info.st_size - (off_t)tailSize);
+    close(fd);
+    BOOL valid = NO;
+    if (readCount == (ssize_t)tailSize) {
+        for (ssize_t i = (ssize_t)tailSize - 22; i >= 0; --i) {
+            if (memcmp(tail + i, "PK\\x05\\x06", 4) != 0) continue;
+            unsigned int entries = tail[i+10] | ((unsigned int)tail[i+11] << 8);
+            unsigned int comment = tail[i+20] | ((unsigned int)tail[i+21] << 8);
+            if (entries != 0 && (size_t)i + 22 + comment == tailSize) {
+                valid = YES;
+                break;
+            }
+        }
+    }
+    free(tail);
+    return valid;
+}
+
 @implementation BloomBoxArchive
 + (BOOL)validateAPK:(NSURL *)source error:(NSError **)error {
     // Husk imports ZIP archives before scanning manifests and split packages.
@@ -31,14 +70,16 @@ static BOOL safePath(NSString *path) {
     archive_read_support_format_zip(reader);
     if (archive_read_open_filename(reader, source.fileSystemRepresentation, 65536) != ARCHIVE_OK) {
         archive_read_free(reader);
-        return fail(error, @"El archivo no es un APK ZIP legible.");
+        return looksLikeNonemptyAPKZIP(source) ||
+            fail(error, @"El archivo no es un APK ZIP legible.");
     }
     BOOL foundEntry = NO;
     struct archive_entry *entry = NULL;
     int status = ARCHIVE_OK;
     NSUInteger count = 0;
+    BOOL excessiveEntries = NO;
     while ((status = archive_read_next_header(reader, &entry)) == ARCHIVE_OK) {
-        if (++count > 250000) { status = ARCHIVE_FATAL; break; }
+        if (++count > 250000) { excessiveEntries = YES; status = ARCHIVE_FATAL; break; }
         const char *name = archive_entry_pathname(entry);
         if (name && name[0] != 0 && archive_entry_filetype(entry) != AE_IFDIR) {
             foundEntry = YES;
@@ -46,8 +87,9 @@ static BOOL safePath(NSString *path) {
         if (archive_read_data_skip(reader) != ARCHIVE_OK) { status = ARCHIVE_FATAL; break; }
     }
     archive_read_free(reader);
-    return (foundEntry && status == ARCHIVE_EOF) ||
-        fail(error, @"El archivo APK está vacío, dañado o no es un ZIP compatible.");
+    if (foundEntry && status == ARCHIVE_EOF) return YES;
+    if (!excessiveEntries && looksLikeNonemptyAPKZIP(source)) return YES;
+    return fail(error, @"El archivo APK está vacío, dañado o no es un ZIP compatible.");
 }
 + (BOOL)packDirectory:(NSURL *)source toURL:(NSURL *)destination error:(NSError **)error {
     NSFileManager *fm = NSFileManager.defaultManager;
