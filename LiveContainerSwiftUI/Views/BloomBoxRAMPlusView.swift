@@ -310,7 +310,6 @@ struct BloomBoxRAMPlusView: View {
     let openSideStore: () -> Void
     @ObservedObject private var ram = BloomBoxRAMPlus.shared
     @Environment(\.scenePhase) private var scenePhase
-    @State private var showWarning = false
     @State private var activationError: String?
     @State private var chooseOriginalIPA = false
     @State private var externalInstallLogs: [String] = []
@@ -499,7 +498,7 @@ struct BloomBoxRAMPlusView: View {
                         Link("GetMoreRam · instrucciones e instalación", destination: URL(string: "https://github.com/hugeBlack/GetMoreRam")!)
                     }.font(.footnote).padding(.top, 10)
                 }
-                Button("Comprobar de nuevo") { ram.refresh(); showWarning = ram.needsAttention }
+                Button("Comprobar de nuevo") { ram.refresh() }
                     .buttonStyle(.bordered)
                 if let date = ram.checkedAt {
                     Text("Última comprobación: \(date.formatted(date: .omitted, time: .standard))")
@@ -530,7 +529,6 @@ struct BloomBoxRAMPlusView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             ram.refresh()
-            showWarning = ram.needsAttention
             // Never silently replace a working experimental build on view appear.
         }
         .onChange(of: scenePhase) {
@@ -553,12 +551,6 @@ struct BloomBoxRAMPlusView: View {
                 activationError = error.localizedDescription
             }
         }
-        .alert("RAM+ aún no está confirmada", isPresented: $showWarning) {
-            Button("Activar con SideStore") { activate() }
-            Button("Después", role: .cancel) { }
-        } message: {
-            Text("El switch está encendido, pero esta instalación no supera las validaciones. Solicita el permiso con SideStore y reinstala BloomBox. Encender el switch no aumenta la memoria por sí solo.")
-        }
     }
 
     private var ramCurrentStatus: some View {
@@ -568,7 +560,7 @@ struct BloomBoxRAMPlusView: View {
             Image(systemName: active ? "checkmark.circle.fill" :
                   (processing ? "hourglass.circle.fill" : "circle.dotted.circle.fill"))
                 .font(.system(size: 32))
-                .foregroundStyle(active ? .green : (processing ? .orange : .secondary))
+                .foregroundStyle(active ? Color.green : (processing ? Color.orange : Color.gray))
             VStack(alignment: .leading, spacing: 5) {
                 Text(active ? "Estado actual: RAM+ verificada" :
                      (processing ? "Estado actual: en proceso" : "Estado actual: listo para activar"))
@@ -635,7 +627,9 @@ struct BloomBoxRAMPlusView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 6) {
-                        ForEach(Array(consoleLines.enumerated()), id: \.offset) { index, line in
+                        ForEach(Array(consoleLines.enumerated()), id: \.offset) { entry in
+                            let index = entry.offset
+                            let line = entry.element
                             Text(line)
                                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                                 .foregroundStyle(line.hasPrefix("[OK]") ? Color.green :
