@@ -967,3 +967,15 @@
 "¡Instalada!" = "Installed!";
 "Preparando tu nueva app..." = "Preparing your new app...";
 "¡Tu regalo ya está en el escritorio!" = "Your gift is ready on the home screen!";
+/* BloomBox RAM+ refreshed interface */
+"Elige un método para solicitar RAM+. El permiso se aplica al volver a firmar e instalar BloomBox." = "Choose a method to request RAM+. The entitlement is applied when BloomBox is signed and installed again.";
+"Consola de proceso RAM+" = "RAM+ process console";
+"Método BloomBox recomendado" = "Recommended BloomBox method";
+"Descargar, instalar y abrir GetMoreRam" = "Download, install and open GetMoreRam";
+"Estado actual: listo para activar" = "Current status: ready to activate";
+"Estado actual: RAM+ verificada" = "Current status: RAM+ verified";
+"Estado actual: en proceso" = "Current status: in progress";
+"La firma y el perfil de esta instalación confirman RAM+." = "The installed signature and provisioning profile confirm RAM+.";
+"RAM+ no aumenta la RAM física; iOS comprueba el permiso después de firmar e instalar." = "RAM+ does not add physical memory; iOS checks the entitlement after signing and installation.";
+"RAM+ activa" = "RAM+ active";
+"Método 2" = "Method 2";
