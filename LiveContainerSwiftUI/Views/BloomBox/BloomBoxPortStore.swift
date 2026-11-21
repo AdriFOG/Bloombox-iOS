@@ -8,10 +8,10 @@ import SwiftUI
 private struct BloomBoxPortCatalogResponse: Decodable {
     let schema: String
     let version: Int
-    let ports: [BloomBoxAndroidPort]
+    let ports: [BloomBoxCatalogPort]
 }
 
-private struct BloomBoxAndroidPort: Decodable, Identifiable {
+struct BloomBoxCatalogPort: Decodable, Identifiable {
     struct Release: Decodable {
         let version: String?
         let date: String?
@@ -28,7 +28,7 @@ private struct BloomBoxAndroidPort: Decodable, Identifiable {
         let note: String?
         var id: String { url }
 
-        var safeURL: URL? { BloomBoxAndroidPort.safeHTTPS(url) }
+        var safeURL: URL? { BloomBoxCatalogPort.safeHTTPS(url) }
     }
 
     let id: String
@@ -101,7 +101,7 @@ private struct BloomBoxPortVerificationIndex: Decodable {
     let entries: [BloomBoxPortVerification]
 }
 
-private struct BloomBoxPortVerification: Decodable {
+struct BloomBoxPortVerification: Decodable {
     let id: String
     let version: String
     let status: String
@@ -117,8 +117,10 @@ private struct BloomBoxPortVerification: Decodable {
 }
 
 @MainActor
-private final class BloomBoxPortCatalog: ObservableObject {
-    @Published private(set) var ports: [BloomBoxAndroidPort] = []
+final class BloomBoxPortCatalog: ObservableObject {
+    static let shared = BloomBoxPortCatalog()
+    @Published private(set) var ports: [BloomBoxCatalogPort] = []
+    @Published private(set) var iosPorts: [BloomBoxCatalogPort] = []
     @Published private(set) var checks: [String: BloomBoxPortVerification] = [:]
     @Published private(set) var loading = false
     @Published private(set) var errorMessage: String?
@@ -157,10 +159,12 @@ private final class BloomBoxPortCatalog: ObservableObject {
               result.schema == "openportsgames/catalog", result.version == 2,
               result.ports.count <= 15_000 else { return false }
         var seen = Set<String>()
-        ports = result.ports.filter {
-            $0.status != "takedown" && $0.platforms?.contains("android") == true &&
-            !$0.id.isEmpty && seen.insert($0.id).inserted
+        let catalog = result.ports.filter {
+            $0.status != "takedown" && !$0.id.isEmpty &&
+            seen.insert($0.id).inserted
         }.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        ports = catalog.filter { $0.platforms?.contains("android") == true }
+        iosPorts = catalog.filter { $0.platforms?.contains("ios") == true }
         return true
     }
 
@@ -180,7 +184,7 @@ private final class BloomBoxPortCatalog: ObservableObject {
         return true
     }
 
-    func check(for port: BloomBoxAndroidPort) -> BloomBoxPortVerification? {
+    func check(for port: BloomBoxCatalogPort) -> BloomBoxPortVerification? {
         guard let version = port.version, let item = checks[port.id],
               item.version == version else { return nil }
         return item
@@ -228,7 +232,7 @@ struct BloomBoxPortStore: View {
     let onAPKReady: (URL) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var catalog = BloomBoxPortCatalog()
+    @ObservedObject private var catalog = BloomBoxPortCatalog.shared
     @State private var query = ""
     @State private var filter = "all"
     @State private var system = ""
@@ -238,7 +242,7 @@ struct BloomBoxPortStore: View {
         Array(Set(catalog.ports.flatMap { $0.originalSystems ?? [] }))
             .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
-    private var displayed: [BloomBoxAndroidPort] {
+    private var displayed: [BloomBoxCatalogPort] {
         catalog.ports.filter { port in
             if filter == "apk" && !port.hasAPK { return false }
             if filter == "verified" && catalog.check(for: port)?.status != "verified" { return false }
@@ -370,7 +374,7 @@ struct BloomBoxPortStore: View {
 }
 
 private struct BloomBoxPortCard: View {
-    let port: BloomBoxAndroidPort
+    let port: BloomBoxCatalogPort
     let check: BloomBoxPortVerification?
 
     var body: some View {
@@ -422,12 +426,12 @@ private struct BloomBoxPortCard: View {
 }
 
 private struct BloomBoxPortDetail: View {
-    let port: BloomBoxAndroidPort
+    let port: BloomBoxCatalogPort
     let check: BloomBoxPortVerification?
     let hasHusk: Bool
     let onAPKReady: (URL) -> Void
 
-    @State private var pending: BloomBoxAndroidPort.Download?
+    @State private var pending: BloomBoxCatalogPort.Download?
     @State private var downloading = false
     @State private var downloadError: String?
     private var english: Bool { BloomBoxL10n.isEnglish }
@@ -551,7 +555,7 @@ private struct BloomBoxPortDetail: View {
     }
 
     @MainActor
-    private func downloadAPK(_ item: BloomBoxAndroidPort.Download) async {
+    private func downloadAPK(_ item: BloomBoxCatalogPort.Download) async {
         guard !downloading, hasHusk, let url = port.trustedAPK(item) else { return }
         downloading = true
         defer { downloading = false }
