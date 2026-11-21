@@ -1,4 +1,4 @@
-# BloomBox — Novedades pendientes de lanzamiento (21 de noviembre de 2026)
+# BloomBox — Archivo de novedades antes de 3.2.0 (21 de noviembre de 2026)
 
 > **Cambios integrados en código. No son una release ni anuncian una versión nueva.** Se prepararon en la rama `feature/android-port-store-20261121` para su incorporación a `main`.
 
@@ -32,7 +32,7 @@
 - Se enlazan las descargas y repositorios de los **autores originales**; BloomBox no redistribuye juegos comerciales ni sus archivos propietarios.
 - Compatibilidad Android depende del proyecto externo [Husk](https://github.com/Leviidev/Husk), de JIT y de las condiciones del dispositivo.
 
-**No publicar release por esta integración.** Una ejecución automática de CI en `main` no equivale a lanzar una versión.
+**Estado actualizado:** incluidos en **BloomBox 3.2.0** junto con el rediseño RAM+. Esta nota conserva los antecedentes y límites conocidos.
 
 ---
 
@@ -41,4 +41,4 @@
 - Added an **iPhone** category to the existing BloomBox App Store, filtering OpenPortsGames to `ios` entries with an IPA-only toggle and external publisher downloads.
 - Added an empty, exact-version compatibility badge feed in Remote Systems. **No games are verified yet.**
 - Automated iOS build passed; the Android cover layout fix and individual game compatibility still need real-device verification.
-- **Unreleased. No versioned GitHub release has been requested.**
+- **Released in v3.2.0.** This section records the earlier unpublished development snapshot.
