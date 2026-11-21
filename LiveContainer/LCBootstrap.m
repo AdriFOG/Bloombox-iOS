@@ -14,6 +14,9 @@
 #include <signal.h>
 #include <sys/mman.h>
 #include <stdlib.h>
+#ifndef CS_OPS_STATUS
+#define CS_OPS_STATUS 0
+#endif
 #include "../litehook/src/litehook.h"
 #import "Tweaks/Tweaks.h"
 #include <mach-o/ldsyms.h>
@@ -94,11 +97,23 @@ static BOOL checkJITEnabled() {
         return YES;
     }
     
-    // check csflags
-    int flags;
-    csops(getpid(), 0, &flags, sizeof(flags));
-    return (flags & CS_DEBUGGED) != 0;
+    // Query the guest's own code-signing flags: a failed csops call must
+    // never be confused with a successful debugger attachment.
+    uint32_t flags = 0;
+    return csops(getpid(), CS_OPS_STATUS, &flags, sizeof(flags)) == 0
+        && (flags & CS_DEBUGGED) == CS_DEBUGGED;
 #endif
+}
+
+// Poll the actual debugger flag instead of sleeping a fixed 100 seconds.
+// Keep the old optional debugger-wait preference bounded, and leave other
+// launch paths unchanged when the flag is not granted.
+static BOOL BloomBoxWaitForDebuggerFlag(unsigned int checks) {
+    for (unsigned int i = 0; i < checks; i++) {
+        if (checkJITEnabled()) return YES;
+        usleep(100 * 1000);
+    }
+    return checkJITEnabled();
 }
 
 static uint64_t rnd64(uint64_t v, uint64_t r) {
@@ -331,20 +346,20 @@ NSString *LCRunGuestExtension(NSDictionary *request, int argc, char *argv[], cha
 
 static NSString* invokeAppMain(NSString *selectedApp, NSString *selectedContainer, int argc, char *argv[]) {
     NSString *appError = nil;
-    if([[lcUserDefaults objectForKey:@"LCWaitForDebugger"] boolValue]) {
-        sleep(100);
+    if ([[lcUserDefaults objectForKey:@"LCWaitForDebugger"] boolValue] && !checkJITEnabled()) {
+        // Opt-in wait: return as soon as CS_DEBUGGED appears, not after a fixed delay.
+        (void)BloomBoxWaitForDebuggerFlag(300); // up to 30 seconds
     }
     if (!LCSharedUtils.certificatePassword && !isSideStore) {
+        // Fast path if debugger permission was already granted, including after
+        // LocalDevVPN disconnects. Never infer success from an unsuccessful csops.
+        BOOL debuggerGranted = BloomBoxWaitForDebuggerFlag(10); // up to 1 second
 #if !TARGET_OS_SIMULATOR
-        if(@available(iOS 26.0 ,*))  {
+        if (!debuggerGranted && @available(iOS 26.0, *)) {
             return @"JITLess mode is required since iOS 26. Please set it up in settings. \nPlease go to LiveContainer settings -> tap \"Import Certificate from SideStore\" / \"Import Certificate\"";
         }
 #endif
-        // First of all, let's check if we have JIT
-        for (int i = 0; i < 10 && !checkJITEnabled(); i++) {
-            usleep(1000*100);
-        }
-        if (!checkJITEnabled()) {
+        if (!debuggerGranted) {
             appError = @"JIT was not enabled. If you want to use LiveContainer without JIT, setup JITLess mode in settings.";
             return appError;
         }
