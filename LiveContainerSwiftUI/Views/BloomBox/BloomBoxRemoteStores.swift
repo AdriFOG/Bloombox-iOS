@@ -1090,6 +1090,7 @@ struct BloomBoxAppStore: View {
     private var preferredLanguage = "system"
     private var englishUI: Bool { preferredLanguage == "en" || (preferredLanguage == "system" && (Locale.preferredLanguages.first ?? "en").lowercased().hasPrefix("en")) }
     @ObservedObject private var catalog = BloomBoxAppCatalog.shared
+    @ObservedObject private var iosPorts = BloomBoxPortCatalog.shared
 
     @State private var section = 0
     @State private var query = ""
@@ -1101,6 +1102,7 @@ struct BloomBoxAppStore: View {
         switch section {
         case 0: base = catalog.listings.filter { $0.featured == true }
         case 2: base = catalog.listings.filter { $0.category == "ports" }
+        case 3: base = []
         default: base = catalog.listings
         }
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1158,13 +1160,21 @@ struct BloomBoxAppStore: View {
                     )
 
                     HStack {
-                        Label(englishUI ? "\(catalog.listings.count) apps in catalog" : "\(catalog.listings.count) apps en catálogo",
+                        Label(section == 3 ?
+                              (englishUI ? "\(iosPorts.iosPorts.count) iOS ports" : "\(iosPorts.iosPorts.count) ports para iPhone") :
+                              (englishUI ? "\(catalog.listings.count) apps in catalog" : "\(catalog.listings.count) apps en catálogo"),
                               systemImage: "square.stack.3d.up")
                             .font(.caption).foregroundStyle(.secondary)
                         Spacer()
-                        Button("Actualizar") {
-                            Task { await catalog.refreshIfNeeded(force: true) }
-                        }.disabled(catalog.refreshing)
+                        Button(englishUI ? "Refresh" : "Actualizar") {
+                            Task {
+                                if section == 3 {
+                                    await iosPorts.refresh(force: true)
+                                } else {
+                                    await catalog.refreshIfNeeded(force: true)
+                                }
+                            }
+                        }.disabled(section == 3 ? iosPorts.loading : catalog.refreshing)
                     }
                     if catalog.refreshing {
                         ProgressView("Actualizando tienda...")
@@ -1180,14 +1190,18 @@ struct BloomBoxAppStore: View {
                     }
 
                     Picker("Explorar apps", selection: $section) {
-                        Text("Destacadas").tag(0)
-                        Text("Explorar").tag(1)
+                        Text(englishUI ? "Featured" : "Destacadas").tag(0)
+                        Text(englishUI ? "Explore" : "Explorar").tag(1)
                         Text("Ports").tag(2)
+                        Text("iPhone").tag(3)
                     }.pickerStyle(.segmented)
 
                     HStack(spacing: 10) {
                         Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                        TextField("Buscar apps, autores, categorías", text: $query)
+                        TextField(section == 3 ?
+                                  (englishUI ? "Search iPhone ports" : "Buscar ports para iPhone") :
+                                  (englishUI ? "Search apps, authors, categories" : "Buscar apps, autores, categorías"),
+                                  text: $query)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                     }
@@ -1199,19 +1213,24 @@ struct BloomBoxAppStore: View {
                             .strokeBorder(profileAccent.opacity(0.24), lineWidth: 1)
                     }
 
-                    if visibleListings.isEmpty && !catalog.refreshing {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("No se encontraron aplicaciones").font(.headline)
-                            Text("Prueba otra búsqueda o actualiza el catálogo.")
-                                .font(.footnote).foregroundStyle(.secondary)
+                    if section == 3 {
+                        BloomBoxIOSPortsSection(search: query)
+                    } else {
+                        if visibleListings.isEmpty && !catalog.refreshing {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(englishUI ? "No applications found" : "No se encontraron aplicaciones").font(.headline)
+                                Text(englishUI ? "Try another search or refresh the catalog." :
+                                     "Prueba otra búsqueda o actualiza el catálogo.")
+                                    .font(.footnote).foregroundStyle(.secondary)
+                            }
+                            .padding(18)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
                         }
-                        .padding(18)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
-                    }
 
-                    ForEach(visibleListings) { listing in
-                        listingCard(listing)
+                        ForEach(visibleListings) { listing in
+                            listingCard(listing)
+                        }
                     }
 
                     Button {
@@ -1222,7 +1241,11 @@ struct BloomBoxAppStore: View {
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
-                    Text("BloomBox no distribuye IPAs de terceros. Cada ficha enlaza al autor original. Solo descarga archivos de proyectos en los que confíes. La ejecución dentro del contenedor puede fallar por restricciones de iOS o JIT.")
+                    Text(section == 3 ?
+                         (englishUI ? "iPhone port listings link to publishers' original builds. They have not been independently tested for BloomBox. Some require game files you own." :
+                          "Los ports para iPhone enlazan a las compilaciones originales de sus autores. No están probados en BloomBox; algunos requieren archivos originales del juego.") :
+                         (englishUI ? "BloomBox does not distribute third-party IPAs. Only download from projects you trust. Guest apps may be restricted by iOS or JIT." :
+                          "BloomBox no distribuye IPAs de terceros. Cada ficha enlaza al autor original. Solo descarga archivos de proyectos en los que confíes. La ejecución dentro del contenedor puede fallar por restricciones de iOS o JIT."))
                         .font(.footnote).foregroundStyle(.secondary)
                 }.padding(20)
             }

@@ -878,6 +878,13 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 if preferredExperience == "hybrid" { liveBoardMode = "ios" }
             }
         }
+        // Port Store downloads go through the existing APK confirmation screen.
+        // Never install from a network catalog without an explicit user action.
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("BloomBoxPortStoreInstallAPK"))) { note in
+            guard let url = note.object as? URL, url.isFileURL,
+                  url.pathExtension.lowercased() == "apk" else { return }
+            receivedIPA = BloomBoxReceivedIPA(url: url)
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.InstallAppNotification)) { obj in
             if let obj2 = obj.object as? [String: Any], let installUrl = obj2["url"] as? URL {
                 let expectedSHA = obj2["sha256"] as? String
