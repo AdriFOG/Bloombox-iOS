@@ -56,6 +56,42 @@ El usuario debe descubrir **Archivos Android** inmediatamente, incluso si aún n
 - **Husk detectado, sin datos importados:** mensaje «Todavía no hay archivos Android. Importa datos de un juego o abre Husk» y guía contextual; no mostrar un listado vacío como si hubiera fallado.
 - **Problema de lectura:** explicación concreta (permiso, directorio no disponible, juego en uso), botón **Reintentar**; no alterar datos sin consentimiento.
 
+### Guía de instalación cuando falta Husk (copy definitivo)
+
+La sección **Archivos Android** debe seguir visible y abrir una pantalla breve, no un error ni una página vacía. El usuario pidió palabras cortas, sin tecnicismos y sin explicaciones interminables.
+
+**Texto visible (español):**
+- **Husk**
+- **Emulador Android** · **Instalador de APK**
+- «Abre juegos y apps Android en tu iPhone.»
+- «Necesitas instalar Husk para explorar sus archivos.»
+- Botón principal: **Instalar Husk** → guía oficial: https://itslevii.dev/docs/install
+- Enlace secundario: **Descargar IPA oficial** → https://github.com/Leviidev/Husk/releases
+- Acción de comprobación: **Ya instalé Husk · Comprobar** → volver a detectar sin reiniciar BloomBox.
+- Texto después de comprobar sin detectar: «Aún no encontramos Husk en BloomBox. Revisa que esté instalado como app compatible y vuelve a comprobar.»
+- Texto cuando detecta Husk sin permiso de lectura: «Husk está instalado, pero no podemos abrir sus archivos.» → **Revisar acceso** (nunca ofrecer reinstalar en vez de diagnosticar).
+
+**Texto visible (English):**
+- **Husk**
+- **Android emulator** · **APK installer**
+- "Run Android apps and games on your iPhone."
+- "Install Husk to browse Android game files."
+- Primary: **Install Husk** → official installation instructions.
+- Secondary: **Official IPA download** → official GitHub releases.
+- Recheck: **I installed Husk · Check again**.
+- Separate state when installed but inaccessible: "Husk is installed, but BloomBox can't access its files." → **Check access**.
+
+**Mini-guía en pantalla (solo si el usuario toca «Instalar Husk»):**
+1. «Abre la guía oficial.»
+2. «Instala Husk con SideStore, AltStore o TrollStore.»
+3. «Vuelve a BloomBox y toca “Comprobar”.»
+
+**Comportamiento obligatorio:** ninguna etiqueta «Instalado» sin detección real del bundle id `com.husk.app`. El botón de instalación abre la **guía oficial** y no debe fingir que BloomBox instaló una IPA; no se promete instalación automática. La vista permanece totalmente navegable sin Husk. No escoger un instalador por el usuario ni pedir que descargue un archivo desde una página desconocida. En caso de tener Husk instalado y detectable, se omite la guía y se muestra la entrada al explorador. Si falta acceso al contenedor, mostrar el estado de acceso en lugar de fingir ausencia de Husk.
+
+Nota técnica: Husk tiene **dos modos**: traducción nativa de código Android y emulación QEMU; el texto «Emulador Android» es una simplificación de producto, no una afirmación de que todo APK se ejecuta en un emulador completo. Los juegos no tienen compatibilidad garantizada, y algunos necesitan JIT.
+
+**Fuente oficial verificada:** README de https://github.com/Leviidev/Husk enlaza `https://itslevii.dev/docs/install`, los firmadores SideStore/AltStore/TrollStore y las releases públicas. No fijar en UI una versión de Husk que se pueda quedar vieja.
+
 ### Detección y refresco
 
 - Reutilizar el reconocimiento actual en `BloomBoxHomeScreen.swift`: `sharedModel.apps` y `bundleIdentifier == "com.husk.app"`; la lectura de juegos usa el contenedor seleccionado y `Documents/TranslationLayer`. No usar la presencia de un icono de juego como único indicador de que Husk existe.
