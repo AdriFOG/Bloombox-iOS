@@ -9,6 +9,9 @@
 #import <fcntl.h>
 #import <unistd.h>
 #import <sys/stat.h>
+#ifndef CS_OPS_STATUS
+#define CS_OPS_STATUS 0
+#endif
 #import <Security/Security.h>
 #import "../LiveContainer/LCSharedUtils.h"
 #import "../LiveContainer/FoundationPrivate.h"
@@ -66,6 +69,38 @@ static void BloomBoxReportJITPermissions(void) {
     [data writeToURL:file options:NSDataWritingAtomic error:nil];
 }
 
+// CS_DEBUGGED is a flag belonging to the guest process, not BloomBox's UI PID.
+// Publish a one-shot, PID-scoped observation so the host can stop waiting even
+// if the LocalDevVPN debug connection disconnects after granting the flag.
+static void BloomBoxWatchGuestDebuggerFlag(void) {
+    NSURL *root = [LCSharedUtils appGroupPath];
+    if (!root) return;
+    NSFileManager *fm = NSFileManager.defaultManager;
+    NSURL *directory = [root URLByAppendingPathComponent:@"Library/BloomBoxJIT/Debugged" isDirectory:YES];
+    if (![fm createDirectoryAtURL:directory withIntermediateDirectories:YES attributes:nil error:nil]) return;
+    pid_t guestPID = getpid();
+    NSURL *file = [directory URLByAppendingPathComponent:[NSString stringWithFormat:@"%d.json", guestPID]];
+    // PIDs can be reused; a previous guest's observation must not be trusted.
+    [fm removeItemAtURL:file error:nil];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        for (unsigned int attempt = 0; attempt < 1500; attempt++) { // up to five minutes
+            uint32_t flags = 0;
+            if (csops(getpid(), CS_OPS_STATUS, &flags, sizeof(flags)) == 0 &&
+                (flags & CS_DEBUGGED) == CS_DEBUGGED) {
+                NSDictionary *observation = @{
+                    @"pid": @(guestPID),
+                    @"timestamp": @([NSDate date].timeIntervalSince1970),
+                    @"csDebugged": @YES
+                };
+                NSData *bytes = [NSJSONSerialization dataWithJSONObject:observation options:0 error:nil];
+                if (bytes) [bytes writeToURL:file options:NSDataWritingAtomic error:nil];
+                return;
+            }
+            usleep(200 * 1000);
+        }
+    });
+}
+
 // Cross-process breadcrumbs written in the shared container. This is not a
 // signal handler: it records safe lifecycle milestones *before* a possible
 // exception, without attempting unsafe crash-time Objective-C work.
@@ -119,6 +154,7 @@ int LiveProcessMain(int argc, char *argv[]) {
     }
     BloomBoxRecordLiveProcessPhase(@"liveprocess.request.received");
     BloomBoxReportJITPermissions();
+    BloomBoxWatchGuestDebuggerFlag();
     
     // Check if we received a request to execute a custom payload
     NSString *customPayloadDylib = appInfo[@"customPayloadDylib"];
