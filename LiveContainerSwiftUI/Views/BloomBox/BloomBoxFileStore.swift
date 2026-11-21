@@ -240,6 +240,41 @@ enum BloomBoxHuskPathPolicy {
         return relative
     }
 
+    /// This is the actual preflight used before every native Husk import.
+    /// Tests call it directly, not a weaker approximation of the UI guard.
+    static func validateDestination(_ destination: URL, under root: URL) throws {
+        let components = try relativeComponents(of: destination, under: root)
+        let fm = FileManager.default
+        let actualRoot = root.standardizedFileURL.resolvingSymlinksInPath()
+        var isFolder: ObjCBool = false
+        guard fm.fileExists(atPath: actualRoot.path, isDirectory: &isFolder),
+              isFolder.boolValue else {
+            throw ValidationFailure.missingGameDirectory
+        }
+        // Root was selected by Husk discovery, not supplied by imported files.
+        if isSymbolicLink(root.standardizedFileURL) {
+            throw ValidationFailure.unsafeLink
+        }
+        var cursor = root.standardizedFileURL
+        for (index, segment) in components.enumerated() {
+            cursor.appendPathComponent(segment)
+            if isSymbolicLink(cursor) { throw ValidationFailure.unsafeLink }
+            if index + 1 < components.count {
+                var isDirectory: ObjCBool = false
+                if fm.fileExists(atPath: cursor.path, isDirectory: &isDirectory) &&
+                    !isDirectory.boolValue {
+                    throw ValidationFailure.nonDirectoryAncestor
+                }
+            }
+        }
+    }
+
+    enum ValidationFailure: Error, Equatable {
+        case missingGameDirectory
+        case unsafeLink
+        case nonDirectoryAncestor
+    }
+
     private static func isSymbolicLink(_ url: URL) -> Bool {
         var fileStat = stat()
         return url.withUnsafeFileSystemRepresentation { pointer in
