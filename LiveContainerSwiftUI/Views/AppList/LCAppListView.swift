@@ -186,6 +186,25 @@ private struct BloomBoxIPAOpenSheet: View {
                 }
                 .padding(20)
             }
+            .background {
+                ZStack {
+                    Color(red: 0.055, green: 0.058, blue: 0.078)
+                    RadialGradient(
+                        colors: [
+                            BloomBoxWizardPalette.color(BloomBoxProfileStore.active.accentHex).opacity(0.18),
+                            .clear
+                        ],
+                        center: .topTrailing, startRadius: 0, endRadius: 430
+                    )
+                    // Same moving profile-colored shapes as the first-run wizard.
+                    BloomBoxWizardAmbientSymbols(
+                        isDark: true, accentHex: BloomBoxProfileStore.active.accentHex
+                    )
+                }
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
             .navigationTitle(isAPK ? (BloomBoxL10n.isEnglish ? "Install APK" : "Instalar APK") : BloomBoxL10n.t("Instalar IPA"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
