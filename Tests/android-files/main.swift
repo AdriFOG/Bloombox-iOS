@@ -98,4 +98,62 @@ do {
 } catch BloomBoxHuskPathPolicy.Failure.notFileURL {
     // Expected.
 }
-print("PASS: exact Husk import preflight, raw OBB/data copy, new directories, alias and escape protection")
+
+// The real import path now uses only vetted relative segments. Verify THAT
+// path-building routine, including destinations that do not yet exist.
+let cleanGame = sandbox.appendingPathComponent(
+    "Husk/Documents/TranslationLayer/uninitialized-game", isDirectory: true)
+try fm.createDirectory(at: cleanGame, withIntermediateDirectories: true)
+
+let obb = try BloomBoxHuskPathPolicy.scopedURL(
+    in: cleanGame, components: ["obb"], isDirectory: true)
+let gameData = try BloomBoxHuskPathPolicy.scopedURL(
+    in: cleanGame,
+    components: ["sdcard", "Android", "data", "com.bloombox.testapp"],
+    isDirectory: true)
+precondition(obb.lastPathComponent == "obb")
+precondition(gameData.lastPathComponent == "com.bloombox.testapp")
+try fm.createDirectory(at: obb, withIntermediateDirectories: true)
+try fm.createDirectory(at: gameData, withIntermediateDirectories: true)
+let rawOBB = try BloomBoxHuskPathPolicy.scopedURL(
+    in: cleanGame, components: ["obb", "main.1.com.bloombox.testapp.obb"],
+    isDirectory: false)
+let rawData = try BloomBoxHuskPathPolicy.scopedURL(
+    in: cleanGame,
+    components: ["sdcard", "Android", "data", "com.bloombox.testapp", "bloombox_test.dat"],
+    isDirectory: false)
+try Data(repeating: 0x4F, count: 256).write(to: rawOBB)
+try Data(repeating: 0x44, count: 512).write(to: rawData)
+precondition((try Data(contentsOf: rawOBB)).count == 256)
+precondition((try Data(contentsOf: rawData)).count == 512)
+
+// Shared storage is a separate, trusted root; empty parts resolve to itself.
+let shared = sandbox.appendingPathComponent(
+    "Husk/Documents/Shared Storage", isDirectory: true)
+try fm.createDirectory(at: shared, withIntermediateDirectories: true)
+let sharedDest = try BloomBoxHuskPathPolicy.scopedURL(
+    in: shared, components: [], isDirectory: true)
+precondition(sharedDest.standardizedFileURL.path == shared.standardizedFileURL.path)
+let aliasedOBB = try BloomBoxHuskPathPolicy.scopedURL(
+    in: aliasedRoot, components: ["obb"], isDirectory: true)
+precondition(aliasedOBB.lastPathComponent == "obb")
+
+// Traversal, slash injection, and symlinks are never accepted as components.
+for badPart in ["..", ".", "", "../../outside", "nested/escape"] {
+    do {
+        _ = try BloomBoxHuskPathPolicy.scopedURL(
+            in: cleanGame, components: [badPart, "file.obb"], isDirectory: false)
+        fatalError("unsafe component allowed: \(badPart)")
+    } catch BloomBoxHuskPathPolicy.Failure.outsideRoot {
+        // Correct.
+    }
+}
+do {
+    _ = try BloomBoxHuskPathPolicy.scopedURL(
+        in: root, components: ["escape", "malicious.obb"], isDirectory: false)
+    fatalError("symlink escape allowed in scoped path")
+} catch BloomBoxHuskPathPolicy.ValidationFailure.unsafeLink {
+    // Correct.
+}
+
+print("PASS: relative-root Husk OBB/data destination, raw OBB/data copy, new directories, alias and escape protection")
