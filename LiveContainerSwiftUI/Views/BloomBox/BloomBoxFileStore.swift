@@ -275,6 +275,40 @@ enum BloomBoxHuskPathPolicy {
         case nonDirectoryAncestor
     }
 
+    /// Construct an authorized descendant from independent, trusted path
+    /// components. No comparison of two full iOS container paths is needed.
+    /// Import modes provide fixed segments, and imported file names provide
+    /// exactly one final segment. Every existing child is checked with lstat.
+    static func scopedURL(in root: URL, components: [String],
+                          isDirectory: Bool) throws -> URL {
+        guard root.isFileURL else { throw Failure.notFileURL }
+        let base = root.standardizedFileURL
+        let fm = FileManager.default
+        var rootIsDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: base.path, isDirectory: &rootIsDirectory),
+              rootIsDirectory.boolValue else {
+            throw ValidationFailure.missingGameDirectory
+        }
+        if isSymbolicLink(base) { throw ValidationFailure.unsafeLink }
+        var current = base
+        for (index, part) in components.enumerated() {
+            guard !part.isEmpty, part != ".", part != "..",
+                  !part.contains("/"), !part.contains("\\"),
+                  !part.unicodeScalars.contains(where: { $0.value == 0 }) else {
+                throw Failure.outsideRoot
+            }
+            let folder = index < components.count - 1 || isDirectory
+            current.appendPathComponent(part, isDirectory: folder)
+            if isSymbolicLink(current) { throw ValidationFailure.unsafeLink }
+            var existingFolder: ObjCBool = false
+            if fm.fileExists(atPath: current.path, isDirectory: &existingFolder) &&
+                index < components.count - 1 && !existingFolder.boolValue {
+                throw ValidationFailure.nonDirectoryAncestor
+            }
+        }
+        return current
+    }
+
     private static func isSymbolicLink(_ url: URL) -> Bool {
         var fileStat = stat()
         return url.withUnsafeFileSystemRepresentation { pointer in
