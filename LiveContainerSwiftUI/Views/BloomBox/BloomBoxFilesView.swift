@@ -717,12 +717,22 @@ private enum BloomBoxHuskDataImport {
         var cursor = base
         for segment in relativePath.split(separator: "/") {
             cursor.appendPathComponent(String(segment))
-            let flags = try cursor.resourceValues(forKeys: [
-                .isSymbolicLinkKey, .isDirectoryKey
-            ])
-            if flags.isSymbolicLink == true { throw ImportError.unsafeLink }
-            if cursor.path != candidate.path, flags.isDirectory == false {
-                throw ImportError.invalidTarget("Una ruta intermedia no es carpeta: " + cursor.lastPathComponent)
+            do {
+                let flags = try cursor.resourceValues(forKeys: [
+                    .isSymbolicLinkKey, .isDirectoryKey
+                ])
+                if flags.isSymbolicLink == true { throw ImportError.unsafeLink }
+                if cursor.path != candidate.path, flags.isDirectory == false {
+                    throw ImportError.invalidTarget(
+                        "Una ruta intermedia no es carpeta: " + cursor.lastPathComponent)
+                }
+            } catch {
+                let nsError = error as NSError
+                // New OBB and Android/data directories are normally absent.
+                // A missing component is allowed, never a dangling symlink.
+                if nsError.domain == NSCocoaErrorDomain &&
+                   nsError.code == NSFileReadNoSuchFileError { continue }
+                throw error
             }
         }
     }
