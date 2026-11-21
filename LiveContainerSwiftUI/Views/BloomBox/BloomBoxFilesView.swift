@@ -627,14 +627,16 @@ private enum BloomBoxHuskDataImport {
     }
 
     enum ImportError: LocalizedError {
-        case invalidGame, invalidPackage, invalidSource, invalidTarget
+        case invalidGame, invalidPackage, invalidSource
+        case invalidTarget(String)
         case noOBB, obbPackageMismatch, unsafeLink, gameBusy
         var errorDescription: String? {
             switch self {
             case .invalidGame: return "El juego o el contenedor cambió. Vuelve a abrir Archivos Android."
             case .invalidPackage: return "Husk no informó el paquete de este juego. No se pueden asignar sus datos."
             case .invalidSource: return "Selecciona archivos, carpetas o un ZIP válido."
-            case .invalidTarget: return "La carpeta de destino no es segura o no se puede usar."
+            case .invalidTarget(let detail):
+                return "No se pudo preparar el destino: " + detail
             case .noOBB: return "No se encontraron archivos .obb en la selección."
             case .obbPackageMismatch: return "Este OBB parece pertenecer a otro juego. No se importó."
             case .unsafeLink: return "Hay un enlace o una ruta insegura. No se importó."
@@ -663,7 +665,7 @@ private enum BloomBoxHuskDataImport {
             guard let sharedRoot,
                   sharedRoot.lastPathComponent == "Shared Storage",
                   BloomBoxHuskFiles.isDirectory(sharedRoot)
-            else { throw ImportError.invalidTarget }
+            else { throw ImportError.invalidTarget("No se encontró el almacenamiento compartido de Husk.") }
             return sharedRoot
         }
     }
@@ -679,31 +681,60 @@ private enum BloomBoxHuskDataImport {
         return value
     }
 
-    // A previous permission check is not a guarantee of safety: every
-    // existing path component is rechecked for symlinks before writing.
+    // Do not confuse an unavailable destination with an unsafe one.
+    // Resolve legitimate /var -> /private/var links in ancestors, but never
+    // follow a symlink *inside* the authorized game or shared-storage root.
     private static func verify(_ url: URL, in root: URL) throws {
-        let base = root.standardizedFileURL
-        let target = url.standardizedFileURL
-        guard target.path == base.path || target.path.hasPrefix(base.path + "/")
-        else { throw ImportError.invalidTarget }
-        let relative = target.path == base.path ? "" : String(target.path.dropFirst(base.path.count + 1))
-        var step = base
         let fm = FileManager.default
-        let baseValues = try base.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-        guard baseValues.isDirectory == true, baseValues.isSymbolicLink != true
-        else { throw ImportError.invalidTarget }
-        for segment in relative.split(separator: "/") {
-            step.appendPathComponent(String(segment))
-            if fm.fileExists(atPath: step.path) {
-                let v = try step.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-                if v.isSymbolicLink == true { throw ImportError.unsafeLink }
+        let base = root.standardizedFileURL
+        let candidate = url.standardizedFileURL
+        guard base.isFileURL, candidate.isFileURL else {
+            throw ImportError.invalidTarget("La selección no es una ruta local.")
+        }
+        let canonicalBase = base.resolvingSymlinksInPath()
+        let canonicalCandidate = candidate.resolvingSymlinksInPath()
+        let relativePath: String
+        if candidate.path == base.path {
+            relativePath = ""
+        } else if candidate.path.hasPrefix(base.path + "/") {
+            relativePath = String(candidate.path.dropFirst(base.path.count + 1))
+        } else {
+            throw ImportError.invalidTarget("La ruta sale del contenedor del juego.")
+        }
+        guard canonicalCandidate.path == canonicalBase.path ||
+            canonicalCandidate.path.hasPrefix(canonicalBase.path + "/") else {
+            throw ImportError.unsafeLink
+        }
+        var isDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: base.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            throw ImportError.invalidTarget("No se encontró la carpeta del juego. Vuelve a abrir Husk.")
+        }
+        // The base is the inspected per-game directory, never a path chosen by
+        // the imported archive. Do not let the caller replace the base with a link.
+        let baseFlags = try base.resourceValues(forKeys: [.isSymbolicLinkKey])
+        guard baseFlags.isSymbolicLink != true else { throw ImportError.unsafeLink }
+        var cursor = base
+        for segment in relativePath.split(separator: "/") {
+            cursor.appendPathComponent(String(segment))
+            let flags = try cursor.resourceValues(forKeys: [
+                .isSymbolicLinkKey, .isDirectoryKey
+            ])
+            if flags.isSymbolicLink == true { throw ImportError.unsafeLink }
+            if cursor.path != candidate.path, flags.isDirectory == false {
+                throw ImportError.invalidTarget("Una ruta intermedia no es carpeta: " + cursor.lastPathComponent)
             }
         }
     }
 
     private static func makeTarget(_ dir: URL, root: URL) throws {
         try verify(dir, in: root)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        } catch {
+            throw ImportError.invalidTarget("No se pudo crear " + dir.lastPathComponent +
+                                             ": " + error.localizedDescription)
+        }
         try verify(dir, in: root)
     }
 
