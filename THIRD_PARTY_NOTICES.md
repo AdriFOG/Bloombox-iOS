@@ -33,3 +33,8 @@ Source: https://starforgejo.dev/projects/MeloNX/src/tag/2.6/src/MeloNX/MeloNX/Co
 License: https://starforgejo.dev/projects/MeloNX/src/tag/2.6/LICENSE.txt
 BloomBox's debugger adapter applies its existing register-parsing compatibility
 fixes at runtime. The base64 string is the complete corresponding script source.
+
+## BloomBox News shortcut artwork
+
+- Google Play and Apple App Store logo PNG assets are sourced from [Homarr Dashboard Icons](https://github.com/homarr-labs/dashboard-icons) (`png/google-play.png` and `png/app-store.png`; Apache-2.0 for the collection). They are bundled in `Resources/BloomBoxGooglePlayMark.png` and `Resources/BloomBoxAppleAppStoreMark.png` and used to identify BloomBox's internal store shortcuts.
+- Google Play and App Store are trademarks of Google LLC and Apple Inc. Their artwork does not imply affiliation or endorsement. SideStore uses the icon already bundled with its embedded framework.
