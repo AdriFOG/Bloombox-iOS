@@ -14,7 +14,7 @@ struct BloomBoxIOSPortsSection: View {
     private var matching: [BloomBoxCatalogPort] {
         let needle = search.trimmingCharacters(in: .whitespacesAndNewlines)
         return catalog.iosPorts.filter { port in
-            if ipaOnly && !port.downloads.orEmpty.contains(where: { $0.safeURL?.pathExtension.lowercased() == "ipa" }) {
+            if ipaOnly && !(port.downloads ?? []).contains(where: { $0.safeURL?.pathExtension.lowercased() == "ipa" }) {
                 return false
             }
             if needle.isEmpty { return true }
@@ -90,12 +90,6 @@ struct BloomBoxIOSPortsSection: View {
             .padding(.top, 4)
         }
         .task { await catalog.refresh() }
-    }
-}
-
-private extension Optional where Wrapped: Collection {
-    var orEmpty: Wrapped {
-        self ?? .init()
     }
 }
 
