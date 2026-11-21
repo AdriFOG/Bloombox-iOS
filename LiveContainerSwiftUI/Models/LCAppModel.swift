@@ -353,6 +353,19 @@ class LCAppModel: ObservableObject, Hashable {
 //            throw "lc.container.inUse".loc + "\n MultiTask"
 //        }
         
+        // Closing a JIT guest can leave LiveProcess alive briefly while iOS
+        // tears down its scene and releases the shared-container lock. Retry
+        // only until the lock is actually released; NEVER steal a live lock
+        // or start a second guest against data still owned by another process.
+        if wantsJIT, let fn = currentDataFolder,
+           LCSharedUtils.getContainerUsingLCScheme(withFolderName: fn) != nil {
+            for _ in 0..<16 {
+                try Task.checkCancellation()
+                try await Task.sleep(nanoseconds: 250_000_000)
+                if LCSharedUtils.getContainerUsingLCScheme(withFolderName: fn) == nil { break }
+            }
+        }
+
         // if the selected container is in use (either other lc or multitask), open the host lc associated with it
         if
             let fn = uiSelectedContainer?.folderName,
