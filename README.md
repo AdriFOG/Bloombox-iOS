@@ -17,6 +17,12 @@ A personal home for your apps, widgets and files — with room to experiment.
 
 Its home screen lives **inside the app**; it does not replace the iOS Home Screen. Experimental features are clearly identified below so you can choose what to try.
 
+## Next update — ApkStore and iPhone ports (not yet released)
+
+The development branch adds **ApkStore** (general Android port discovery through OpenPortsGames, with the separate Husk importer) and an **iPhone** category inside the existing BloomBox App Store. Both catalogs link to their original publishers; Android compatibility badges depend on exact-version real-device tests. The Android cover layout fix is still awaiting confirmation on an iPhone.
+
+[Read the unreleased changes and known issues](docs/UNRELEASED-2026-11-21-Port-Stores.md). No new release has been published for these changes.
+
 ## BloomBox 3.0 · A closer look
 
 <table>
