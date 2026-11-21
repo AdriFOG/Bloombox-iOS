@@ -681,55 +681,22 @@ private enum BloomBoxHuskDataImport {
         return value
     }
 
-    // The importer always receives a trusted Husk game directory. Normalize
-    // file URLs first (directory-slash hints and iOS /var aliases can differ)
-    // and compare components, not fragile string prefixes.
+    // Shared with the executable Swift regression tests. No second,
+    // inconsistent path check is maintained in this UI module.
     private static func verify(_ url: URL, in root: URL) throws {
-        let parts: [String]
         do {
-            parts = try BloomBoxHuskPathPolicy.relativeComponents(of: url, under: root)
-        } catch {
-            throw ImportError.invalidTarget("La ruta sale del contenedor del juego.")
-        }
-        let fm = FileManager.default
-        let safeRoot = root.standardizedFileURL.resolvingSymlinksInPath()
-        var isDirectory: ObjCBool = false
-        guard fm.fileExists(atPath: safeRoot.path, isDirectory: &isDirectory),
-              isDirectory.boolValue else {
-            throw ImportError.invalidTarget("No se encontró la carpeta del juego. Vuelve a abrir Husk.")
-        }
-        let originalFlags = try root.resourceValues(forKeys: [.isSymbolicLinkKey])
-        guard originalFlags.isSymbolicLink != true else { throw ImportError.unsafeLink }
-
-        // Prefer the original spelling for walking child components so that
-        // a symlink *inside* the game directory cannot be hidden by canonicalization.
-        let rawBase = root.standardizedFileURL.pathComponents
-        let rawTarget = url.standardizedFileURL.pathComponents
-        let rawRelative: [String]? =
-            rawTarget.count >= rawBase.count &&
-            Array(rawTarget.prefix(rawBase.count)) == rawBase
-            ? Array(rawTarget.dropFirst(rawBase.count))
-            : nil
-        var cursor = rawRelative == nil ? safeRoot : root.standardizedFileURL
-        let checkParts = rawRelative ?? parts
-        for (index, segment) in checkParts.enumerated() {
-            cursor.appendPathComponent(segment)
-            do {
-                let flags = try cursor.resourceValues(forKeys: [
-                    .isSymbolicLinkKey, .isDirectoryKey
-                ])
-                if flags.isSymbolicLink == true { throw ImportError.unsafeLink }
-                if index < checkParts.count - 1 && flags.isDirectory == false {
-                    throw ImportError.invalidTarget(
-                        "Una ruta intermedia no es carpeta: " + cursor.lastPathComponent)
-                }
-            } catch {
-                let nsError = error as NSError
-                // An OBB or Android/data folder may legitimately not exist yet.
-                if nsError.domain == NSCocoaErrorDomain &&
-                    nsError.code == NSFileReadNoSuchFileError { continue }
-                throw error
-            }
+            try BloomBoxHuskPathPolicy.validateDestination(url, under: root)
+        } catch BloomBoxHuskPathPolicy.Failure.notFileURL {
+            throw ImportError.invalidTarget("RUTA-01: no es una ruta local.")
+        } catch BloomBoxHuskPathPolicy.Failure.outsideRoot {
+            throw ImportError.invalidTarget(
+                "RUTA-02: la subcarpeta no pertenece al contenedor seleccionado de Husk.")
+        } catch BloomBoxHuskPathPolicy.ValidationFailure.missingGameDirectory {
+            throw ImportError.invalidTarget("RUTA-03: ya no existe la carpeta del juego.")
+        } catch BloomBoxHuskPathPolicy.ValidationFailure.nonDirectoryAncestor {
+            throw ImportError.invalidTarget("RUTA-04: hay un archivo donde debería haber una carpeta.")
+        } catch BloomBoxHuskPathPolicy.ValidationFailure.unsafeLink {
+            throw ImportError.unsafeLink
         }
     }
 
