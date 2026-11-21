@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - feature/jit-csdebugged-resume
       - fix/gamebox-playnite-fixes-20261119
       - fix/jit-guest-orientation-ios27
       - feature/cinematic-game-mode-ram-jit-gate
