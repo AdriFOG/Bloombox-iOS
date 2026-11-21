@@ -37,10 +37,16 @@ assert '["ipa", "tipa", "apk"].contains(url.pathExtension.lowercased())' in app_
 assert "receivedIPA = BloomBoxReceivedIPA(url: url)" in app_list
 assert "await importAPK(request.url, host: husk)" in app_list
 assert "BloomBoxIPAOpenSheet(" in app_list
-assert "ShareLink(item: fileURL)" in app_list
+assert 'ShareLink(item: BloomBoxSideStoreIPA(fileURL: sideStoreIPA))' in app_list
+assert 'FileRepresentation(contentType: UTType(importedAs: "com.apple.itunes.ipa"))' in app_list
+assert "SentTransferredFile(item.fileURL)" in app_list
+assert "NSFileCoordinator().coordinate(readingItemAt: original" in app_list
+assert "guard size > 0" in app_list
+assert "sideStoreHandoffError" in app_list
+assert "ShareLink(item: fileURL)" not in app_list
 assert "await installFromUrl(urlStr: request.url.absoluteString)" in app_list
 assert "LCUtils.openSideStore(delegate: self)" in app_list
 assert '"Instalar dentro de BloomBox" = "Install in BloomBox";' in en
 assert '"Instalar con SideStore" = "Install with SideStore";' in en
 assert "espacios libres sin verificar" in app_list
-print("PASS: Files IPA routing, destination sheet, honest SideStore limits, and English labels")
+print("PASS: Files IPA routing, true SideStore IPA transfer, destination sheet and English labels")
