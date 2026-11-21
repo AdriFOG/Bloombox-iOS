@@ -76,7 +76,8 @@ for (relative, bytes) in [
                            withIntermediateDirectories: true)
     try BloomBoxHuskPathPolicy.validateDestination(expected, under: root)
     try fm.copyItem(at: source, to: expected)
-    precondition(try Data(contentsOf: expected) == bytes, "incorrect imported data")
+    let importedData = try Data(contentsOf: expected)
+    precondition(importedData == bytes, "incorrect imported data")
 }
 
 // A destination may be missing, but an existing data file may not be a folder.
