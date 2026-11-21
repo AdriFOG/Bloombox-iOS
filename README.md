@@ -6,7 +6,7 @@
 
 A personal home for your apps, widgets and files — with room to experiment.
 
-[**Download BloomBox 3.0.1**](https://github.com/AdriFOG/Bloombox-iOS/releases/tag/v3.0.1) · [Builds](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml) · [Report an issue](https://github.com/AdriFOG/Bloombox-iOS/issues)
+[**Download BloomBox 3.2.0**](https://github.com/AdriFOG/Bloombox-iOS/releases/tag/v3.2.0) · [Builds](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml) · [Report an issue](https://github.com/AdriFOG/Bloombox-iOS/issues)
 
 [![Build](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-purple.svg)](LICENSE) · [Original-work attribution](LICENSE-ADDITIONAL-TERMS.md)
@@ -17,11 +17,15 @@ A personal home for your apps, widgets and files — with room to experiment.
 
 Its home screen lives **inside the app**; it does not replace the iOS Home Screen. Experimental features are clearly identified below so you can choose what to try.
 
-## Next update — ApkStore and iPhone ports (not yet released)
+## BloomBox 3.2.0 — Port Stores & RAM+
 
-The development branch adds **ApkStore** (general Android port discovery through OpenPortsGames, with the separate Husk importer) and an **iPhone** category inside the existing BloomBox App Store. Both catalogs link to their original publishers; Android compatibility badges depend on exact-version real-device tests. The Android cover layout fix is still awaiting confirmation on an iPhone.
+- **ApkStore:** general OpenPortsGames Android ports, bounded covers, original publisher links, and a user-confirmed Husk APK handoff.
+- **App Store for iPhone:** iOS-only port discovery with a Solo IPA filter.
+- **RAM+:** two animated action methods, a real diagnostic console, and the wizard's profile-color background in RAM+ and the IPA/APK installer.
+- **GetMoreRam:** official release download, SHA-256 and identity verification, normal guest-app install, and repeat testing even if RAM+ is already active.
+- **Método BloomBox:** a read-only live Apple check when RAM+ is already granted; no unnecessary permission changes.
 
-[Read the unreleased changes and known issues](docs/UNRELEASED-2026-11-21-Port-Stores.md). No new release has been published for these changes.
+Community ports still require separate on-device compatibility testing. [Read release notes and known issues](docs/BloomBox-3.2.0-Release-Notes.md).
 
 ## BloomBox 3.0 · A closer look
 
