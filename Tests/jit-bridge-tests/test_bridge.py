@@ -75,4 +75,20 @@ assert 'selectedProvider = JITEnablerType.BuiltIn.rawValue' in setup
 assert "jitDemoUnconfigured = false" in modules, "Dismiss must restore normal screen"
 assert 'name == "PairingFile_RemoteRP.plist" || folder.lowercased().contains("sidestore")' in coordinator
 assert 'if let destinationDate, candidate.date < destinationDate' in coordinator
-print("BloomBox JIT cross-language IPC, principal class and guarded hook match")
+# CS_DEBUGGED handshake: only the guest's own csops result is authoritative.
+bootstrap = (root / "LiveContainer/LCBootstrap.m").read_text()
+guest = (root / "LiveProcess/main.m").read_text()
+assert "csops(getpid(), CS_OPS_STATUS, &flags, sizeof(flags)) == 0" in bootstrap
+assert "csops(getpid(), CS_OPS_STATUS, &flags, sizeof(flags)) == 0" in guest
+assert "(flags & CS_DEBUGGED) == CS_DEBUGGED" in bootstrap
+assert "(flags & CS_DEBUGGED) == CS_DEBUGGED" in guest
+assert "sleep(100);" not in bootstrap
+assert "BloomBoxWaitForDebuggerFlag(300)" in bootstrap
+assert "BloomBoxWatchGuestDebuggerFlag();" in guest
+assert '@"csDebugged": @YES' in guest
+assert 'Library/BloomBoxJIT/Debugged/\\(pid).json' in coordinator
+assert 'seenAt >= verifiedGuestLaunch' in coordinator, "Reject stale PID observations"
+assert 'observed["pid"] as? Int32 == pid' in coordinator, "Require exact target PID"
+assert 'if !handedOffHelper' in coordinator, "Do not terminate an in-flight JIT script"
+assert 'let cleanupDeadline = Date().addingTimeInterval(300)' in coordinator
+print("BloomBox JIT bridge, fresh guest CS_DEBUGGED handshake and helper cleanup verified")
