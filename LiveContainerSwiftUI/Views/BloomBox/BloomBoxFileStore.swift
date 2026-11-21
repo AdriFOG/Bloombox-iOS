@@ -231,13 +231,12 @@ enum BloomBoxHuskPathPolicy {
             if isSymbolicLink(current) { throw Failure.outsideRoot }
         }
 
-        let canonicalDestination = lexicalDestination.resolvingSymlinksInPath().pathComponents
-        let canonicalRoot = realRoot.pathComponents
-        guard !canonicalRoot.isEmpty,
-              canonicalDestination.count >= canonicalRoot.count,
-              Array(canonicalDestination.prefix(canonicalRoot.count)) == canonicalRoot else {
-            throw Failure.outsideRoot
-        }
+        // The *destination* may not exist yet. On iOS, resolvingSymlinksInPath
+        // on a nonexistent leaf can leave system aliases (/var, /private/var)
+        // unresolved, even when the real root is valid. Comparing the two
+        // resolved whole paths incorrectly blocks every first-time import.
+        // The selected root was already validated, the lexical components
+        // are confined above, and lstat checked every child for symlinks.
         return relative
     }
 
