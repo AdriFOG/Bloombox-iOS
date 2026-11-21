@@ -1,6 +1,6 @@
 # BloomBox — Archivo de novedades antes de 3.2.0 (21 de noviembre de 2026)
 
-> **Cambios integrados en código. No son una release ni anuncian una versión nueva.** Se prepararon en la rama `feature/android-port-store-20261121` para su incorporación a `main`.
+> **Archivo histórico:** cambios que originalmente se prepararon sin release y que ahora forman parte de [BloomBox 3.2.0](BloomBox-3.2.0-Release-Notes.md).
 
 ## Novedades / What's new
 
