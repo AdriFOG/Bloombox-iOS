@@ -207,7 +207,7 @@ struct BloomBoxProfileSwitcherWidget: View {
     private var count: Int { max(4, profiles.count + 1) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 15) {
+        VStack(alignment: .leading, spacing: 9) {
             HStack {
                 Label(spanish ? "Perfiles" : "Profiles", systemImage: "person.crop.circle")
                     .font(.subheadline.weight(.semibold))
@@ -216,14 +216,14 @@ struct BloomBoxProfileSwitcherWidget: View {
                 Button { showManage = true } label: {
                     Image(systemName: "slider.horizontal.3")
                         .font(.system(size: 15, weight: .semibold))
-                        .frame(width: 33, height: 28)
+                        .frame(width: 29, height: 25)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(spanish ? "Administrar perfiles" : "Manage profiles")
                 .accessibilityIdentifier("bloombox.news.profiles.manage")
             }
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
+                HStack(spacing: 10) {
                     ForEach(0..<count, id: \.self) { index in
                         if index < profiles.count {
                             let profile = profiles[index]
@@ -232,9 +232,9 @@ struct BloomBoxProfileSwitcherWidget: View {
                             Button { showManage = true } label: {
                                 VStack(spacing: 6) {
                                     Image(systemName: "plus")
-                                        .font(.system(size: 21, weight: .medium))
+                                        .font(.system(size: 20, weight: .medium))
                                         .foregroundStyle(.secondary)
-                                        .frame(width: 54, height: 54)
+                                        .frame(width: 48, height: 48)
                                         .overlay(Circle().strokeBorder(
                                             Color.primary.opacity(0.25), lineWidth: 3))
                                     Text(spanish ? "Nuevo" : "New")
@@ -268,7 +268,7 @@ struct BloomBoxProfileSwitcherWidget: View {
                     .fill(tint)
                     .frame(width: 8, height: 8)
                 Text(current.name)
-                    .font(.system(size: 21, weight: .semibold, design: .rounded))
+                    .font(.system(size: 19, weight: .semibold, design: .rounded))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                 Spacer()
@@ -277,7 +277,7 @@ struct BloomBoxProfileSwitcherWidget: View {
                     .foregroundStyle(tint)
             }
         }
-        .padding(17)
+        .padding(13)
         .frame(maxWidth: .infinity, alignment: .leading)
         .liveBoardGlass(radius: 26)
         .accessibilityIdentifier("bloombox.news.profiles")
@@ -306,12 +306,12 @@ struct BloomBoxProfileSwitcherWidget: View {
             onProfileSelected()
         } label: {
             VStack(spacing: 6) {
-                BloomBoxProfileAvatar(profile: profile, size: 47)
+                BloomBoxProfileAvatar(profile: profile, size: 42)
                     .padding(3)
                     .overlay(Circle().strokeBorder(
                         selected ? color : Color.primary.opacity(0.12),
                         lineWidth: selected ? 3 : 1))
-                    .shadow(color: selected ? color.opacity(0.35) : .clear, radius: 10)
+                    .shadow(color: selected ? color.opacity(0.12) : .clear, radius: 3)
                     .scaleEffect(selected ? 1.05 : 1)
                 Text(profile.name)
                     .font(.caption2.weight(selected ? .semibold : .regular))
