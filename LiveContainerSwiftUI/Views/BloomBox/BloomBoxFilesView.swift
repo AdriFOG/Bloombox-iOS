@@ -681,57 +681,53 @@ private enum BloomBoxHuskDataImport {
         return value
     }
 
-    // Do not confuse an unavailable destination with an unsafe one.
-    // Resolve legitimate /var -> /private/var links in ancestors, but never
-    // follow a symlink *inside* the authorized game or shared-storage root.
+    // The importer always receives a trusted Husk game directory. Normalize
+    // file URLs first (directory-slash hints and iOS /var aliases can differ)
+    // and compare components, not fragile string prefixes.
     private static func verify(_ url: URL, in root: URL) throws {
-        let fm = FileManager.default
-        let base = root.standardizedFileURL
-        let candidate = url.standardizedFileURL
-        guard base.isFileURL, candidate.isFileURL else {
-            throw ImportError.invalidTarget("La selección no es una ruta local.")
-        }
-        let canonicalBase = base.resolvingSymlinksInPath()
-        let canonicalCandidate = candidate.resolvingSymlinksInPath()
-        let relativePath: String
-        if candidate.path == base.path {
-            relativePath = ""
-        } else if candidate.path.hasPrefix(base.path + "/") {
-            relativePath = String(candidate.path.dropFirst(base.path.count + 1))
-        } else {
+        let parts: [String]
+        do {
+            parts = try BloomBoxHuskPathPolicy.relativeComponents(of: url, under: root)
+        } catch {
             throw ImportError.invalidTarget("La ruta sale del contenedor del juego.")
         }
-        guard canonicalCandidate.path == canonicalBase.path ||
-            canonicalCandidate.path.hasPrefix(canonicalBase.path + "/") else {
-            throw ImportError.unsafeLink
-        }
+        let fm = FileManager.default
+        let safeRoot = root.standardizedFileURL.resolvingSymlinksInPath()
         var isDirectory: ObjCBool = false
-        guard fm.fileExists(atPath: base.path, isDirectory: &isDirectory),
+        guard fm.fileExists(atPath: safeRoot.path, isDirectory: &isDirectory),
               isDirectory.boolValue else {
             throw ImportError.invalidTarget("No se encontró la carpeta del juego. Vuelve a abrir Husk.")
         }
-        // The base is the inspected per-game directory, never a path chosen by
-        // the imported archive. Do not let the caller replace the base with a link.
-        let baseFlags = try base.resourceValues(forKeys: [.isSymbolicLinkKey])
-        guard baseFlags.isSymbolicLink != true else { throw ImportError.unsafeLink }
-        var cursor = base
-        for segment in relativePath.split(separator: "/") {
-            cursor.appendPathComponent(String(segment))
+        let originalFlags = try root.resourceValues(forKeys: [.isSymbolicLinkKey])
+        guard originalFlags.isSymbolicLink != true else { throw ImportError.unsafeLink }
+
+        // Prefer the original spelling for walking child components so that
+        // a symlink *inside* the game directory cannot be hidden by canonicalization.
+        let rawBase = root.standardizedFileURL.pathComponents
+        let rawTarget = url.standardizedFileURL.pathComponents
+        let rawRelative: [String]? =
+            rawTarget.count >= rawBase.count &&
+            Array(rawTarget.prefix(rawBase.count)) == rawBase
+            ? Array(rawTarget.dropFirst(rawBase.count))
+            : nil
+        var cursor = rawRelative == nil ? safeRoot : root.standardizedFileURL
+        let checkParts = rawRelative ?? parts
+        for (index, segment) in checkParts.enumerated() {
+            cursor.appendPathComponent(segment)
             do {
                 let flags = try cursor.resourceValues(forKeys: [
                     .isSymbolicLinkKey, .isDirectoryKey
                 ])
                 if flags.isSymbolicLink == true { throw ImportError.unsafeLink }
-                if cursor.path != candidate.path, flags.isDirectory == false {
+                if index < checkParts.count - 1 && flags.isDirectory == false {
                     throw ImportError.invalidTarget(
                         "Una ruta intermedia no es carpeta: " + cursor.lastPathComponent)
                 }
             } catch {
                 let nsError = error as NSError
-                // New OBB and Android/data directories are normally absent.
-                // A missing component is allowed, never a dangling symlink.
+                // An OBB or Android/data folder may legitimately not exist yet.
                 if nsError.domain == NSCocoaErrorDomain &&
-                   nsError.code == NSFileReadNoSuchFileError { continue }
+                    nsError.code == NSFileReadNoSuchFileError { continue }
                 throw error
             }
         }
