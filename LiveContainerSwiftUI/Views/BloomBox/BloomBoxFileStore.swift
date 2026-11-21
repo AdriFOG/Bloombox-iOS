@@ -180,3 +180,28 @@ struct BloomBoxFileStore {
         try transfer(url, into: folder, copying: true)
     }
 }
+
+
+/// Root confinement for Husk native-game data imports.
+///
+/// A directory URL can have an explicit trailing slash and may be presented
+/// under a system alias (/var vs /private/var). Compare canonical components,
+/// never a raw string prefix. This also prevents sibling-prefix confusion
+/// (gameA vs gameA-backup) and traversal.
+enum BloomBoxHuskPathPolicy {
+    enum Failure: Error, Equatable {
+        case notFileURL
+        case outsideRoot
+    }
+
+    static func relativeComponents(of destination: URL, under root: URL) throws -> [String] {
+        guard root.isFileURL, destination.isFileURL else { throw Failure.notFileURL }
+        let base = root.standardizedFileURL.resolvingSymlinksInPath().pathComponents
+        let candidate = destination.standardizedFileURL.resolvingSymlinksInPath().pathComponents
+        guard !base.isEmpty, candidate.count >= base.count,
+              Array(candidate.prefix(base.count)) == base else {
+            throw Failure.outsideRoot
+        }
+        return Array(candidate.dropFirst(base.count))
+    }
+}
