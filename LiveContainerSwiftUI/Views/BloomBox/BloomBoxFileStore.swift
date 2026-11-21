@@ -1,4 +1,9 @@
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#else
+import Glibc
+#endif
 
 /// BloomBox-only document operations. Never touches guest apps, signing or RAM+.
 /// A pre-existing "Manzana Files" folder stays usable to avoid losing user data.
@@ -196,12 +201,52 @@ enum BloomBoxHuskPathPolicy {
 
     static func relativeComponents(of destination: URL, under root: URL) throws -> [String] {
         guard root.isFileURL, destination.isFileURL else { throw Failure.notFileURL }
-        let base = root.standardizedFileURL.resolvingSymlinksInPath().pathComponents
-        let candidate = destination.standardizedFileURL.resolvingSymlinksInPath().pathComponents
-        guard !base.isEmpty, candidate.count >= base.count,
-              Array(candidate.prefix(base.count)) == base else {
+        let lexicalRoot = root.standardizedFileURL
+        let lexicalDestination = destination.standardizedFileURL
+        let realRoot = lexicalRoot.resolvingSymlinksInPath()
+
+        // Prefer checking the original spelling to expose symlinks inside
+        // the game directory. A normalized root is only a fallback for
+        // legitimate system-level aliases such as /var -> /private/var.
+        let destinationComponents = lexicalDestination.pathComponents
+        let match: URL
+        if lexicalRoot.pathComponents.count <= destinationComponents.count &&
+            Array(destinationComponents.prefix(lexicalRoot.pathComponents.count)) ==
+                lexicalRoot.pathComponents {
+            match = lexicalRoot
+        } else if realRoot.pathComponents.count <= destinationComponents.count &&
+            Array(destinationComponents.prefix(realRoot.pathComponents.count)) ==
+                realRoot.pathComponents {
+            match = realRoot
+        } else {
             throw Failure.outsideRoot
         }
-        return Array(candidate.dropFirst(base.count))
+
+        let relative = Array(destinationComponents.dropFirst(match.pathComponents.count))
+        var current = match
+        for name in relative {
+            current.appendPathComponent(name)
+            // resolvingSymlinksInPath may stop at a nonexistent final file,
+            // so check *every existing ancestor* with lstat instead.
+            if isSymbolicLink(current) { throw Failure.outsideRoot }
+        }
+
+        let canonicalDestination = lexicalDestination.resolvingSymlinksInPath().pathComponents
+        let canonicalRoot = realRoot.pathComponents
+        guard !canonicalRoot.isEmpty,
+              canonicalDestination.count >= canonicalRoot.count,
+              Array(canonicalDestination.prefix(canonicalRoot.count)) == canonicalRoot else {
+            throw Failure.outsideRoot
+        }
+        return relative
+    }
+
+    private static func isSymbolicLink(_ url: URL) -> Bool {
+        var fileStat = stat()
+        return url.withUnsafeFileSystemRepresentation { pointer in
+            guard let pointer else { return false }
+            return lstat(pointer, &fileStat) == 0 &&
+                (fileStat.st_mode & mode_t(S_IFMT)) == mode_t(S_IFLNK)
+        }
     }
 }
