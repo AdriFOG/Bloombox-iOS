@@ -153,19 +153,19 @@ private struct BloomBoxIPAOpenSheet: View {
                         } else if sideStoreHandoffError == nil {
                             HStack(spacing: 8) {
                                 ProgressView()
-                                Text("Preparando IPA para SideStore…")
+                                Text(BloomBoxL10n.isEnglish ? "Preparing IPA for SideStore…" : "Preparando IPA para SideStore…")
                             }.font(.subheadline)
                         }
                         if let sideStoreHandoffError {
-                            Label("No se pudo preparar la IPA: " + sideStoreHandoffError, systemImage: "exclamationmark.triangle")
+                            Label((BloomBoxL10n.isEnglish ? "Could not prepare the IPA: " : "No se pudo preparar la IPA: ") + sideStoreHandoffError, systemImage: "exclamationmark.triangle")
                                 .font(.caption)
                                 .foregroundStyle(.red)
-                            Button("Reintentar") {
+                            Button(BloomBoxL10n.isEnglish ? "Retry" : "Reintentar") {
                                 sideStoreHandoffError = nil
                                 Task { await prepareSideStoreShare() }
                             }
                         }
-                        Text("En Compartir, elige SideStore. BloomBox entrega la IPA como archivo, no solo un enlace.")
+                        Text(BloomBoxL10n.isEnglish ? "In the Share sheet, choose SideStore. BloomBox shares the actual IPA file, not just a link." : "En Compartir, elige SideStore. BloomBox entrega la IPA como archivo, no solo un enlace.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
