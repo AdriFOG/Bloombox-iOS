@@ -6,6 +6,7 @@
 //
 
 import Combine
+import CoreTransferable
 import CryptoKit
 import SwiftUI
 import UniformTypeIdentifiers
