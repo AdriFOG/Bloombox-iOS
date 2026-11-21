@@ -70,6 +70,10 @@ jobs:
         run: python3 Tests/ios-port-store/test_ios_ports.py
       - name: Test Husk Android files discovery and read-only containment
         run: python3 Tests/android-files/test_android_files.py
+      - name: Test Husk import path containment on real Swift Foundation
+        run: |
+          swiftc LiveContainerSwiftUI/Views/BloomBox/BloomBoxFileStore.swift Tests/android-files/main.swift -o "$RUNNER_TEMP/bloombox-husk-path-tests"
+          "$RUNNER_TEMP/bloombox-husk-path-tests"
       - name: Test Kirby installation animation, five-second hold and gift reveal
         run: python3 Tests/ipa-install-celebration/test_install_celebration.py
       - name: Test independent BloomBox Files engine and legacy data
