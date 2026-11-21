@@ -355,8 +355,10 @@ static NSString* invokeAppMain(NSString *selectedApp, NSString *selectedContaine
         // LocalDevVPN disconnects. Never infer success from an unsuccessful csops.
         BOOL debuggerGranted = BloomBoxWaitForDebuggerFlag(10); // up to 1 second
 #if !TARGET_OS_SIMULATOR
-        if (!debuggerGranted && @available(iOS 26.0, *)) {
-            return @"JITLess mode is required since iOS 26. Please set it up in settings. \nPlease go to LiveContainer settings -> tap \"Import Certificate from SideStore\" / \"Import Certificate\"";
+        if (@available(iOS 26.0, *)) {
+            if (!debuggerGranted) {
+                return @"JITLess mode is required since iOS 26. Please set it up in settings. \nPlease go to LiveContainer settings -> tap \"Import Certificate from SideStore\" / \"Import Certificate\"";
+            }
         }
 #endif
         if (!debuggerGranted) {
