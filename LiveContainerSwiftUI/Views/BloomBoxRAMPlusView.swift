@@ -565,9 +565,12 @@ struct BloomBoxRAMPlusView: View {
                 Text(active ? "Estado actual: RAM+ verificada" :
                      (processing ? "Estado actual: en proceso" : "Estado actual: listo para activar"))
                     .font(.subheadline.bold())
+                Text(BloomBoxL10n.t(ram.status))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Text(active ? "La firma y el perfil de esta instalación confirman RAM+." :
                      "RAM+ no aumenta la RAM física; iOS comprueba el permiso después de firmar e instalar.")
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
