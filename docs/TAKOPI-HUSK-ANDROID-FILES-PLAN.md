@@ -38,6 +38,44 @@
 - No changes to Takopi's own repository, users' existing data, or BloomBox `main`.
 - No release, IPA build or claim of a working Android explorer at this preparation stage.
 
+## Visibilidad y orientación — decisión de UX (21 de noviembre de 2026)
+
+El usuario debe descubrir **Archivos Android** inmediatamente, incluso si aún no tiene instalado Husk. Nunca ocultarlo tras ajustes avanzados.
+
+### Entradas visuales
+
+1. **Archivos de BloomBox, primera pantalla:** dos destinos prominentes en el encabezado — **Archivos iOS** y **Archivos Android** — como tarjetas accesibles o control segmentado; no dependen del contenido de la lista. La tarjeta Android lleva el icono de Android/Husk, el texto fijo «Archivos de juegos Android» y una frase de ayuda («Gestiona datos, OBB, descargas y carpetas de juegos usados por Husk»). No se confunden con la App Store o ApkStore.
+2. **Escritorio de BloomBox:** ofrecer un acceso directo **Archivos Android** junto a **Archivos**, identificable con icono de carpeta + Android. Si el diseño crea un icono predeterminado, preservar los diseños existentes, migrar sin duplicar ni mover iconos ya colocados y permitir quitarlo/moverlo como los demás. Alternativa si el escritorio necesita reducir ruido: ficha fija «Archivos Android» en la sección Archivos del launcher, visible sin entrar en ajustes.
+3. **ApkStore / app Android:** acceso contextual «Administrar datos de este juego» (solo cuando se pueda mapear a una carpeta real); si aún no está disponible, mostrar una explicación clara, nunca crear una carpeta falsa o simular el acceso.
+
+### Estado observable (no suposiciones)
+
+- **Husk no instalado:** tarjeta Android visible, sin carpetas falsas. Indicar «Necesitas Husk para explorar los archivos Android» + qué es Husk + enlace **Ver Husk / Cómo instalarlo** a su repositorio oficial. El usuario aún puede entrar y leer la explicación.
+- **Husk instalado y contenedor accesible:** indicar «Husk detectado», nombre del contenedor seleccionado, y botón **Explorar archivos Android**. Solo listar rutas probadas y accesibles; no afirmar que «Conectado» si el contenedor no abre.
+- **Husk instalado pero bloqueado / oculto / sin acceso:** indicar «Husk está instalado, pero BloomBox no puede abrir sus archivos todavía», ofrecer **Revisar acceso**, no redirigirlo engañosamente a «instalar».
+- **Husk detectado, sin datos importados:** mensaje «Todavía no hay archivos Android. Importa datos de un juego o abre Husk» y guía contextual; no mostrar un listado vacío como si hubiera fallado.
+- **Problema de lectura:** explicación concreta (permiso, directorio no disponible, juego en uso), botón **Reintentar**; no alterar datos sin consentimiento.
+
+### Detección y refresco
+
+- Reutilizar el reconocimiento actual en `BloomBoxHomeScreen.swift`: `sharedModel.apps` y `bundleIdentifier == "com.husk.app"`; la lectura de juegos usa el contenedor seleccionado y `Documents/TranslationLayer`. No usar la presencia de un icono de juego como único indicador de que Husk existe.
+- Distinguir «instalado en la lista de apps» de «contenedor disponible»; verificar acceso real antes de activar acciones de escritura. Respetar apps ocultas/bloqueadas.
+- Actualizar estado al abrir Archivos, al regresar a primer plano, después de instalar/desinstalar Husk y cuando cambie el contenedor. No dejar el estado «no instalado» cacheado.
+- Conservar el estado sin parpadeos mientras se actualiza; accesibilidad VoiceOver, contraste, iPhone vertical, inglés/español.
+
+### Flujo previsto
+
+```text
+BloomBox > Archivos
+   ├─ Archivos iOS     → gestor actual sin cambios
+   └─ Archivos Android → ¿Husk detectado?
+                          ├─ No → explicación + enlace oficial de Husk
+                          ├─ Sí, inaccesible → estado preciso + revisar/reintentar
+                          └─ Sí, accesible → carpetas reales + gestor adaptado de Takopi
+```
+
+**Criterios de aceptación:** una persona nueva debe encontrar Archivos Android en un toque desde Archivos o su acceso del escritorio, comprender para qué sirve sin saber qué es OBB, y recibir una acción útil tanto si Husk está instalado como si no. El explorador iOS permanece idéntico y nunca se expone un directorio ficticio como real. El diseño debe validarse con capturas de pantalla en un iPhone antes de integrarlo a main.
+
 ## Next implementation milestone
 
 Build a mount/provider protocol for (a) native Husk Shared Storage, (b) per-app scoped directories, and (c) any supported guest file bridge, then integrate Takopi's isolated navigation components. Require a failing/passing test for traversal and symlink protection before enabling writes.
