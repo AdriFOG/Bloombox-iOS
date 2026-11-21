@@ -26,10 +26,21 @@ assert "waitForHuskDebugger(" in home
 assert '"debugger_attached", "awaiting_guest", "completed"' in home
 assert "max(0, 3 - Date().timeIntervalSince(started))" in home
 assert "AppSceneViewController.bloomBoxSendURL(" in home
+assert 'landscape: mode == "landscape"' in home
+assert "let deadline = Date().addingTimeInterval(12)" in home
+assert "deliverHuskGameLink(game, mode: mode)" in home
+assert "openHuskLibrary(_ game: HuskGame)" in home
+assert "forceJIT: false" in home.split("private func openHuskLibrary(", 1)[1].split("@ViewBuilder private func huskMenu", 1)[0]
+assert '"Open in Husk (manual)"' in home
 assert "huskStartingGame" in home
 assert "return success" not in home.split("private func openHuskGame(", 1)[1].split("@ViewBuilder private func huskMenu", 1)[0]
 
 assert "+ (BOOL)bloomBoxSendURL:" in scene_h
+assert "toContainer:(NSString *)dataUUID landscape:(BOOL)landscape" in scene_h
+assert "target.view.window" in scene_m and "target.contentView.window" in scene_m
+assert "target.bloomBoxHuskStableSince" in scene_m
+assert "CACurrentMediaTime() - target.bloomBoxHuskStableSince < 1.0" in scene_m
+assert "[self bloomBoxSendURL:urlString toContainer:dataUUID]" in scene_m
 assert "[target openURLScheme:urlString]" in scene_m
 assert "strongToWeakObjectsMapTable" in scene_m
 assert "BloomBoxGuestSceneDidExit" in scene_m
