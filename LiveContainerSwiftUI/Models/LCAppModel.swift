@@ -239,16 +239,7 @@ class LCAppModel: ObservableObject, Hashable {
     }
     
     // You should let LCAppModel.runApp to decide whether to run in multitask mode, but you may override the multitask parameter if necessary
-    func runApp(multitask: Bool? = nil, containerFolderName : String? = nil, bundleIdOverride : String? = nil, urlStr : String? = nil, forceJIT: Bool? = nil) async throws{
-        if isDataBackupInProgress {
-            throw "Espera a que termine la copia de datos antes de abrir esta app."
-        }
-        if isAppRunning {
-            throw "Esta app ya está iniciándose. Si quedó congelada, cierra su ventana de LiveProcess antes de reintentar."
-        }
-        // Applies to normal launches, library launches, and deep links.
-        if await delegate?.approveEmulatorLaunch(app: self, forceJIT: forceJIT) == false { return }
-        
+    func ensurePrimaryContainer() {
         if uiContainers.isEmpty {
             let newName = NSUUID().uuidString
             let newContainer = LCContainer(folderName: newName, name: newName, isShared: uiIsShared)
@@ -261,6 +252,19 @@ class LCAppModel: ObservableObject, Hashable {
             appInfo.dataUUID = newName
             uiDefaultDataFolder = newName
         }
+    }
+
+    func runApp(multitask: Bool? = nil, containerFolderName : String? = nil, bundleIdOverride : String? = nil, urlStr : String? = nil, forceJIT: Bool? = nil) async throws{
+        if isDataBackupInProgress {
+            throw "Espera a que termine la copia de datos antes de abrir esta app."
+        }
+        if isAppRunning {
+            throw "Esta app ya está iniciándose. Si quedó congelada, cierra su ventana de LiveProcess antes de reintentar."
+        }
+        // Applies to normal launches, library launches, and deep links.
+        if await delegate?.approveEmulatorLaunch(app: self, forceJIT: forceJIT) == false { return }
+
+        ensurePrimaryContainer()
         // Resolve BloomBox's active profile before any launch path (Home,
         // GameBox, guest list or deep link). Profile 1 keeps its existing
         // default container; other profiles get separate containers on demand.

@@ -153,6 +153,7 @@ struct BloomBoxHomeScreen: View {
     @State private var startupNoticesEnabled = false
     @State private var pendingRemovalKey: String?
     @State private var pendingUninstall: LCAppModel?
+    @State private var pendingHuskUninstall: HuskGame?
     @State private var pendingTweakApp: LCAppModel?
     @State private var choosingAppTweak = false
     @State private var appTweakError: String?
@@ -229,8 +230,56 @@ struct BloomBoxHomeScreen: View {
     ]
     private enum DesktopAction { case edit, widgets, pages, icons, customize, interface }
 
+    private struct HuskGame: Identifiable {
+        var id: String { key }
+        let key: String
+        let title: String
+        let directory: URL
+        let containerFolder: String
+        let launchURL: URL
+    }
+    @State private var huskGames: [HuskGame] = []
+    @State private var huskStartingGame: HuskGame?
+    @State private var huskLaunchingKey: String?
+    @State private var huskStartingNote = ""
+    @State private var orientationGame: HuskGame?
+    @State private var askForThisLaunch = false
+    @State private var huskError: String?
+    private var husk: LCAppModel? {
+        sharedModel.apps.first { $0.bundleIdentifier == "com.husk.app" && (!$0.appInfo.isLocked || sharedModel.isHiddenAppUnlocked) }
+    }
+    private func refreshHuskGames() {
+        guard let host = husk else { huskGames = []; return }
+        let profile = BloomBoxProfileStore.active
+        let folder: String?
+        if profile.id == BloomBoxUserProfile.primaryID {
+            folder = host.uiDefaultDataFolder ?? host.appInfo.dataUUID ?? host.uiContainers.first?.folderName
+        } else {
+            let guestKey = (host.uiIsShared ? "shared/" : "private/") + (host.appInfo.relativeBundlePath ?? "") + "/" + host.bundleIdentifier
+            folder = BloomBoxProfileStore.mapping(for: profile.id, appKey: guestKey)
+                ?? host.uiContainers.first(where: { $0.name.hasPrefix("[BloomBox:\(profile.id)]") && $0.appIdentifier == host.bundleIdentifier })?.folderName
+        }
+        guard let container = host.uiContainers.first(where: { $0.folderName == folder }) else { huskGames = []; return }
+        let root = container.containerURL.appendingPathComponent("Documents/TranslationLayer")
+        let fm = FileManager.default
+        let directories = (try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        huskGames = directories.compactMap { directory -> HuskGame? in
+            guard let names = try? fm.contentsOfDirectory(atPath: directory.path),
+                  names.contains(where: { $0.lowercased().hasSuffix(".apk") }) else { return nil }
+            let id = directory.lastPathComponent
+            var link = URLComponents()
+            link.scheme = "husk"
+            link.host = "open_app"
+            link.queryItems = [URLQueryItem(name: "unique_identifier", value: id)]
+            guard let url = link.url else { return nil }
+            let label = try? String(contentsOf: directory.appendingPathComponent("label.txt"), encoding: .utf8)
+            return HuskGame(key: "husk/" + container.folderName + "/" + id, title: label ?? id,
+                            directory: directory, containerFolder: container.folderName, launchURL: url)
+        }.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+    }
+
     private var appKeys: [String] {
-        LiveContainerHomeAdapter.visibleKeys(apps)
+        LiveContainerHomeAdapter.visibleKeys(apps) + huskGames.map(\.key)
             + [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey, Self.appStoreKey, Self.modulesKey, Self.themesKey]
     }
     private var appMap: [String: LCAppModel] {
@@ -346,8 +395,8 @@ struct BloomBoxHomeScreen: View {
                 .tabViewStyle(.page(indexDisplayMode: .never))
                 .blur(radius: openFolder == nil ? 0 : 18)
                 .blur(radius: searching ? 14 : 0)
-                .allowsHitTesting(!searching && !installInProgress)
-                .accessibilityHidden(searching || installInProgress)
+                .allowsHitTesting(!searching && !installInProgress && huskStartingGame == nil)
+                .accessibilityHidden(searching || installInProgress || huskStartingGame != nil)
                 if installInProgress {
                     BloomBoxHomeInstallationNotice(progress: installProgress,
                                                        completed: installCompleted,
@@ -355,6 +404,33 @@ struct BloomBoxHomeScreen: View {
                                                        accentColor: profileAccent)
                         .transition(.opacity)
                         .zIndex(30)
+                }
+                if let game = huskStartingGame {
+                    ZStack {
+                        Color.black.opacity(0.62).ignoresSafeArea()
+                        VStack(spacing: 16) {
+                            Image(systemName: "bolt.horizontal.circle.fill")
+                                .font(.system(size: 54)).foregroundStyle(profileAccent)
+                            Text(englishUI ? "Starting \(game.title)" : "Iniciando \(game.title)")
+                                .font(.title2.bold()).multilineTextAlignment(.center)
+                            ProgressView().tint(profileAccent).scaleEffect(1.25)
+                            Text(huskStartingNote)
+                                .font(.subheadline).multilineTextAlignment(.center)
+                                .foregroundStyle(.secondary)
+                            Button(englishUI ? "Hide, keep starting" : "Ocultar, seguir iniciando") {
+                                huskStartingGame = nil
+                                if #available(iOS 16.1, *) {
+                                    AppSceneViewController.bloomBoxEndStartup(forContainer: game.containerFolder)
+                                }
+                            }
+                            .font(.caption)
+                            .padding(.top, 4)
+                        }
+                        .padding(28).frame(maxWidth: 310)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 30))
+                    }
+                    .zIndex(40)
+                    .transition(.opacity)
                 }
                 if aliveEnabled && aliveBooting && aliveStartupPage == page && !reduceMotion {
                     BloomBoxHomeWelcome(message: aliveSplashLine, visible: aliveIntroVisible)
@@ -420,7 +496,7 @@ struct BloomBoxHomeScreen: View {
             })
             .onChange(of: scenePhase) { phase in
                 stopAlivePlayfulness()
-                if phase == .active { ramPlus.refresh() }
+                if phase == .active { ramPlus.refresh(); refreshHuskGames() }
                 if phase == .active, #available(iOS 16.2, *) {
                     Task { await ManzanaExpiryReminderCenter.shared.synchronize() }
                 }
@@ -441,6 +517,29 @@ struct BloomBoxHomeScreen: View {
                 Notification.Name("BloomBoxNewInstallGiftCreated"))) { notification in
                 refreshNewInstallGift(notification)
             }
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("BloomBoxHuskLibraryChanged"))) { _ in refreshHuskGames() }
+            .onChange(of: sharedModel.isHiddenAppUnlocked) { _ in refreshHuskGames() }
+            .onChange(of: themeActiveID) { _ in refreshHuskGames() }
+            .onChange(of: husk?.appInfo.relativeBundlePath) { _ in refreshHuskGames() }
+            .sheet(item: $orientationGame) { game in
+                VStack(spacing: 18) {
+                    Text(game.title).font(.headline)
+                    Text(englishUI ? "Launch orientation" : "Orientación al abrir")
+                    ForEach(["portrait", "landscape", "hybrid"], id: \.self) { mode in
+                        if mode != "hybrid" || !askForThisLaunch {
+                            Button(orientationTitle(mode)) {
+                                if !askForThisLaunch { UserDefaults.standard.set(mode, forKey: orientationKey(game)) }
+                                if mode == "hybrid" { askForThisLaunch = true }
+                                else { orientationGame = nil; openHuskGame(game, mode: mode) }
+                            }.buttonStyle(.bordered)
+                        }
+                    }
+                    Button(englishUI ? "Cancel" : "Cancelar") { orientationGame = nil }
+                }.padding()
+            }
+            .alert("Husk", isPresented: Binding(get: { huskError != nil }, set: { if !$0 { huskError = nil } })) {
+                Button("OK") { huskError = nil }
+            } message: { Text(huskError ?? "") }
             .onChange(of: appKeys) { _ in reconcile() }
             .onChange(of: layout) {
                 savedLayout = $0.encoded
@@ -454,6 +553,7 @@ struct BloomBoxHomeScreen: View {
                 })
             }
             .onAppear {
+                refreshHuskGames()
                 ramPlus.refresh()
                 Task { await tweakCatalog.refreshIfNeeded() }
                 // Only a genuinely fresh Home receives the owner's Kirby preset.
@@ -591,6 +691,24 @@ struct BloomBoxHomeScreen: View {
             } else {
                 Text("Se quitará la app de LiveContainer y del escritorio de BloomBox. Sus carpetas de datos se conservarán. Esta acción no se puede deshacer.")
             }
+        }
+        .confirmationDialog(englishUI ? "Uninstall Android app" : "Desinstalar app Android", isPresented: Binding(
+            get: { pendingHuskUninstall != nil },
+            set: { if !$0 { pendingHuskUninstall = nil } }
+        ), titleVisibility: .visible) {
+            if let game = pendingHuskUninstall {
+                Button(englishUI ? "Uninstall \\(game.title)" : "Desinstalar \\(game.title)", role: .destructive) {
+                    pendingHuskUninstall = nil
+                    uninstallHuskGame(game)
+                }
+            }
+            Button(englishUI ? "Cancel" : "Cancelar", role: .cancel) {
+                pendingHuskUninstall = nil
+            }
+        } message: {
+            Text(englishUI
+                 ? "The APK, its settings, and all local game data stored in Husk will be permanently deleted. This cannot be undone."
+                 : "Se borrarán definitivamente la APK, sus ajustes y todos los datos locales del juego guardados en Husk. No se puede deshacer.")
         }
         .confirmationDialog("Editar icono", isPresented: Binding(
             get: { pendingRemovalKey != nil },
@@ -1190,7 +1308,8 @@ struct BloomBoxHomeScreen: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            if let app = appMap[key] {
+            if let game = huskGames.first(where: { $0.key == key }) { huskMenu(game) }
+            else if let app = appMap[key] {
                 appMenu(key, app: app)
             }
         }
@@ -1222,6 +1341,245 @@ struct BloomBoxHomeScreen: View {
         }
     }
 
+    private func orientationKey(_ game: HuskGame) -> String { "BloomBoxOrientation/" + game.key }
+    private func orientationTitle(_ mode: String) -> String {
+        switch mode {
+        case "portrait": return englishUI ? "Portrait" : "Vertical"
+        case "landscape": return englishUI ? "Landscape" : "Horizontal"
+        default: return englishUI ? "Hybrid · ask every time" : "Híbrido · preguntar siempre"
+        }
+    }
+    // The JIT helper may be waiting for a breakpoint from the game. Wait for
+    // debugger attachment, NOT full JIT completion: delaying gameplay until
+    // completion can deadlock Husk and leave the JIT UI spinning indefinitely.
+    @MainActor private func waitForHuskDebugger(
+        appName: String, startedAt: Date
+    ) async throws -> Bool {
+        let deadline = Date().addingTimeInterval(8)
+        while Date() < deadline {
+            try Task.checkCancellation()
+            let attempt = BloomBoxJITLogStore.shared.attempts.first {
+                $0.appName == appName && $0.createdAt >= startedAt.addingTimeInterval(-1)
+            }
+            if let attempt {
+                switch attempt.status {
+                case "debugger_attached", "awaiting_guest", "completed":
+                    huskStartingNote = englishUI
+                        ? "Debugger connected. Starting the game…"
+                        : "Depurador conectado. Abriendo el juego…"
+                    return true
+                case "failed", "interrupted", "timed_out_attached":
+                    throw englishUI
+                        ? "The JIT helper failed. Check Modules > JIT and retry."
+                        : "El JIT falló. Revisa Módulos > JIT y vuelve a intentarlo."
+                default:
+                    break
+                }
+            }
+            try await Task.sleep(nanoseconds: 200_000_000)
+        }
+        // This is NOT a JIT-success signal. Keep the helper running and
+        // start the game anyway so guest breakpoints can complete its protocol.
+        huskStartingNote = englishUI
+            ? "JIT is still pending. Starting the game to continue…"
+            : "JIT sigue pendiente. Abriendo el juego para continuar…"
+        return false
+    }
+
+    // The LiveProcess scene can be a little later than the PID callback,
+    // especially when the debugger is attaching. Retry only the delivery,
+    // never spawn Husk a second time.
+    @available(iOS 16.1, *)
+    @MainActor private func deliverHuskGameLink(_ game: HuskGame) async throws -> Bool {
+        let deadline = Date().addingTimeInterval(5)
+        repeat {
+            try Task.checkCancellation()
+            if AppSceneViewController.bloomBoxSendURL(
+                game.launchURL.absoluteString, toContainer: game.containerFolder) {
+                return true
+            }
+            try await Task.sleep(nanoseconds: 150_000_000)
+        } while Date() < deadline
+        return false
+    }
+
+    private func openHuskGame(_ game: HuskGame, mode: String) {
+        guard let host = husk, huskGames.contains(where: { $0.key == game.key }),
+              huskLaunchingKey == nil else { return }
+        huskLaunchingKey = game.key
+        Task { @MainActor in
+            defer {
+                if #available(iOS 16.1, *) {
+                    AppSceneViewController.bloomBoxEndStartup(forContainer: game.containerFolder)
+                }
+                if huskLaunchingKey == game.key { huskLaunchingKey = nil }
+            }
+            let appKey = host.appInfo.relativeBundlePath ?? ""
+            let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+                .flatMap { $0.windows }.first { $0.isKeyWindow }
+            let started = Date()
+            huskStartingGame = game
+            huskStartingNote = englishUI ? "Preparing Husk…" : "Preparando Husk…"
+            do {
+                // Husk reads its own settings.json; the enclosing BloomBox scene
+                // needs the same mask or its portrait lock wins on iPhone.
+                let url = game.directory.appendingPathComponent("settings.json")
+                var settings: [String: Any] = [:]
+                if FileManager.default.fileExists(atPath: url.path) {
+                    guard let saved = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any] else {
+                        throw "No se pudieron leer los ajustes de Husk."
+                    }
+                    settings = saved
+                }
+                guard mode == "portrait" || mode == "landscape" else {
+                    throw "Selecciona una orientación para abrir el juego."
+                }
+                settings["orientation"] = mode
+                try JSONSerialization.data(withJSONObject: settings).write(to: url, options: .atomic)
+                LiveBoardOrientation.beginGuest(appKey: appKey,
+                    mask: mode == "landscape" ? .landscape : .portrait, window: window)
+
+                let defaults = LiveContainerPreferencesAdapter.defaults
+                let jitPolicy = BloomBoxJITGuestPolicy.mode(for: appKey, defaults: defaults)
+                let wantsJIT = BloomBoxJITGuestPolicy.wantsJIT(
+                    automatic: host.appInfo.isJITNeeded || host.appInfo.is32bit,
+                    forced: nil, mode: jitPolicy)
+                let builtInEnabled = defaults.object(forKey: "BloomBoxJITMainEnabled") == nil ||
+                    defaults.bool(forKey: "BloomBoxJITMainEnabled")
+                let stagedJIT = wantsJIT && builtInEnabled &&
+                    defaults.integer(forKey: "LCJITEnablerType") == JITEnablerType.BuiltIn.rawValue
+
+                // Give UIKit a layout pass before LiveProcess builds its guest
+                // scene; otherwise an iPhone can create it as portrait forever.
+                try await Task.sleep(nanoseconds: 250_000_000)
+
+                if #available(iOS 16.1, *), MultitaskManager.isUsing(container: game.containerFolder) {
+                    // Husk is already running. Forward the game link into its
+                    // existing scene without launching another JIT session.
+                    guard try await deliverHuskGameLink(game) else {
+                        throw englishUI ? "Husk is busy. Close its existing window and retry."
+                            : "Husk está ocupado. Cierra su ventana y vuelve a intentarlo."
+                    }
+                } else if stagedJIT, #available(iOS 16.1, *) {
+                    huskStartingNote = englishUI ? "Starting the JIT debugger…" : "Activando el depurador JIT…"
+                    // Start Husk WITHOUT the game link so the debugger can
+                    // attach first. Then forward the link on the first attach
+                    // marker: some Husk JIT scripts finish only after gameplay.
+                    defaults.set(MultitaskMode.virtualWindow.rawValue, forKey: "LCMultitaskMode")
+                    defaults.set(true, forKey: "LCMaxOneAppOnStage")
+                    UserDefaults.standard.set(true, forKey: "LCLaunchMultitaskMaximized")
+                    UserDefaults.standard.removeObject(forKey: "launchAppUrlScheme")
+                    AppSceneViewController.bloomBoxBeginStartup(
+                        forContainer: game.containerFolder, title: game.title)
+                    try await host.runApp(multitask: true, containerFolderName: game.containerFolder)
+                    let debuggerConnected = try await waitForHuskDebugger(
+                        appName: host.appInfo.displayName(), startedAt: started)
+                    if !debuggerConnected {
+                        // Never mark JIT completed solely because we sent the
+                        // game link. The real helper remains the source of truth.
+                        NSLog("[BloomBox] Husk debugger not yet confirmed; launching guest game.")
+                    }
+                    let remaining = max(0, 3 - Date().timeIntervalSince(started))
+                    if remaining > 0 {
+                        try await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+                    }
+                    guard try await deliverHuskGameLink(game) else {
+                        throw englishUI ? "Husk did not expose its running game scene. Close Husk and retry."
+                            : "No se encontró la ventana activa de Husk. Ciérralo y vuelve a intentarlo."
+                    }
+                    // The JIT helper continues waiting for the GAME's memory
+                    // breakpoint. Its later success/failure still owns the log.
+                } else {
+                    // External JIT providers do not offer a reliable local
+                    // attachment signal. Preserve the existing launch path.
+                    try await host.runApp(urlStr: game.launchURL.absoluteString)
+                }
+                let remaining = max(0, 3 - Date().timeIntervalSince(started))
+                if remaining > 0 {
+                    try await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+                }
+            } catch {
+                LiveBoardOrientation.endGuest(appKey: appKey, window: window)
+                huskError = error.localizedDescription
+            }
+            if huskStartingGame?.key == game.key {
+                withAnimation(.easeOut(duration: 0.28)) { huskStartingGame = nil }
+            }
+        }
+    }
+    // Match Husk's TranslationLayer.remove: remove the installed app folder, not just its icon.
+    // Resolve the active Husk container again at confirmation time so a stale menu or a
+    // switched BloomBox profile can never delete a different container's files.
+    private func uninstallHuskGame(_ game: HuskGame) {
+        guard let host = husk,
+              !host.isAppRunning,
+              huskLaunchingKey == nil,
+              huskStartingGame == nil,
+              let current = huskGames.first(where: { $0.key == game.key }),
+              current.directory.standardizedFileURL == game.directory.standardizedFileURL,
+              let container = host.uiContainers.first(where: { $0.folderName == game.containerFolder })
+        else {
+            huskError = englishUI
+                ? "Close Husk and make sure this game is still installed before uninstalling."
+                : "Cierra Husk y comprueba que el juego siga instalado antes de desinstalarlo."
+            return
+        }
+
+        let root = container.containerURL
+            .appendingPathComponent("Documents/TranslationLayer", isDirectory: true)
+            .standardizedFileURL
+        let target = root.appendingPathComponent(game.directory.lastPathComponent, isDirectory: true)
+            .standardizedFileURL
+        // Only a real direct child of TranslationLayer can be removed. Refuse
+        // symlinks, unexpected paths and stale model entries.
+        guard target.deletingLastPathComponent() == root,
+              target == game.directory.standardizedFileURL,
+              !target.lastPathComponent.isEmpty,
+              let properties = try? target.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
+              properties.isDirectory == true,
+              properties.isSymbolicLink != true,
+              target.resolvingSymlinksInPath().deletingLastPathComponent() ==
+                  root.resolvingSymlinksInPath()
+        else {
+            huskError = englishUI
+                ? "The Android app folder could not be verified. Nothing was deleted."
+                : "No se pudo verificar la carpeta de la app Android. No se borró nada."
+            refreshHuskGames()
+            return
+        }
+
+        do {
+            try FileManager.default.removeItem(at: target)
+            UserDefaults.standard.removeObject(forKey: orientationKey(game))
+            refreshHuskGames()
+            layout.removePlacement(game.key)
+            reconcile()
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        } catch {
+            huskError = (englishUI ? "Uninstall failed: " : "No se pudo desinstalar: ")
+                + error.localizedDescription
+            refreshHuskGames()
+        }
+    }
+
+    @ViewBuilder private func huskMenu(_ game: HuskGame) -> some View {
+        Menu(englishUI ? "Orientation" : "Orientación", systemImage: "rotate.right") {
+            ForEach(["portrait", "landscape", "hybrid"], id: \.self) { mode in
+                Button { UserDefaults.standard.set(mode, forKey: orientationKey(game)) } label: {
+                    if UserDefaults.standard.string(forKey: orientationKey(game)) == mode {
+                        Label(orientationTitle(mode), systemImage: "checkmark")
+                    } else { Text(orientationTitle(mode)) }
+                }
+            }
+        }
+        placementMenu(game.key)
+        Divider()
+        Button(englishUI ? "Uninstall app" : "Desinstalar app",
+               systemImage: "trash", role: .destructive) {
+            pendingHuskUninstall = game
+        }
+    }
+
     private func launchLibraryKey(_ key: String) {
         if key == Self.sideStoreKey { openSideStore() }
         else if key == Self.installKey { openInstall() }
@@ -1229,6 +1587,11 @@ struct BloomBoxHomeScreen: View {
         else if key == Self.appStoreKey { appStorePresented = true }
         else if key == Self.modulesKey { modulesPresented = true }
         else if key == Self.themesKey { themesPresented = true }
+        else if let game = huskGames.first(where: { $0.key == key }) {
+            let mode = UserDefaults.standard.string(forKey: orientationKey(game))
+            if mode == "portrait" || mode == "landscape" { openHuskGame(game, mode: mode!) }
+            else { askForThisLaunch = mode == "hybrid"; orientationGame = game }
+        }
         else if let app = appMap[key] {
             if unopenedGiftKeys.contains(key) { revealGift(key) }
             else { requestLaunch(app) }
@@ -1417,6 +1780,13 @@ struct BloomBoxHomeScreen: View {
                 .font(.system(size: size * 0.5))
                 .frame(width: size, height: size)
                 .background(Color.cyan, in: RoundedRectangle(cornerRadius: size * 0.23))
+        } else if let game = huskGames.first(where: { $0.key == key }) {
+            if let image = UIImage(contentsOfFile: game.directory.appendingPathComponent("icon.png").path) {
+                Image(uiImage: image).resizable().scaledToFill().frame(width: size, height: size)
+            } else {
+                Image(systemName: "gamecontroller.fill").foregroundStyle(.white)
+                    .frame(width: size, height: size).background(Color.indigo)
+            }
         } else if let app = appMap[key] {
             LiveBoardIconImage(app: app, dark: darkIcons)
                 .frame(width: size, height: size)
@@ -2334,6 +2704,15 @@ struct BloomBoxHomeScreen: View {
                 folderIcon(folder, showLabel: showLabel)
             } else if [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey, Self.appStoreKey, Self.modulesKey, Self.themesKey].contains(key) {
                 shortcutIcon(key, showLabel: showLabel)
+            } else if let game = huskGames.first(where: { $0.key == key }) {
+                Button { if !editing { launchLibraryKey(key) } } label: {
+                    VStack(spacing: 4) {
+                        miniatureIcon(key, size: largeIcons ? 76 : 64)
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                        if showLabel { Text(game.title).font(.caption).lineLimit(1).foregroundStyle(.white) }
+                    }
+                }.buttonStyle(LiveBoardHomePressStyle(reduceMotion: reduceMotion))
+                .contextMenu { huskMenu(game) }
             } else if let app = appMap[key] {
                 if unopenedGiftKeys.contains(key) && !editing {
                     BloomBoxHomeGiftIcon(name: title(key), size: largeIcons ? 76 : 64,
@@ -2425,7 +2804,11 @@ struct BloomBoxHomeScreen: View {
             }
         }
         .buttonStyle(LiveBoardHomePressStyle(reduceMotion: reduceMotion))
-        .contextMenu {
+        .contextMenu { placementMenu(key) }
+        .accessibilityLabel(BloomBoxL10n.t(isThemes ? "Temas" : title(key)))
+    }
+
+    @ViewBuilder private func placementMenu(_ key: String) -> some View {
             Button("Editar pantalla de inicio", systemImage: "square.grid.3x3") { enterEditMode() }
             if layout.dock.contains(key) {
                 Button("Mover al escritorio", systemImage: "rectangle.bottomthird.inset.filled") {
@@ -2461,8 +2844,6 @@ struct BloomBoxHomeScreen: View {
                     }
                 }
             }
-        }
-        .accessibilityLabel(BloomBoxL10n.t(isThemes ? "Temas" : title(key)))
     }
 
     private func appMenu(_ key: String, app: LCAppModel) -> some View {
@@ -2662,6 +3043,8 @@ struct BloomBoxHomeScreen: View {
                                 let key = folder.apps[slot]
                                 if let app = appMap[key] {
                                     LiveBoardIconImage(app: app, dark: darkIcons)
+                                } else if huskGames.contains(where: { $0.key == key }) {
+                                    miniatureIcon(key, size: 16)
                                 } else if [Self.modulesKey, Self.tweakStoreKey, Self.appStoreKey,
                                            Self.installKey, Self.sideStoreKey, Self.themesKey].contains(key) {
                                     ZStack {
@@ -3117,8 +3500,9 @@ struct BloomBoxHomeScreen: View {
         let needsShortcuts = [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey, Self.appStoreKey, Self.modulesKey, Self.themesKey]
             .filter { !knownKeys.contains($0) }
         // Only installed guest apps not seen before, never icons the user hid.
+        let huskKeys = Set(huskGames.map(\.key))
         let newGuestKeys = hadSavedLayout
-            ? appKeys.filter { appsByKey[$0] != nil && !knownKeys.contains($0) }
+            ? appKeys.filter { (appsByKey[$0] != nil || huskKeys.contains($0)) && !knownKeys.contains($0) }
             : []
         layout.reconcile(appKeys, favorites: favoriteKeys)
         for key in needsShortcuts.reversed() {
@@ -3131,7 +3515,12 @@ struct BloomBoxHomeScreen: View {
             ])
             builtInFolderMigrated = true
         }
-        if !newGuestKeys.isEmpty {
+        let visible = visiblePageIndices
+        let stranded = huskGames.map(\.key).filter { key in
+            guard let index = layout.pages.firstIndex(where: { $0.contains(key) }) else { return false }
+            return !visible.contains(index)
+        }
+        if !newGuestKeys.isEmpty || !stranded.isEmpty {
             let prior = recentLibraryKeys
             let merged = Array(newGuestKeys.reversed()) + prior.filter { !newGuestKeys.contains($0) }
             if let data = try? JSONEncoder().encode(Array(merged.prefix(50))),
@@ -3142,7 +3531,7 @@ struct BloomBoxHomeScreen: View {
             let preferred = (page > 0 && visible.contains(page - 1))
                 ? page - 1 : (visible.first ?? 0)
             if let target = layout.revealNewApps(
-                newGuestKeys, visiblePages: visible, preferredPage: preferred
+                newGuestKeys + stranded, visiblePages: visible, preferredPage: preferred
             ), homeHasAppeared {
                 withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.24)) {
                     page = target + 1
@@ -3153,6 +3542,7 @@ struct BloomBoxHomeScreen: View {
     }
     private func title(_ key: String, appsByKey: [String: LCAppModel]? = nil) -> String {
         if key == Self.sideStoreKey { return "SideStore" }
+        if let game = huskGames.first(where: { $0.key == key }) { return game.title }
         if key == Self.installKey { return "Instalar app" }
         if key == Self.tweakStoreKey { return "Tweak Store" }
         if key == Self.appStoreKey { return "App Store" }
@@ -3196,7 +3586,7 @@ struct BloomBoxHomeScreen: View {
                     movePlacedWidget(String(key.dropFirst("bloombox-widget:".count)),
                                      to: pageIndex, slot: slot)
                 } else {
-                    guard appMap[key] != nil ||
+                    guard appMap[key] != nil || huskGames.contains(where: { $0.key == key }) ||
                           layout.folders.contains(where: { $0.id == key }) ||
                           [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey,
                            Self.appStoreKey, Self.modulesKey, Self.themesKey].contains(key) else { return }
@@ -3220,7 +3610,7 @@ struct BloomBoxHomeScreen: View {
                 if key.hasPrefix("bloombox-widget:") {
                     movePlacedWidget(String(key.dropFirst("bloombox-widget:".count)),
                                      to: pageIndex, slot: nil)
-                } else if appMap[key] != nil ||
+                } else if appMap[key] != nil || huskGames.contains(where: { $0.key == key }) ||
                           layout.folders.contains(where: { $0.id == key }) ||
                           [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey,
                            Self.appStoreKey, Self.modulesKey, Self.themesKey].contains(key) {
@@ -3238,7 +3628,7 @@ struct BloomBoxHomeScreen: View {
         provider.loadObject(ofClass: NSString.self) { value, _ in
             guard let key = value as? String else { return }
             DispatchQueue.main.async {
-                guard appMap[key] != nil ||
+                guard appMap[key] != nil || huskGames.contains(where: { $0.key == key }) ||
                       key == Self.sideStoreKey || key == Self.installKey || key == Self.tweakStoreKey || key == Self.appStoreKey || key == Self.modulesKey || key == Self.themesKey ||
                       layout.folders.contains(where: { $0.id == key }) else { return }
                 apply(key)

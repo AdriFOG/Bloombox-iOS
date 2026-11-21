@@ -9,16 +9,18 @@ document_types = plist["CFBundleDocumentTypes"]
 registered = {uti for item in document_types for uti in item.get("LSItemContentTypes", [])}
 assert "com.bloombox.ipa-archive" in registered
 assert "com.bloombox.tipa-archive" in registered
+assert "com.android.package-archive" in registered
 by_id = {uti["UTTypeIdentifier"]: uti for uti in plist["UTImportedTypeDeclarations"]}
-for name, ext in (("com.bloombox.ipa-archive", "ipa"), ("com.bloombox.tipa-archive", "tipa")):
+for name, ext in (("com.bloombox.ipa-archive", "ipa"), ("com.bloombox.tipa-archive", "tipa"), ("com.android.package-archive", "apk")):
     assert ext in by_id[name]["UTTypeTagSpecification"]["public.filename-extension"]
 
 tab = (ROOT / "LiveContainerSwiftUI/Views/LCTabView.swift").read_text()
 app_list = (ROOT / "LiveContainerSwiftUI/Views/AppList/LCAppListView.swift").read_text()
 en = (ROOT / "Resources/en.lproj/Localizable.strings").read_text()
 assert "if url.isFileURL" in tab and "sharedModel.deepLink = url" in tab
-assert '["ipa", "tipa"].contains(url.pathExtension.lowercased())' in app_list
+assert '["ipa", "tipa", "apk"].contains(url.pathExtension.lowercased())' in app_list
 assert "receivedIPA = BloomBoxReceivedIPA(url: url)" in app_list
+assert "await importAPK(request.url, host: husk)" in app_list
 assert "BloomBoxIPAOpenSheet(" in app_list
 assert "ShareLink(item: fileURL)" in app_list
 assert "await installFromUrl(urlStr: request.url.absoluteString)" in app_list

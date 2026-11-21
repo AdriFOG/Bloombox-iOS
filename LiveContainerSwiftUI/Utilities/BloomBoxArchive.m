@@ -3,6 +3,7 @@
 #include "archive_entry.h"
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <string.h>
 #include <unistd.h>
 
 static BOOL fail(NSError **error, NSString *message) {
@@ -21,6 +22,33 @@ static BOOL safePath(NSString *path) {
     return YES;
 }
 @implementation BloomBoxArchive
++ (BOOL)validateAPK:(NSURL *)source error:(NSError **)error {
+    // Husk imports ZIP archives before scanning manifests and split packages.
+    // Requiring a root AndroidManifest.xml here incorrectly rejects archives
+    // Husk can still inspect. Check ZIP integrity; leave app validation to Husk.
+    struct archive *reader = archive_read_new();
+    if (!reader) return fail(error, @"No se pudo leer el APK.");
+    archive_read_support_format_zip(reader);
+    if (archive_read_open_filename(reader, source.fileSystemRepresentation, 65536) != ARCHIVE_OK) {
+        archive_read_free(reader);
+        return fail(error, @"El archivo no es un APK ZIP legible.");
+    }
+    BOOL foundEntry = NO;
+    struct archive_entry *entry = NULL;
+    int status = ARCHIVE_OK;
+    NSUInteger count = 0;
+    while ((status = archive_read_next_header(reader, &entry)) == ARCHIVE_OK) {
+        if (++count > 250000) { status = ARCHIVE_FATAL; break; }
+        const char *name = archive_entry_pathname(entry);
+        if (name && name[0] != 0 && archive_entry_filetype(entry) != AE_IFDIR) {
+            foundEntry = YES;
+        }
+        if (archive_read_data_skip(reader) != ARCHIVE_OK) { status = ARCHIVE_FATAL; break; }
+    }
+    archive_read_free(reader);
+    return (foundEntry && status == ARCHIVE_EOF) ||
+        fail(error, @"El archivo APK está vacío, dañado o no es un ZIP compatible.");
+}
 + (BOOL)packDirectory:(NSURL *)source toURL:(NSURL *)destination error:(NSError **)error {
     NSFileManager *fm = NSFileManager.defaultManager;
     source = source.URLByResolvingSymlinksInPath.URLByStandardizingPath;
