@@ -229,7 +229,19 @@ private final class BloomBoxPortCatalog: ObservableObject {
         let folder = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Inbox", isDirectory: true)
         try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
-        let destination = folder.appendingPathComponent("BloomBoxPortStore-" + UUID().uuidString + ".apk")
+        // Preserve the game's readable name for the existing Husk importer,
+        // which uses the incoming APK filename as the desktop icon label.
+        let cleanName = port.title
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+            .replacingOccurrences(of: "\\", with: "-")
+            .components(separatedBy: .controlCharacters).joined()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let baseName = String((cleanName.isEmpty ? port.id : cleanName).prefix(72))
+        let preferred = folder.appendingPathComponent(baseName + ".apk")
+        let destination = fileManager.fileExists(atPath: preferred.path)
+            ? folder.appendingPathComponent(baseName + "-" + UUID().uuidString.prefix(8) + ".apk")
+            : preferred
         try fileManager.moveItem(at: temporary, to: destination)
         return destination
     }
