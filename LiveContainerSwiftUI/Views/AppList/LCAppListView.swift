@@ -156,8 +156,8 @@ private struct BloomBoxIPAOpenSheet: View {
                                 Text(BloomBoxL10n.isEnglish ? "Preparing IPA for SideStore…" : "Preparando IPA para SideStore…")
                             }.font(.subheadline)
                         }
-                        if let sideStoreHandoffError {
-                            Label((BloomBoxL10n.isEnglish ? "Could not prepare the IPA: " : "No se pudo preparar la IPA: ") + sideStoreHandoffError, systemImage: "exclamationmark.triangle")
+                        if let handoffError = sideStoreHandoffError {
+                            Label((BloomBoxL10n.isEnglish ? "Could not prepare the IPA: " : "No se pudo preparar la IPA: ") + handoffError, systemImage: "exclamationmark.triangle")
                                 .font(.caption)
                                 .foregroundStyle(.red)
                             Button(BloomBoxL10n.isEnglish ? "Retry" : "Reintentar") {
