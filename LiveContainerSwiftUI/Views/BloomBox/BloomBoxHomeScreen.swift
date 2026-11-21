@@ -153,6 +153,7 @@ struct BloomBoxHomeScreen: View {
     @State private var startupNoticesEnabled = false
     @State private var pendingRemovalKey: String?
     @State private var pendingUninstall: LCAppModel?
+    @State private var pendingHuskUninstall: HuskGame?
     @State private var pendingTweakApp: LCAppModel?
     @State private var choosingAppTweak = false
     @State private var appTweakError: String?
@@ -690,6 +691,24 @@ struct BloomBoxHomeScreen: View {
             } else {
                 Text("Se quitará la app de LiveContainer y del escritorio de BloomBox. Sus carpetas de datos se conservarán. Esta acción no se puede deshacer.")
             }
+        }
+        .confirmationDialog(englishUI ? "Uninstall Android app" : "Desinstalar app Android", isPresented: Binding(
+            get: { pendingHuskUninstall != nil },
+            set: { if !$0 { pendingHuskUninstall = nil } }
+        ), titleVisibility: .visible) {
+            if let game = pendingHuskUninstall {
+                Button(englishUI ? "Uninstall \\(game.title)" : "Desinstalar \\(game.title)", role: .destructive) {
+                    pendingHuskUninstall = nil
+                    uninstallHuskGame(game)
+                }
+            }
+            Button(englishUI ? "Cancel" : "Cancelar", role: .cancel) {
+                pendingHuskUninstall = nil
+            }
+        } message: {
+            Text(englishUI
+                 ? "The APK, its settings, and all local game data stored in Husk will be permanently deleted. This cannot be undone."
+                 : "Se borrarán definitivamente la APK, sus ajustes y todos los datos locales del juego guardados en Husk. No se puede deshacer.")
         }
         .confirmationDialog("Editar icono", isPresented: Binding(
             get: { pendingRemovalKey != nil },
@@ -1488,6 +1507,61 @@ struct BloomBoxHomeScreen: View {
             }
         }
     }
+    // Match Husk's TranslationLayer.remove: remove the installed app folder, not just its icon.
+    // Resolve the active Husk container again at confirmation time so a stale menu or a
+    // switched BloomBox profile can never delete a different container's files.
+    private func uninstallHuskGame(_ game: HuskGame) {
+        guard let host = husk,
+              !host.isAppRunning,
+              huskLaunchingKey == nil,
+              huskStartingGame == nil,
+              let current = huskGames.first(where: { $0.key == game.key }),
+              current.directory.standardizedFileURL == game.directory.standardizedFileURL,
+              let container = host.uiContainers.first(where: { $0.folderName == game.containerFolder })
+        else {
+            huskError = englishUI
+                ? "Close Husk and make sure this game is still installed before uninstalling."
+                : "Cierra Husk y comprueba que el juego siga instalado antes de desinstalarlo."
+            return
+        }
+
+        let root = container.containerURL
+            .appendingPathComponent("Documents/TranslationLayer", isDirectory: true)
+            .standardizedFileURL
+        let target = root.appendingPathComponent(game.directory.lastPathComponent, isDirectory: true)
+            .standardizedFileURL
+        // Only a real direct child of TranslationLayer can be removed. Refuse
+        // symlinks, unexpected paths and stale model entries.
+        guard target.deletingLastPathComponent() == root,
+              target == game.directory.standardizedFileURL,
+              !target.lastPathComponent.isEmpty,
+              let properties = try? target.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
+              properties.isDirectory == true,
+              properties.isSymbolicLink != true,
+              target.resolvingSymlinksInPath().deletingLastPathComponent() ==
+                  root.resolvingSymlinksInPath()
+        else {
+            huskError = englishUI
+                ? "The Android app folder could not be verified. Nothing was deleted."
+                : "No se pudo verificar la carpeta de la app Android. No se borró nada."
+            refreshHuskGames()
+            return
+        }
+
+        do {
+            try FileManager.default.removeItem(at: target)
+            UserDefaults.standard.removeObject(forKey: orientationKey(game))
+            refreshHuskGames()
+            layout.removePlacement(game.key)
+            reconcile()
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        } catch {
+            huskError = (englishUI ? "Uninstall failed: " : "No se pudo desinstalar: ")
+                + error.localizedDescription
+            refreshHuskGames()
+        }
+    }
+
     @ViewBuilder private func huskMenu(_ game: HuskGame) -> some View {
         Menu(englishUI ? "Orientation" : "Orientación", systemImage: "rotate.right") {
             ForEach(["portrait", "landscape", "hybrid"], id: \.self) { mode in
@@ -1499,6 +1573,11 @@ struct BloomBoxHomeScreen: View {
             }
         }
         placementMenu(game.key)
+        Divider()
+        Button(englishUI ? "Uninstall app" : "Desinstalar app",
+               systemImage: "trash", role: .destructive) {
+            pendingHuskUninstall = game
+        }
     }
 
     private func launchLibraryKey(_ key: String) {
