@@ -143,7 +143,7 @@ private struct BloomBoxIPAOpenSheet: View {
 
                     if #available(iOS 16.0, *) {
                         if let sideStoreIPA {
-                            ShareLink(item: BloomBoxSideStoreIPA(fileURL: sideStoreIPA)) {
+                            ShareLink(item: BloomBoxSideStoreIPA(fileURL: sideStoreIPA), preview: SharePreview(Text(fileURL.lastPathComponent))) {
                                 Label("Instalar con SideStore", systemImage: "square.and.arrow.up")
                                     .font(.headline)
                                     .frame(maxWidth: .infinity)
