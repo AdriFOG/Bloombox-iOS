@@ -695,9 +695,9 @@ struct BloomBoxRAMPlusView: View {
                 Rectangle().fill(Color.white.opacity(0.55))
                     .frame(width: 1, height: 54)
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(title)
+                    Text(LocalizedStringKey(title))
                         .font(.system(size: 23, weight: .heavy, design: .rounded))
-                    Text(subtitle)
+                    Text(LocalizedStringKey(subtitle))
                         .font(.system(size: 12, weight: .medium))
                         .opacity(0.88)
                         .fixedSize(horizontal: false, vertical: true)
