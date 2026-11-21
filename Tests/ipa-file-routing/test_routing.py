@@ -14,6 +14,21 @@ by_id = {uti["UTTypeIdentifier"]: uti for uti in plist["UTImportedTypeDeclaratio
 for name, ext in (("com.bloombox.ipa-archive", "ipa"), ("com.bloombox.tipa-archive", "tipa"), ("com.android.package-archive", "apk")):
     assert ext in by_id[name]["UTTypeTagSpecification"]["public.filename-extension"]
 
+# .apk must behave like IPA/TIPA as a document/data file. public.archive is
+# Apple's own archive UTI and can misclassify Android APKs in Files/Quick Look.
+apk_type = by_id["com.android.package-archive"]
+assert "public.data" in apk_type["UTTypeConformsTo"]
+assert "public.content" in apk_type["UTTypeConformsTo"]
+assert "public.archive" not in apk_type["UTTypeConformsTo"]
+assert apk_type["UTTypeTagSpecification"]["public.mime-type"] == ["application/vnd.android.package-archive"]
+apk_handlers = [item for item in document_types
+                if "com.android.package-archive" in item.get("LSItemContentTypes", [])]
+assert len(apk_handlers) == 1
+assert apk_handlers[0]["LSHandlerRank"] == "Owner"
+assert apk_handlers[0]["CFBundleTypeRole"] == "Viewer"
+# Routing starts with Files' document handoff. iOS's user-selected
+# "Always Open With" default can still override the app's handler ranking.
+
 tab = (ROOT / "LiveContainerSwiftUI/Views/LCTabView.swift").read_text()
 app_list = (ROOT / "LiveContainerSwiftUI/Views/AppList/LCAppListView.swift").read_text()
 en = (ROOT / "Resources/en.lproj/Localizable.strings").read_text()
