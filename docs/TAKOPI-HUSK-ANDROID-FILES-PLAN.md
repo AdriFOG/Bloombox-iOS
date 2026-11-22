@@ -203,3 +203,18 @@ La interfaz principal tendrá dos vistas visibles:
 10. Confirmar en iPhone real con logs y timestamps; no asumir que un test en CI representa comportamiento de cierre forzado del sistema.
 
 **Pendientes técnicos para implementación:** determinar qué identidad de proceso se puede verificar de forma fiable en cada ruta de LiveProcess/SideStore, qué APIs de cierre seguro están realmente disponibles, qué marca de bloqueo persiste y su dueño, y si Husk ofrece una señal de salida completa. Si faltan esas garantías, presentar «Reintentar» y «Cerrar Husk manualmente» en lugar de ofrecer un «flush» falso.
+
+
+## Engine-aware Husk files and unrestricted editing within the selected game (2026-11-21)
+
+**Device findings:** user confirmed \`BloomBoxTest\` (package \`com.bloombox.testapp\`) stores its working files under \`java-data/sdcard/Android/data/<package>\`, while Minecraft Dungeons uses \`ue4-data\`. The previous importer created \`obb/\` and \`sdcard/\` directly under the game root, which were not the verified data paths for the Java test. An OBB in \`Android/data\` is app-specific; do not assume every game looks for expansions there. Husk also has a separate root-level \`obb/\` fallback beside APKs.
+
+**Implementation on feature branch, not yet device-verified:**
+- Parse each game’s \`report.json\` and discover actual existing engine folders, according to Husk \`TLApp.dataDirectory\`: \`java-data\`, \`ue4-data\`, \`unity-data\`, \`cocos-data\`, \`minecraft-data\`, \`sdl-data\`, \`gta-data\`, \`godot-data\`, \`na-data\`, \`gm-data\`, \`flutter-data\`, \`classic-data\`, and \`web\`. Selection follows Husk’s nuanced decisions such as Unity 6 → Java, Flutter → Java, and ordinary SDL/Python → Java.
+- For each existing runtime, discover \`sdcard/Android/data/<package>/files\`, \`sdcard/Android/data/<package>\`, \`sdcard/Android/obb/<package>\`, private \`files\`, \`sdcard\`, engine root, any existing APK-root \`obb\` fallback, and \`Shared Storage\`. Case-insensitive lookup retains the directory’s **actual** spelling. Show all existing choices; prefer the report's runtime when present, but never invent missing directories.
+- **Remove hardcoded category imports that silently wrote to the game root.** Import directly into a specific existing folder chosen in the UI; selected raw \`.obb\`/\`.dat\`, ZIP, or directory are copied there. This also handles apps that use nonstandard OBB paths.
+- Turn on manual browsing and editing of game data, including hidden files: **import, create folder, rename, delete, optional replace existing on import**. A clear on-screen warning explains that users can break installations or saves, but it does not artificially prevent deliberate edits. No writes outside the authorized Husk game container or specifically discovered shared storage, and no symlink/traversal escapes.
+- Do not copy, move or delete anything automatically to clean up folders created by past builds. Users can inspect and remove them manually if they choose.
+- Test Java and Unreal Engine layouts with pre-existing folders; assert that a scan creates no fictitious \`sdcard\` or \`obb\` directories.
+
+**Next QA:** verify the build compiles on Xcode; manually import the two BloomBoxTest fixtures to the user's verified existing Java folder, then launch BloomBoxTest and check both files. Repeat with an Unreal Engine game. JIT Recovery remains a separate pending feature.
