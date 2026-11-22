@@ -33,7 +33,8 @@ final class JITSession {
                    script: StikJIT.Script,
                    forceScript: Bool,
                    txmPresence: TXMPresence,
-                   progress: @escaping (String) -> Void) throws {
+                   progress: @escaping (String) -> Void,
+                   onJITReady: @escaping () -> Void = {}) throws {
         progress("Opening LocalDevVPN tunnel…")
         let tunnel = try makeTunnel()
         defer { tunnel.free() }
@@ -53,9 +54,11 @@ final class JITSession {
         progress("Debug transport ready. Target PID: \(targetPID).")
         switch (forceScript, txmPresence) {
         case (true, _), (false, .present):
-            try ScriptRunner(targetPID: targetPID, debugProxy: debugProxy, script: script, progress: progress).run()
+            try ScriptRunner(targetPID: targetPID, debugProxy: debugProxy, script: script, progress: progress, onJITReady: onJITReady).run()
         case (false, .absent):
             try attachWithoutScript(targetPID: targetPID, debugProxy: debugProxy, progress: progress)
+            // Pre-TXM devices use a successful attach+detach as their JIT gate.
+            onJITReady()
         case (false, .unknown):
             throw StikJITError.txmDetectionUnavailable
         }
