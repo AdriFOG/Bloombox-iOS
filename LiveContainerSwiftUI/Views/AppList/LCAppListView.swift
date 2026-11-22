@@ -431,11 +431,64 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                                         openGameBox: { liveBoardMode = "gamebox" })
     }
 
+    // Use the same existing Husk TranslationLayer/profile container as Home.
+    // APKs are never imported twice and their saved data is left untouched.
+    private struct GameBoxInstalledAPK {
+        let key: String
+        let title: String
+        let icon: UIImage?
+    }
+
+    private var gameBoxInstalledAPKs: [GameBoxInstalledAPK] {
+        guard let host = sharedModel.apps.first(where: {
+            $0.bundleIdentifier == "com.husk.app" &&
+            (!$0.appInfo.isLocked || sharedModel.isHiddenAppUnlocked)
+        }) else { return [] }
+
+        let folder: String?
+        if activeLauncherProfileID == BloomBoxUserProfile.primaryID {
+            folder = host.uiDefaultDataFolder ?? host.appInfo.dataUUID ?? host.uiContainers.first?.folderName
+        } else {
+            let guestKey = (host.uiIsShared ? "shared/" : "private/") +
+                (host.appInfo.relativeBundlePath ?? "") + "/" + host.bundleIdentifier
+            folder = BloomBoxProfileStore.mapping(for: activeLauncherProfileID, appKey: guestKey)
+                ?? host.uiContainers.first(where: {
+                    $0.name.hasPrefix("[BloomBox:\(activeLauncherProfileID)]") &&
+                    $0.appIdentifier == host.bundleIdentifier
+                })?.folderName
+        }
+        guard let folder,
+              let container = host.uiContainers.first(where: { $0.folderName == folder }) else {
+            return []
+        }
+
+        let root = container.containerURL.appendingPathComponent("Documents/TranslationLayer")
+        let fm = FileManager.default
+        let directories = (try? fm.contentsOfDirectory(
+            at: root, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles])) ?? []
+        return directories.compactMap { directory -> GameBoxInstalledAPK? in
+            guard let metadata = try? directory.resourceValues(forKeys: [
+                .isDirectoryKey, .isSymbolicLinkKey
+            ]), metadata.isDirectory == true, metadata.isSymbolicLink != true,
+            let names = try? fm.contentsOfDirectory(atPath: directory.path),
+            names.contains(where: { $0.lowercased().hasSuffix(".apk") }) else { return nil }
+            let id = directory.lastPathComponent
+            let label = (try? String(contentsOf: directory.appendingPathComponent("label.txt"),
+                                     encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return GameBoxInstalledAPK(
+                key: "husk/" + container.folderName + "/" + id,
+                title: label.flatMap { $0.isEmpty ? nil : $0 } ?? id,
+                icon: UIImage(contentsOfFile: directory.appendingPathComponent("icon.png").path))
+        }.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+    }
+
     // GameBox only owns presentation. Every action reuses the live host launch,
     // preflight, compatibility, guest orientation and app-management paths.
     @available(iOS 16.0, *)
     private var gameBoxV2: some View {
         let guests = launcherApps
+        let androidGames = gameBoxInstalledAPKs
         // Adapt host guest models to a portable, display-only BloomBox contract.
         // No LiveContainer/SideStore runtime types leak into GameBox source.
         return BloomBoxGameBoxV2Screen(
@@ -446,16 +499,33 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     name: LiveBoardAppCustomization.shared.name(app),
                     icon: LiveBoardIconStore.image(app, dark: darkModeIcon),
                     requiresJIT: app.appInfo.isJITNeeded)
+            } + androidGames.map { game in
+                BloomBoxGameBoxEntry(id: game.key, bundleID: "com.husk.app",
+                                     name: game.title, icon: game.icon, requiresJIT: true)
             },
             launch: { key in
+                if androidGames.contains(where: { $0.key == key }) {
+                    LCUtils.appGroupUserDefault.set(key, forKey: "BloomBoxPendingHuskLaunchKey")
+                    liveBoardMode = "ios"
+                    return
+                }
                 guard let app = guests.first(where: { liveBoardAppKey($0) == key }) else { return }
                 Task { await launchFromLiveBoard(app) }
             },
             launchWithJIT: { key in
+                if androidGames.contains(where: { $0.key == key }) {
+                    LCUtils.appGroupUserDefault.set(key, forKey: "BloomBoxPendingHuskLaunchKey")
+                    liveBoardMode = "ios"
+                    return
+                }
                 guard let app = guests.first(where: { liveBoardAppKey($0) == key }) else { return }
                 Task { await launchFromLiveBoard(app, forceJIT: true) }
             },
             manage: { key in
+                if androidGames.contains(where: { $0.key == key }) {
+                    liveBoardMode = "ios"
+                    return
+                }
                 guard let app = guests.first(where: { liveBoardAppKey($0) == key }) else { return }
                 manageLauncherApp(app)
             },
