@@ -2060,7 +2060,9 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 appName: appName, provider: "Built-in JIT",
                 showNotification: !useOldUI)
             let work = Task {
-                let success = await LiveBoardBuiltInJIT.enable(pid: Int32(pid), script: script) { message in
+                let success = await LiveBoardBuiltInJIT.enable(pid: Int32(pid), script: script, onReady: {
+                    BloomBoxJITLogStore.shared.confirmReady(record)
+                }) { message in
                     jitLog += message + "\n"
                     BloomBoxJITLogStore.shared.append(message, to: record)
                 }
