@@ -9,8 +9,21 @@ assertTrue(home.pages.count >= 1, "Home initial page")
 assertTrue(!home.dock.isEmpty, "Home dock exists")
 home.hide("manzana:sidestore")
 home.hide("manzana:install")
-assertTrue(!home.hidden.contains("manzana:sidestore"), "SideStore cannot hide")
-assertTrue(!home.hidden.contains("manzana:install"), "Installer cannot hide")
+assertTrue(home.hidden.contains("manzana:sidestore"), "SideStore can be removed from Home")
+assertTrue(home.hidden.contains("manzana:install"), "Installer can be removed from Home")
+var restoredHome = LiveBoardHomeLayout.decode(home.encoded)
+restoredHome.reconcile(["A", "B", "manzana:sidestore", "manzana:install"], favorites: [])
+assertTrue(restoredHome.hidden.contains("manzana:sidestore") &&
+           restoredHome.hidden.contains("manzana:install"),
+           "Hidden built-ins stay hidden after save/reconcile")
+assertTrue(!restoredHome.dock.contains("manzana:sidestore") &&
+           !restoredHome.pages.flatMap { $0 }.contains("manzana:install"),
+           "Hidden built-ins do not reappear automatically")
+restoredHome.place("manzana:install", on: 0)
+restoredHome.reconcile(["A", "B", "manzana:sidestore", "manzana:install"], favorites: [])
+assertTrue(!restoredHome.hidden.contains("manzana:install") &&
+           restoredHome.pages[0].contains("manzana:install"),
+           "Built-in can return to Home from the app library")
 
 home.pages = [
     ["A"] + Array(repeating: nil, count: 23),
@@ -42,7 +55,7 @@ assertTrue(!dockTest.pages[0].contains("A"), "Dock app removed from Home grid")
 dockTest.putInDock("B")
 assertTrue(dockTest.moveToDock("C", at: 1), "Drop onto full Dock")
 assertTrue(dockTest.dock == ["manzana:sidestore", "C", "A", "B"], "Full Dock target replaced")
-assertTrue(dockTest.pages[0][2] == "manzana:install", "Displaced pinned installer returns to Home")
+assertTrue(dockTest.pages[0][2] == "manzana:install", "Displaced installer returns to Home")
 assertTrue(dockTest.moveToDock("B", at: 0), "Reorder Dock icon")
 assertTrue(dockTest.dock == ["B", "manzana:sidestore", "C", "A"], "Dock order changed")
 assertTrue(!dockTest.moveToDock("folder:test", at: 0), "Folders disallowed in Dock")
@@ -63,7 +76,7 @@ assertTrue(installTest.revealNewApps(["Fresh"], visiblePages: [0], preferredPage
 assertTrue(installTest.pages[0].contains("Fresh"), "New icon visible on Home")
 assertTrue(installTest.pages[1].contains("Hidden"), "Hidden page contents not moved")
 assertTrue(installTest.dock == ["manzana:sidestore", "manzana:install"],
-           "Pinned shortcuts and Dock layout unchanged")
+           "Existing Dock shortcuts and layout unchanged")
 
 // When all visible pages are full, make a fresh visible page rather than
 // stealing space or leaving the newly installed icon inside a hidden page.

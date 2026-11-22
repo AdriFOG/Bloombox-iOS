@@ -279,8 +279,9 @@ struct BloomBoxProfileSwitcherWidget: View {
         }
         .padding(11)
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Wallpaper-visible matte tint; no Liquid Glass or material blur.
         .background(
-            Color(red: 0.10, green: 0.11, blue: 0.22).opacity(0.97),
+            Color.black.opacity(0.38),
             in: RoundedRectangle(cornerRadius: 21, style: .continuous)
         )
         .overlay {

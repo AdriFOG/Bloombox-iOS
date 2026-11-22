@@ -374,6 +374,7 @@ struct BloomBoxHomeScreen: View {
                     BloomBoxNewsPage(openSettings: { desktopSettings = true },
                                      openGameBox: openGameBox,
                                      gameNames: newsGameNames,
+                                     openInstall: openInstall,
                                      openShortcut: { shortcut in
                                          switch shortcut {
                                          case .apkStore: portStorePresented = true
@@ -743,6 +744,13 @@ struct BloomBoxHomeScreen: View {
                             finishEditing()
                             performGuest(.manage(key: LiveContainerHomeAdapter.key(app)), selected: app)
                         }
+                    }
+                } else if [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey,
+                           Self.appStoreKey, Self.portStoreKey, Self.modulesKey,
+                           Self.themesKey].contains(key) {
+                    Button(englishUI ? "Remove from Home Screen" : "Quitar del escritorio",
+                           role: .destructive) {
+                        removeFromHome(key)
                     }
                 } else if layout.folders.contains(where: { $0.id == key }) {
                     Button("Deshacer carpeta", role: .destructive) {
@@ -1365,6 +1373,10 @@ struct BloomBoxHomeScreen: View {
             if let game = huskGames.first(where: { $0.key == key }) { huskMenu(game) }
             else if let app = appMap[key] {
                 appMenu(key, app: app)
+            } else if [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey,
+                       Self.appStoreKey, Self.portStoreKey, Self.modulesKey,
+                       Self.themesKey].contains(key) {
+                placementMenu(key)
             }
         }
         .onDrag { NSItemProvider(object: key as NSString) }
@@ -2796,7 +2808,11 @@ struct BloomBoxHomeScreen: View {
             }
         }
         .overlay(alignment: .topLeading) {
-            if editing && (appMap[key] != nil || layout.folders.contains(where: { $0.id == key })) {
+            if editing && (appMap[key] != nil ||
+                           layout.folders.contains(where: { $0.id == key }) ||
+                           [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey,
+                            Self.appStoreKey, Self.portStoreKey, Self.modulesKey,
+                            Self.themesKey].contains(key)) {
                 Button { pendingRemovalKey = key } label: {
                     Image(systemName: "minus")
                         .font(.system(size: 13, weight: .bold))
@@ -2877,7 +2893,25 @@ struct BloomBoxHomeScreen: View {
     }
 
     @ViewBuilder private func placementMenu(_ key: String) -> some View {
-            Button("Editar pantalla de inicio", systemImage: "square.grid.3x3") { enterEditMode() }
+            Button(englishUI ? "Edit Home Screen" : "Editar pantalla de inicio",
+                   systemImage: "square.grid.3x3") { enterEditMode() }
+            if layout.hidden.contains(key) {
+                Button(englishUI ? "Add to Home Screen" : "Añadir al escritorio",
+                       systemImage: "plus.circle") {
+                    // App Library is after the last Home page: restore onto a
+                    // visible page, never create a stray page behind Library.
+                    let target = (page > 0 && page <= layout.pages.count)
+                        ? page - 1 : (visiblePageIndices.first ?? 0)
+                    layout.place(key, on: target)
+                    reconcile()
+                    page = target + 1
+                }
+            } else {
+                Button(englishUI ? "Remove from Home Screen" : "Quitar del escritorio",
+                       systemImage: "minus.circle", role: .destructive) {
+                    removeFromHome(key)
+                }
+            }
             if layout.dock.contains(key) {
                 Button("Mover al escritorio", systemImage: "rectangle.bottomthird.inset.filled") {
                     layout.place(key, on: max(0, page - 1)); reconcile()
@@ -3513,7 +3547,6 @@ struct BloomBoxHomeScreen: View {
     }
 
     private func removeFromHome(_ key: String) {
-        guard key != Self.sideStoreKey, key != Self.installKey else { return }
         withAnimation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.85)) {
             layout.hide(key)
             reconcile()

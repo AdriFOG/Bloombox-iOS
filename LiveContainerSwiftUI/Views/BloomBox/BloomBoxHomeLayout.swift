@@ -12,10 +12,8 @@ struct BloomBoxHomeLayout: Codable, Equatable {
 
     static let capacity = 24
     static let dockCapacity = 4
-    // Persisted legacy IDs are user data, not executable Strata dependencies.
-    static let pinnedKeys: Set<String> = [
-        "manzana:sidestore", "manzana:install", "manzana:tweakstore"
-    ]
+    // Built-in shortcuts are optional desktop icons. Their IDs remain stable
+    // in persisted layouts, but none is protected from being hidden.
 
     var initialized = false
     var pages: [[String?]] = [Array(repeating: nil, count: capacity)]
@@ -62,8 +60,7 @@ struct BloomBoxHomeLayout: Codable, Equatable {
         let known = Set(keys)
         var occupied = Set<String>()
         hidden = hidden.filter {
-            known.contains($0) && !Self.pinnedKeys.contains($0) &&
-                occupied.insert($0).inserted
+            known.contains($0) && occupied.insert($0).inserted
         }
         dock = Array(dock.filter {
             !$0.hasPrefix("folder:") && known.contains($0) &&
@@ -163,7 +160,7 @@ struct BloomBoxHomeLayout: Codable, Equatable {
     }
 
     mutating func hide(_ key: String) {
-        guard !Self.pinnedKeys.contains(key), !key.hasPrefix("folder:") else { return }
+        guard !key.hasPrefix("folder:") else { return }
         removePlacement(key)
         hidden.append(key)
     }
