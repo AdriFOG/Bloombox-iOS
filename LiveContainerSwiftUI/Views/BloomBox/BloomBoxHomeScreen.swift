@@ -606,6 +606,19 @@ struct BloomBoxHomeScreen: View {
                 }
                 page = navigation.safePage
                 startBloomBoxAlive()
+                // A GameBox APK selection returns to Home, which owns Husk's
+                // orientation prompt, JIT gate and native launch implementation.
+                let preferences = LiveContainerPreferencesAdapter.defaults
+                if let pendingKey = preferences.string(forKey: "BloomBoxPendingHuskLaunchKey") {
+                    preferences.removeObject(forKey: "BloomBoxPendingHuskLaunchKey")
+                    if huskGames.contains(where: { $0.key == pendingKey }) {
+                        DispatchQueue.main.async { launchLibraryKey(pendingKey) }
+                    } else {
+                        huskError = englishUI
+                            ? "This Android app is no longer installed in the active profile."
+                            : "Esta app Android ya no está instalada en el perfil activo."
+                    }
+                }
             }
             .task {
                 // Noncritical popups and status notices are intentionally quiet
