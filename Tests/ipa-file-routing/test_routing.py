@@ -37,9 +37,17 @@ assert '["ipa", "tipa", "apk"].contains(url.pathExtension.lowercased())' in app_
 assert "receivedIPA = BloomBoxReceivedIPA(url: url)" in app_list
 assert "await importAPK(request.url, host: husk)" in app_list
 assert "BloomBoxIPAOpenSheet(" in app_list
-assert 'ShareLink(item: BloomBoxSideStoreIPA(fileURL: sideStoreIPA), preview: SharePreview(Text(fileURL.lastPathComponent)))' in app_list
-assert 'FileRepresentation(contentType: UTType(importedAs: "com.apple.itunes.ipa"))' in app_list
-assert "SentTransferredFile(item.fileURL)" in app_list
+# The SideStore button must launch the bundled signer directly with the local
+# staged IPA. A ShareLink opens the system share sheet instead of installing.
+assert 'Button {' in app_list and 'Label("Instalar con SideStore"' in app_list
+assert 'link.scheme = "sidestore"' in app_list
+assert 'link.host = "install"' in app_list
+assert 'URLQueryItem(name: "url", value: sideStoreIPA.absoluteString)' in app_list
+assert 'installWithSideStore(installURL)' in app_list
+assert 'LCUtils.openSideStore(delegate: self, urlStr: installURL.absoluteString)' in app_list
+assert "ShareLink(item:" not in app_list
+assert "UIActivityViewController" not in app_list
+assert "CoreTransferable" not in app_list
 assert "NSFileCoordinator().coordinate(readingItemAt: original" in app_list
 assert "guard size > 0" in app_list
 assert "sideStoreHandoffError" in app_list
@@ -49,4 +57,4 @@ assert "LCUtils.openSideStore(delegate: self)" in app_list
 assert '"Instalar dentro de BloomBox" = "Install in BloomBox";' in en
 assert '"Instalar con SideStore" = "Install with SideStore";' in en
 assert "espacios libres sin verificar" in app_list
-print("PASS: Files IPA routing, true SideStore IPA transfer, destination sheet and English labels")
+print("PASS: Files IPA routing, direct SideStore IPA deep link without Share sheet, and English labels")
