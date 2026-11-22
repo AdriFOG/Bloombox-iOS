@@ -138,6 +138,7 @@
 		<string>livecontainer</string>
 		<string>livecontainer2</string>
 		<string>livecontainer3</string>
+		<string>bloomboxmedia</string>
 	</array>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
