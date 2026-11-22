@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftUI
+import Combine
 
 struct LCTabView: View {
     @State var errorShow = false
@@ -90,6 +91,15 @@ struct LCTabView: View {
                 Task.detached(priority: .utility) {
                     BloomBoxTemporaryStorage.cleanupIfNeeded()
                 }
+            }
+        }
+        // Foreground sessions can exceed the threshold without relaunching.
+        // The inexpensive scan runs at most every ten minutes and never
+        // blocks Home, guest playback, or active downloads.
+        .onReceive(Timer.publish(every: 600, on: .main, in: .common).autoconnect()) { _ in
+            guard scenePhase == .active else { return }
+            Task.detached(priority: .utility) {
+                BloomBoxTemporaryStorage.cleanupIfNeeded()
             }
         }
         .onReceive(pub) { out in
