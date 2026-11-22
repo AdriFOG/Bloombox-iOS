@@ -364,7 +364,7 @@ private enum BloomBoxHuskFiles {
         else { throw CocoaError(.fileReadNoPermission) }
         return try FileManager.default.contentsOfDirectory(
             at: safeFolder, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
-            options: [.skipsHiddenFiles]
+            options: []
         ).filter { item in
             guard (try? item.resourceValues(forKeys: [.isSymbolicLinkKey]))?
                 .isSymbolicLink != true else { return false }
@@ -760,38 +760,6 @@ private struct BloomBoxHuskFolderView: View {
 // Native Husk maps Android/obb to the APK directory's obb/ fallback and
 // Android/data/<package> to the *game-local* sdcard/Android/data/<package>.
 // Do not route these into iOS Downloads or another game's directory.
-private enum BloomBoxHuskImportMode: String, CaseIterable, Identifiable {
-    case obb
-    case androidData
-    case privateFiles
-    case shared
-    var id: String { rawValue }
-    var title: String {
-        switch self {
-        case .obb: return BloomBoxL10n.isEnglish ? "OBB expansions" : "Archivos OBB"
-        case .androidData: return BloomBoxL10n.isEnglish ? "Android/data" : "Datos Android"
-        case .privateFiles: return BloomBoxL10n.isEnglish ? "Private game files" : "Archivos privados"
-        case .shared: return BloomBoxL10n.isEnglish ? "Shared storage" : "Almacenamiento compartido"
-        }
-    }
-    var subtitle: String {
-        switch self {
-        case .obb: return "Android/obb/"
-        case .androidData: return "Android/data/"
-        case .privateFiles: return "/data/data/…/files/"
-        case .shared: return "/sdcard/"
-        }
-    }
-    var symbol: String {
-        switch self {
-        case .obb: return "archivebox.fill"
-        case .androidData: return "externaldrive.fill"
-        case .privateFiles: return "lock.doc.fill"
-        case .shared: return "folder.fill"
-        }
-    }
-}
-
 private enum BloomBoxHuskDataImport {
     struct Result {
         var copied = 0
@@ -817,22 +785,6 @@ private enum BloomBoxHuskDataImport {
         }
     }
 
-    /// Only the selected Husk game's inspected directory can be a write root.
-    /// OBB/data destinations use fixed segments; no iOS absolute-path guesses.
-    static func relativeParts(for game: BloomBoxHuskFiles.Game,
-                              mode: BloomBoxHuskImportMode) throws -> [String] {
-        switch mode {
-        case .obb: return ["obb"]
-        case .androidData:
-            guard let package = validPackage(game.packageID) else { throw ImportError.invalidPackage }
-            return ["sdcard", "Android", "data", package]
-        case .privateFiles:
-            guard validPackage(game.packageID) != nil else { throw ImportError.invalidPackage }
-            return ["files"]
-        case .shared: return []
-        }
-    }
-
     static func checkedURL(in root: URL, components: [String], isDirectory: Bool) throws -> URL {
         do {
             return try BloomBoxHuskPathPolicy.scopedURL(
@@ -850,30 +802,6 @@ private enum BloomBoxHuskDataImport {
         }
     }
 
-    static func destination(for game: BloomBoxHuskFiles.Game, mode: BloomBoxHuskImportMode,
-                            sharedRoot: URL?) throws -> URL {
-        let gameRoot = game.directory
-        guard gameRoot.deletingLastPathComponent().lastPathComponent == "TranslationLayer",
-              BloomBoxHuskFiles.isDirectory(gameRoot),
-              let children = try? BloomBoxHuskFiles.files(in: gameRoot, root: gameRoot),
-              children.contains(where: { $0.pathExtension.lowercased() == "apk" })
-        else { throw ImportError.invalidGame }
-        let root: URL
-        if mode == .shared {
-            guard let sharedRoot,
-                  sharedRoot.lastPathComponent == "Shared Storage",
-                  BloomBoxHuskFiles.isDirectory(sharedRoot) else {
-                throw ImportError.invalidTarget("No se encontró el almacenamiento compartido de Husk.")
-            }
-            root = sharedRoot
-        } else {
-            root = gameRoot
-        }
-        return try checkedURL(in: root,
-                              components: relativeParts(for: game, mode: mode),
-                              isDirectory: true)
-    }
-
     static func validPackage(_ value: String?) -> String? {
         guard let value, value.count < 240, !value.isEmpty,
               !value.hasPrefix("."), !value.hasSuffix("."),
@@ -883,180 +811,6 @@ private enum BloomBoxHuskDataImport {
               })
         else { return nil }
         return value
-    }
-
-    private static func makeTarget(root: URL, components: [String]) throws -> URL {
-        let dir = try checkedURL(in: root, components: components, isDirectory: true)
-        do {
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        } catch {
-            throw ImportError.invalidTarget(
-                "DEST-05: no se pudo crear " + dir.lastPathComponent +
-                ": " + error.localizedDescription)
-        }
-        return try checkedURL(in: root, components: components, isDirectory: true)
-    }
-
-    private static func allFiles(in folder: URL) throws -> [URL] {
-        let fm = FileManager.default
-        var result: [URL] = []
-        func walk(_ dir: URL) throws {
-            let urls = try fm.contentsOfDirectory(at: dir, includingPropertiesForKeys:
-                [.isDirectoryKey, .isSymbolicLinkKey], options: [.skipsHiddenFiles])
-            for file in urls {
-                let values = try file.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-                if values.isSymbolicLink == true { throw ImportError.unsafeLink }
-                if values.isDirectory == true { try walk(file) }
-                else if values.isRegularFile == true { result.append(file) }
-                else { throw ImportError.invalidSource }
-            }
-        }
-        try walk(folder)
-        return result
-    }
-
-    private static func preparedDataRoot(_ folder: URL, package: String?, mode: BloomBoxHuskImportMode) -> URL {
-        guard let package else { return folder }
-        let fm = FileManager.default
-        let android = folder.appendingPathComponent("Android/data/" + package)
-        let privateData = folder.appendingPathComponent("data/data/" + package + "/files")
-        if mode == .androidData, fm.fileExists(atPath: android.path) { return android }
-        if mode == .privateFiles, fm.fileExists(atPath: privateData.path) { return privateData }
-        let packaged = folder.appendingPathComponent(package)
-        if fm.fileExists(atPath: packaged.path) { return packaged }
-        // A ZIP whose only top-level folder contains the conventional Android path.
-        if let items = try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil),
-           items.count == 1, BloomBoxHuskFiles.isDirectory(items[0]) {
-            let nested = items[0]
-            let android = nested.appendingPathComponent("Android/data/" + package)
-            let privateData = nested.appendingPathComponent("data/data/" + package + "/files")
-            if mode == .androidData, fm.fileExists(atPath: android.path) { return android }
-            if mode == .privateFiles, fm.fileExists(atPath: privateData.path) { return privateData }
-            // Preserve an ordinary folder such as "files" or "cache": it is
-            // part of Android's destination tree, not a wrapper to discard.
-        }
-        return folder
-    }
-
-    private static func copyContents(from source: URL, into root: URL,
-                                     components: [String], result: inout Result,
-                                     created: inout [URL]) throws {
-        let fm = FileManager.default
-        for item in try fm.contentsOfDirectory(at: source, includingPropertiesForKeys:
-            [.isDirectoryKey, .isSymbolicLinkKey, .isRegularFileKey],
-            options: [.skipsHiddenFiles]) {
-            let flags = try item.resourceValues(forKeys:
-                [.isDirectoryKey, .isSymbolicLinkKey, .isRegularFileKey])
-            if flags.isSymbolicLink == true { throw ImportError.unsafeLink }
-            let next = components + [item.lastPathComponent]
-            let isFolder = flags.isDirectory == true
-            let target = try checkedURL(in: root, components: next, isDirectory: isFolder)
-            if isFolder {
-                if fm.fileExists(atPath: target.path) {
-                    guard BloomBoxHuskFiles.isDirectory(target) else {
-                        result.skipped += 1; continue
-                    }
-                } else {
-                    try fm.createDirectory(at: target, withIntermediateDirectories: false)
-                    created.append(target)
-                }
-                try copyContents(from: item, into: root, components: next,
-                                 result: &result, created: &created)
-            } else if flags.isRegularFile == true {
-                if fm.fileExists(atPath: target.path) {
-                    result.skipped += 1 // Never overwrite existing saves or data.
-                    continue
-                }
-                try fm.copyItem(at: item, to: target)
-                created.append(target)
-                result.copied += 1
-            } else {
-                throw ImportError.invalidSource
-            }
-        }
-    }
-
-    static func install(_ sources: [URL], game: BloomBoxHuskFiles.Game,
-                        mode: BloomBoxHuskImportMode, sharedRoot: URL?) throws -> Result {
-        let fm = FileManager.default
-        // Validate the selected game identity before writing anything.
-        _ = try destination(for: game, mode: mode, sharedRoot: sharedRoot)
-        let root = mode == .shared ? (sharedRoot ?? game.directory) : game.directory
-        let targetParts = try relativeParts(for: game, mode: mode)
-        var summary = Result()
-        for source in sources {
-            let access = source.startAccessingSecurityScopedResource()
-            defer { if access { source.stopAccessingSecurityScopedResource() } }
-            let scratch = fm.temporaryDirectory.appendingPathComponent(
-                "BloomBox-Husk-Import-" + UUID().uuidString, isDirectory: true)
-            try fm.createDirectory(at: scratch, withIntermediateDirectories: false)
-            defer { try? fm.removeItem(at: scratch) }
-            let prepared = scratch.appendingPathComponent("prepared", isDirectory: true)
-            var coordinationError: NSError?
-            var readError: Error?
-            // iCloud/document providers may need a coordinated upload snapshot
-            // for folders; this yields a readable ZIP without touching originals.
-            let sourceFolder = (try? source.resourceValues(
-                forKeys: [.isDirectoryKey]))?.isDirectory == true
-            NSFileCoordinator().coordinate(
-                readingItemAt: source, options: sourceFolder ? [.forUploading] : [],
-                error: &coordinationError) { readable in
-                do {
-                    let flags = try readable.resourceValues(forKeys:
-                        [.isDirectoryKey, .isSymbolicLinkKey, .isRegularFileKey])
-                    guard flags.isSymbolicLink != true else { throw ImportError.unsafeLink }
-                    if readable.pathExtension.lowercased() == "zip", flags.isRegularFile == true {
-                        // Existing, path-traversal-checked BloomBox ZIP extractor.
-                        try BloomBoxArchive.unpack(source: readable, destination: prepared)
-                    } else {
-                        guard flags.isDirectory == true || flags.isRegularFile == true
-                        else { throw ImportError.invalidSource }
-                        try fm.createDirectory(at: prepared, withIntermediateDirectories: false)
-                        try fm.copyItem(at: readable, to: prepared.appendingPathComponent(source.lastPathComponent))
-                    }
-                } catch { readError = error }
-            }
-            if let coordinationError { throw coordinationError }
-            if let readError { throw readError }
-            let target = try makeTarget(root: root, components: targetParts)
-            var created: [URL] = []
-            do {
-                if mode == .obb {
-                    let obbFiles = try allFiles(in: prepared).filter {
-                        $0.pathExtension.lowercased() == "obb"
-                    }
-                    guard !obbFiles.isEmpty else { throw ImportError.noOBB }
-                    for file in obbFiles {
-                        if let package = validPackage(game.packageID) {
-                            let filename = file.lastPathComponent
-                            if filename.hasPrefix("main.") || filename.hasPrefix("patch.") {
-                                let components = filename.split(separator: ".", maxSplits: 2)
-                                if components.count == 3 {
-                                    let namePackage = String(components[2].dropLast(4))
-                                    if namePackage != package { throw ImportError.obbPackageMismatch }
-                                }
-                            }
-                        }
-                        let dest = try checkedURL(
-                            in: root, components: targetParts + [file.lastPathComponent],
-                            isDirectory: false)
-                        if fm.fileExists(atPath: dest.path) { summary.skipped += 1; continue }
-                        try fm.copyItem(at: file, to: dest)
-                        created.append(dest)
-                        summary.copied += 1
-                    }
-                } else {
-                    let content = preparedDataRoot(prepared, package: validPackage(game.packageID),
-                                                   mode: mode)
-                    try copyContents(from: content, into: root, components: targetParts,
-                                     result: &summary, created: &created)
-                }
-            } catch {
-                for item in created.reversed() { try? fm.removeItem(at: item) }
-                throw error
-            }
-        }
-        return summary
     }
 
     /// Copy directly into an EXISTING, user-selected Husk folder. The caller
