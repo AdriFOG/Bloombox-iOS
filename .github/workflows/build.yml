@@ -76,6 +76,8 @@ jobs:
         run: |
           swiftc LiveContainerSwiftUI/Views/BloomBox/BloomBoxFileStore.swift Tests/android-files/main.swift -o "$RUNNER_TEMP/bloombox-husk-path-tests"
           "$RUNNER_TEMP/bloombox-husk-path-tests"
+      - name: Test BloomBox 3.3 GameBox and visual design contracts
+        run: python3 Tests/stability-polish/test_contract.py
       - name: Test BloomBox 1 GB temporary storage cleanup and safety
         run: |
           swiftc LiveContainerSwiftUI/Views/BloomBox/BloomBoxFileStore.swift Tests/bloombox-temp-cleanup/main.swift -o "$RUNNER_TEMP/bloombox-temp-tests"
