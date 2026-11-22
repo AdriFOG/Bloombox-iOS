@@ -158,4 +158,50 @@ do {
     // Correct.
 }
 
-print("PASS: relative-root Husk OBB/data destination, raw OBB/data copy, new directories, alias and escape protection")
+
+// Test Husk's engine-specific real folders and case-preserving discovery.
+let javaGame = sandbox.appendingPathComponent("Husk/Documents/TranslationLayer/bloombox-java", isDirectory: true)
+let javaRoot = javaGame.appendingPathComponent("java-data", isDirectory: true)
+let javaExt = javaRoot.appendingPathComponent(
+    "sdcard/android/data/com.bloombox.testapp/files", isDirectory: true)
+try fm.createDirectory(at: javaExt, withIntermediateDirectories: true)
+try Data(#"{"engine":"Java","abis":[],"dexCount":1}"#.utf8)
+    .write(to: javaGame.appendingPathComponent("report.json"))
+precondition(BloomBoxHuskRuntimeScanner.reportedFolder(in: javaGame) == "java-data")
+precondition(BloomBoxHuskRuntimeScanner.preferredRuntime(in: javaGame) == javaRoot)
+let javaCandidates = BloomBoxHuskRuntimeScanner.destinations(
+    in: javaGame, package: "com.bloombox.testapp", sharedRoot: nil)
+precondition(javaCandidates.contains(where: {
+    $0.kind == "external-files" && $0.folder == javaExt
+}), "must find real Java-data/sdcard/android/data/<pkg>/files")
+precondition(javaCandidates.contains(where: {
+    $0.kind == "data" && $0.folder == javaExt.deletingLastPathComponent()
+}), "must find existing Android data folder")
+precondition(!fm.fileExists(atPath: javaGame.appendingPathComponent("sdcard").path),
+             "discovery must never create root-level sdcard")
+precondition(!fm.fileExists(atPath: javaGame.appendingPathComponent("obb").path),
+             "discovery must never create root-level obb")
+
+let ue4Game = sandbox.appendingPathComponent("Husk/Documents/TranslationLayer/minecraft-dungeons", isDirectory: true)
+let ue4Runtime = ue4Game.appendingPathComponent("ue4-data", isDirectory: true)
+let ue4Files = ue4Runtime.appendingPathComponent("files", isDirectory: true)
+try fm.createDirectory(at: ue4Files, withIntermediateDirectories: true)
+try Data(#"{"engine":"Unreal Engine","abis":["arm64-v8a"],"dexCount":1}"#.utf8)
+    .write(to: ue4Game.appendingPathComponent("report.json"))
+precondition(BloomBoxHuskRuntimeScanner.reportedFolder(in: ue4Game) == "ue4-data")
+precondition(BloomBoxHuskRuntimeScanner.preferredRuntime(in: ue4Game) == ue4Runtime)
+let ue4Destinations = BloomBoxHuskRuntimeScanner.destinations(
+    in: ue4Game, package: "com.nintendosss.spice", sharedRoot: nil)
+precondition(ue4Destinations.contains(where: { $0.folder == ue4Files && $0.kind == "private" }))
+precondition(!ue4Destinations.contains(where: { $0.kind == "external-files" }),
+             "must not invent Android/data for UE4")
+
+let uninitialized = sandbox.appendingPathComponent(
+    "Husk/Documents/TranslationLayer/no-data-yet", isDirectory: true)
+try fm.createDirectory(at: uninitialized, withIntermediateDirectories: true)
+let emptyDestinations = BloomBoxHuskRuntimeScanner.destinations(
+    in: uninitialized, package: "com.example.app", sharedRoot: nil)
+precondition(emptyDestinations.count == 1 && emptyDestinations[0].kind == "game",
+             "an app without data should offer only its real root")
+
+print("PASS: engine-scan Husk relative-root destinations, raw OBB/data copy, new directories, alias and escape protection")
