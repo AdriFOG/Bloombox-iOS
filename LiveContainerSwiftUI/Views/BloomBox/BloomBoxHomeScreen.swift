@@ -250,6 +250,7 @@ struct BloomBoxHomeScreen: View {
     @State private var huskStartingGame: HuskGame?
     @State private var huskLaunchingKey: String?
     @State private var huskStartingNote = ""
+    @State private var huskJITGateActive = false
     @State private var orientationGame: HuskGame?
     @State private var askForThisLaunch = false
     @State private var huskError: String?
@@ -437,10 +438,12 @@ struct BloomBoxHomeScreen: View {
                             Text(huskStartingNote)
                                 .font(.subheadline).multilineTextAlignment(.center)
                                 .foregroundStyle(.secondary)
-                            Text(englishUI ? "This screen will close when JIT is confirmed." : "Esta pantalla se cerrará al confirmar JIT.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
+                            if huskJITGateActive {
+                                Text(englishUI ? "This screen will close when JIT is confirmed." : "Esta pantalla se cerrará al confirmar JIT.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
                         }
                         .padding(28).frame(maxWidth: 310)
                         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 30))
@@ -1500,12 +1503,14 @@ struct BloomBoxHomeScreen: View {
                     AppSceneViewController.bloomBoxEndStartup(forContainer: game.containerFolder)
                 }
                 if huskLaunchingKey == game.key { huskLaunchingKey = nil }
+                huskJITGateActive = false
             }
             let appKey = host.appInfo.relativeBundlePath ?? ""
             let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
                 .flatMap { $0.windows }.first { $0.isKeyWindow }
             let started = Date()
             huskStartingGame = game
+            huskJITGateActive = false
             huskStartingNote = englishUI ? "Preparing Husk…" : "Preparando Husk…"
             do {
                 // Husk reads its own settings.json; the enclosing BloomBox scene
@@ -1535,6 +1540,7 @@ struct BloomBoxHomeScreen: View {
                     defaults.bool(forKey: "BloomBoxJITMainEnabled")
                 let stagedJIT = wantsJIT && builtInEnabled &&
                     defaults.integer(forKey: "LCJITEnablerType") == JITEnablerType.BuiltIn.rawValue
+                huskJITGateActive = stagedJIT
 
                 // Give UIKit a layout pass before LiveProcess builds its guest
                 // scene; otherwise an iPhone can create it as portrait forever.
