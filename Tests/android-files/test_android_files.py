@@ -62,7 +62,7 @@ for expected in (
     'label: name + " · Android/data/files"',
     'label: name + " · Android/data"',
     'label: name + " · Android/obb"',
-    "No se encontró", # messages still distinguish missing destinations
+    'DEST-03: no se encontró la carpeta de Husk.',
     "static func scopedURL(in root:",
     "if isSymbolicLink(current)",
 ):
