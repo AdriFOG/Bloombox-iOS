@@ -1274,14 +1274,14 @@ private struct BloomBoxIOSAppFilesView: View {
                         Label(en ? "App data container" : "Contenedor de datos",
                               systemImage: "shippingbox.fill")
                     }
-                    for folder in ["Documents", "Library", "tmp"] {
-                        let url = root.appendingPathComponent(folder, isDirectory: true)
-                        if BloomBoxHuskFiles.isDirectory(url) {
-                            NavigationLink(destination: BloomBoxHuskFolderView(
-                                root: root, current: url, title: folder,
-                                sourceLabel: "iOS")) {
-                                Label(folder, systemImage: "folder.fill")
-                            }
+                    ForEach(["Documents", "Library", "tmp"].filter {
+                        BloomBoxHuskFiles.isDirectory(root.appendingPathComponent($0, isDirectory: true))
+                    }, id: \.self) { folder in
+                        NavigationLink(destination: BloomBoxHuskFolderView(
+                            root: root,
+                            current: root.appendingPathComponent(folder, isDirectory: true),
+                            title: folder, sourceLabel: "iOS")) {
+                            Label(folder, systemImage: "folder.fill")
                         }
                     }
                 } header: {
