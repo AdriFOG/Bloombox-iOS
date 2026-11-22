@@ -81,6 +81,16 @@ struct LCTabView: View {
             checkAndSaveBundleId()
             checkGetTaskAllow()
             checkPrivateContainerBookmark()
+            Task.detached(priority: .utility) {
+                BloomBoxTemporaryStorage.cleanupIfNeeded()
+            }
+        }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active {
+                Task.detached(priority: .utility) {
+                    BloomBoxTemporaryStorage.cleanupIfNeeded()
+                }
+            }
         }
         .onReceive(pub) { out in
             if let scene1 = sceneDelegate.window?.windowScene, let scene2 = out.object as? UIWindowScene, scene1 == scene2 {
