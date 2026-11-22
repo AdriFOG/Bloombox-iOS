@@ -32,6 +32,9 @@ assert 'BloomBoxProfileThemeBackdrop().ignoresSafeArea()' in files
 assert 'if #available(iOS 16.0, *)' in files
 assert 'scrollContentBackground(.hidden)' in files
 assert 'blur(radius: openFolder != nil ? 24' in home
+assert '.sheet(item: $expandedLibraryCategory)' in home
+assert 'wallpaperBackground(paused: true)' in home
+assert '.blur(radius: 28)' in home
 assert 'Color.black.opacity(0.045)' in folder
 assert '.glassEffect(.clear.interactive(false), in: shape)' in visuals
 
