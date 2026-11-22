@@ -369,13 +369,14 @@ struct BloomBoxHomeScreen: View {
         GeometryReader { geometry in
             ZStack(alignment: .top) {
                 background
-                    .blur(radius: (searching || page == libraryPageIndex) ? 14 : 0)
+                    .blur(radius: openFolder != nil ? 24 : ((searching || page == libraryPageIndex) ? 14 : 0))
                     .animation(reduceMotion ? nil : .easeInOut(duration: 0.38), value: page == libraryPageIndex)
                 // Dock belongs to each Home page, not a floating overlay.
                 // Swiping to News or App Library moves the Dock away with Home.
                 TabView(selection: $page) {
                     BloomBoxNewsPage(openSettings: { desktopSettings = true },
                                      openGameBox: openGameBox,
+                                     openInstall: openInstall,
                                      gameNames: newsGameNames,
                                      openShortcut: { shortcut in
                                          switch shortcut {
