@@ -3047,6 +3047,15 @@ struct BloomBoxHomeScreen: View {
                                            defaults: LiveContainerPreferencesAdapter.defaults)
                 mediaTagsVersion &+= 1
             },
+            toggleNetwork: {
+                let blocked = LiveContainerHomeAdapter.toggleNetwork(app)
+                let name = guest.displayName
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    showNetworkNotice(blocked
+                        ? (englishUI ? "Internet disabled for «\(name)»." : "«\(name)» ya no contará con acceso a Internet.")
+                        : (englishUI ? "Internet restored for «\(name)»." : "«\(name)» volverá a tener acceso a Internet."))
+                }
+            },
             toggleSimultaneousAudio: {
                 let previous = BloomBoxAudioMixStore.isEnabled(
                     for: app.bundleIdentifier,
@@ -3058,15 +3067,6 @@ struct BloomBoxHomeScreen: View {
                 showNetworkNotice(englishUI
                     ? "Audio mixing \(!previous ? "enabled" : "disabled") for «\(guest.displayName)». Reopen the app to apply."
                     : "Audio simultáneo \(!previous ? "activado" : "desactivado") para «\(guest.displayName)». Vuelve a abrir la app.")
-            },
-            toggleNetwork: {
-                let blocked = LiveContainerHomeAdapter.toggleNetwork(app)
-                let name = guest.displayName
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                    showNetworkNotice(blocked
-                        ? (englishUI ? "Internet disabled for «\(name)»." : "«\(name)» ya no contará con acceso a Internet.")
-                        : (englishUI ? "Internet restored for «\(name)»." : "«\(name)» volverá a tener acceso a Internet."))
-                }
             },
             addTweak: {
                 pendingTweakApp = app
