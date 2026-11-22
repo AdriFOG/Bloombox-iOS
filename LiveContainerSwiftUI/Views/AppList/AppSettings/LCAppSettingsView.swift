@@ -121,6 +121,16 @@ struct LCAppSettingsView: View {
             }
 
             Section {
+                BloomBoxSimultaneousAudioToggle(bundleID: model.bundleIdentifier)
+            } header: {
+                Text(BloomBoxL10n.isEnglish ? "Audio" : "Audio")
+            } footer: {
+                Text(BloomBoxL10n.isEnglish
+                     ? "Allow the game's sound to mix with music playing in MediaBloom or another app. Restart this game to apply. Experimental: some audio engines or voice chats may not support it."
+                     : "Permite que el sonido del juego se mezcle con música de MediaBloom u otra app. Vuelve a abrir el juego para aplicarlo. Experimental: algunos motores o chats de voz podrían no ser compatibles.")
+            }
+
+            Section {
                 NavigationLink {
                     BloomBoxBackupView(model: model)
                 } label: {
@@ -1007,5 +1017,29 @@ private struct BloomBoxMediaLabelPicker: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
+    }
+}
+
+
+// The flag is applied in BloomBox's native guest bootstrap, not by setting
+// AVAudioSession on the host UI. It never modifies game installations.
+private struct BloomBoxSimultaneousAudioToggle: View {
+    @AppStorage private var enabled: Bool
+
+    init(bundleID: String) {
+        _enabled = AppStorage(
+            wrappedValue: false,
+            BloomBoxAudioMixStore.key(for: bundleID),
+            store: LCUtils.appGroupUserDefault
+        )
+    }
+
+    var body: some View {
+        Toggle(isOn: $enabled) {
+            Label(BloomBoxL10n.isEnglish
+                  ? "Allow simultaneous audio"
+                  : "Permitir audio simultáneo", systemImage: "waveform")
+        }
+        .tint(.purple)
     }
 }
