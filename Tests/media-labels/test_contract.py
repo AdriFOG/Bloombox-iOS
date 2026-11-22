@@ -18,7 +18,7 @@ assert 'BloomBoxMediaTagStore.set(tag, for: app.bundleIdentifier' in home
 assert 'BloomBoxMediaTagStore.selection(' in home
 for raw in ['"music"', '"video"', '"none"', '"auto"', 'BloomBoxMediaTagV1.']:
     assert raw in store, raw
-assert 'LCUtils.appGroupUserDefault' in home
+assert 'LiveContainerPreferencesAdapter.defaults' in home
 # Settings should not migrate storage as a side-effect of choosing a tag.
 assert 'moveToAppGroup()' not in picker.split('private struct BloomBoxMediaLabelPicker:', 1)[-1]
 print("PASS: BloomBox tags exposed in app settings and home menu; shared store only")
