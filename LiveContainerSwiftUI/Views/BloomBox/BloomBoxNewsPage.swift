@@ -17,7 +17,12 @@ struct BloomBoxNewsPage: View {
     }
     private var english: Bool { locale.languageCode == "en" }
 
+    var openInstall: () -> Void = {}
     var openShortcut: (BloomBoxNewsShortcut) -> Void = { _ in }
+
+    @AppStorage("BloomBoxNewsInstallerUsedV1", store: LCUtils.appGroupUserDefault)
+    private var hasUsedNewsInstaller = false
+    @State private var installTipDismissedForVisit = false
 
     var body: some View {
         ScrollView {
@@ -31,14 +36,63 @@ struct BloomBoxNewsPage: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 4)
-                    Button(action: openSettings) {
-                        Image(systemName: "paintbrush.pointed.fill")
-                            .font(.system(size: 18, weight: .medium))
-                            .frame(width: 44, height: 44)
-                            .background(.thinMaterial, in: Circle())
+                    VStack(alignment: .trailing, spacing: 0) {
+                        HStack(spacing: 8) {
+                            Button {
+                                // Remember actual usage, not mere presentation of the tip.
+                                hasUsedNewsInstaller = true
+                                installTipDismissedForVisit = true
+                                openInstall()
+                            } label: {
+                                Image(systemName: "square.and.arrow.down.fill")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .frame(width: 44, height: 44)
+                                    .background(.thinMaterial, in: Circle())
+                            }
+                            .accessibilityLabel(english ? "Install IPA, TIPA or APK" : "Instalar IPA, TIPA o APK")
+                            .accessibilityIdentifier("bloombox.news.install")
+                            Button(action: openSettings) {
+                                Image(systemName: "paintbrush.pointed.fill")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .frame(width: 44, height: 44)
+                                    .background(.thinMaterial, in: Circle())
+                            }
+                            .accessibilityLabel(english ? "Customize Home" : "Personalizar escritorio")
+                            .accessibilityIdentifier("bloombox.news.settings")
+                        }
+                        if !hasUsedNewsInstaller && !installTipDismissedForVisit {
+                            VStack(alignment: .trailing, spacing: 0) {
+                                Image(systemName: "triangle.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(Color(red: 0.20, green: 0.18, blue: 0.30))
+                                    .padding(.trailing, 68)
+                                HStack(spacing: 7) {
+                                    Image(systemName: "bubble.left.fill")
+                                        .font(.caption2)
+                                    Text(english ? "Install apps here!" : "¡Instala apps aquí!")
+                                        .font(.caption.weight(.semibold))
+                                        .fixedSize(horizontal: true, vertical: false)
+                                    Button {
+                                        // Dismiss only for this visit; it returns until used.
+                                        installTipDismissedForVisit = true
+                                    } label: {
+                                        Image(systemName: "xmark")
+                                            .font(.system(size: 10, weight: .bold))
+                                            .frame(width: 24, height: 24)
+                                    }
+                                    .accessibilityLabel(english ? "Dismiss tip" : "Cerrar consejo")
+                                }
+                                .foregroundStyle(.white)
+                                .padding(.leading, 12)
+                                .padding(.trailing, 5)
+                                .padding(.vertical, 4)
+                                .background(Color(red: 0.20, green: 0.18, blue: 0.30),
+                                            in: Capsule())
+                            }
+                            .padding(.top, 1)
+                            .accessibilityIdentifier("bloombox.news.install.tip")
+                        }
                     }
-                    .accessibilityLabel(english ? "Customize Home" : "Personalizar escritorio")
-                    .accessibilityIdentifier("bloombox.news.settings")
                 }
                 BloomBoxProfileSwitcherWidget()
                 BloomBoxNewsQuickAccess(onOpen: openShortcut)

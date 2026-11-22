@@ -104,6 +104,8 @@ jobs:
           "$RUNNER_TEMP/bloombox-integration-tests"
       - name: Validate offline BloomBox News store logos
         run: python3 Tests/news-brand-icons/test_icons.py
+      - name: Validate Home installer tip and removable built-ins
+        run: python3 Tests/news-installer-shortcuts/test_ui.py
       - name: Test BloomBox Home app-policy persistence and localized search
         run: |
           swiftc LiveContainerSwiftUI/Views/BloomBox/BloomBoxHomeAppPolicy.swift Tests/home-app-policy/main.swift -o "$RUNNER_TEMP/bloombox-home-app-policy-tests"
