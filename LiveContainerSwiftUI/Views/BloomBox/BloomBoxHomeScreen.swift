@@ -161,6 +161,7 @@ struct BloomBoxHomeScreen: View {
     @State private var pendingUninstall: LCAppModel?
     @State private var pendingHuskUninstall: HuskGame?
     @State private var pendingTweakApp: LCAppModel?
+    @State private var mediaTagsVersion = 0
     @State private var choosingAppTweak = false
     @State private var appTweakError: String?
     @State private var networkNoticeText: String?
@@ -2994,6 +2995,8 @@ struct BloomBoxHomeScreen: View {
         // The presentation reads only stable menu state. Host-specific calls
         // remain here until a LiveContainer adapter replaces this bridge.
         let guest = LiveContainerHomeAdapter.snapshot(app, displayName: title(key))
+        // Touching a label refreshes the current context menu selection.
+        _ = mediaTagsVersion
         let menuState = BloomBoxHomeContextMenu.State(
             isRunning: guest.isRunning,
             isSigning: guest.isSigning,
@@ -3006,7 +3009,10 @@ struct BloomBoxHomeScreen: View {
             networkBlocked: guest.isNetworkBlocked,
             pageIndices: Array(layout.pages.indices),
             folders: layout.folders.map { .init(id: $0.id, name: $0.name) },
-            categories: BloomBoxHomeAppPolicy.categoryNames(from: homeCategories)
+            categories: BloomBoxHomeAppPolicy.categoryNames(from: homeCategories),
+            mediaTag: BloomBoxMediaTagStore.selection(
+                for: app.bundleIdentifier,
+                defaults: LCUtils.appGroupUserDefault)
         )
         let actions = BloomBoxHomeContextMenu.Actions(
             launch: { requestLaunch(app) },
@@ -3031,6 +3037,11 @@ struct BloomBoxHomeScreen: View {
             removeFromFolder: { layout.place(key, on: max(0, page - 1)); reconcile() },
             setCategory: { value in setCategory(value, key: key) },
             newCategory: { categoryApp = key; categoryName = ""; addingCategory = true },
+            setMediaTag: { tag in
+                BloomBoxMediaTagStore.set(tag, for: app.bundleIdentifier,
+                                           defaults: LCUtils.appGroupUserDefault)
+                mediaTagsVersion &+= 1
+            },
             toggleNetwork: {
                 let blocked = LiveContainerHomeAdapter.toggleNetwork(app)
                 let name = guest.displayName
