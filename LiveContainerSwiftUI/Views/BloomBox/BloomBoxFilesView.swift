@@ -1004,19 +1004,27 @@ private struct BloomBoxHuskGameView: View {
     let sharedRoot: URL?
 
     @EnvironmentObject private var sharedModel: SharedModel
-    @State private var choice: BloomBoxHuskImportMode = .obb
+    @State private var selected: BloomBoxHuskRuntimeScanner.Destination?
     @State private var picking = false
     @State private var confirming = false
     @State private var chosen: [URL] = []
+    @State private var overwrite = false
     @State private var busy = false
     @State private var notice: String?
-    private var english: Bool { BloomBoxL10n.isEnglish }
+    @State private var refreshVersion = 0
 
-    private var hostBusy: Bool {
-        let host = sharedModel.apps.first(where: { $0.bundleIdentifier == "com.husk.app" })
-        return host == nil || host?.isAppRunning == true
-            || MultitaskManager.isUsing(container: containerID)
-            || LCSharedUtils.getContainerUsingLCScheme(withFolderName: containerID) != nil
+    private var english: Bool { BloomBoxL10n.isEnglish }
+    private var folders: [BloomBoxHuskRuntimeScanner.Destination] {
+        _ = refreshVersion
+        return BloomBoxHuskRuntimeScanner.destinations(
+            in: game.directory, package: BloomBoxHuskDataImport.validPackage(game.packageID),
+            sharedRoot: sharedRoot)
+    }
+    private var runtime: URL? { BloomBoxHuskRuntimeScanner.preferredRuntime(in: game.directory) }
+    private var huskRunning: Bool {
+        sharedModel.apps.first(where: { $0.bundleIdentifier == "com.husk.app" })?
+            .isAppRunning == true ||
+            MultitaskManager.isUsing(container: containerID)
     }
 
     var body: some View {
@@ -1024,60 +1032,85 @@ private struct BloomBoxHuskGameView: View {
             Section {
                 VStack(alignment: .leading, spacing: 7) {
                     Text(game.name).font(.title3.bold())
-                    if let package = game.packageID {
-                        Text(package).font(.caption).foregroundStyle(.secondary)
+                    if let pkg = game.packageID {
+                        Text(pkg).font(.caption).foregroundStyle(.secondary)
                     }
-                    Text(english ? "Import OBB and game data directly into Husk."
-                                 : "Importa OBB y datos directamente a Husk.")
-                        .font(.subheadline)
-                }.padding(.vertical, 5)
-                if hostBusy {
-                    Label(english ? "Close Husk before importing."
-                                  : "Cierra Husk antes de importar archivos.",
-                          systemImage: "lock.fill").foregroundStyle(.orange)
+                    if let runtime {
+                        Label((english ? "Engine folder: " : "Carpeta del motor: ") +
+                              runtime.lastPathComponent, systemImage: "checkmark.circle")
+                            .font(.subheadline).foregroundStyle(.green)
+                    } else {
+                        Label(english ? "Select an existing folder below."
+                                      : "Elige una carpeta existente abajo.",
+                              systemImage: "info.circle").font(.subheadline)
+                    }
+                    Text(english
+                         ? "Husk uses different folders for different game engines. BloomBox scans the existing folders instead of creating guessed paths."
+                         : "Husk guarda datos en distintas carpetas según el motor. BloomBox busca carpetas reales sin inventar rutas.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                if huskRunning {
+                    Label(english ? "Husk is running. Editing files may corrupt a game."
+                                  : "Husk está abierto. Editar archivos podría dañar el juego.",
+                          systemImage: "exclamationmark.triangle")
+                        .font(.footnote).foregroundStyle(.orange)
                 }
             }
-            Section(header: Text(english ? "Import game data" : "Importar datos del juego")) {
-                ForEach(BloomBoxHuskImportMode.allCases) { mode in
-                    if mode != .shared || sharedRoot != nil {
+            Section(header: Text(english ? "Existing folders" : "Carpetas encontradas")) {
+                if folders.isEmpty {
+                    Text(english ? "No accessible folders. Open Husk and retry."
+                                 : "No encontramos carpetas accesibles. Abre Husk y actualiza.")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(folders) { target in
+                    HStack(spacing: 12) {
+                        Image(systemName: target.kind == "shared" ? "folder.fill.badge.person.crop"
+                                          : "folder.fill")
+                            .foregroundStyle(target.kind == "shared" ? Color.blue : Color.green)
+                            .frame(width: 27)
+                        NavigationLink(destination: BloomBoxHuskFolderView(
+                            root: target.root, current: target.folder,
+                            title: target.folder.lastPathComponent)) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(target.label).font(.subheadline.weight(.medium))
+                                Text(target.folder.lastPathComponent == game.directory.lastPathComponent
+                                     ? (english ? "Game root" : "Raíz del juego")
+                                     : target.folder.path.replacingOccurrences(
+                                        of: game.directory.path + "/", with: ""))
+                                    .font(.caption2).foregroundStyle(.secondary)
+                                    .lineLimit(2).truncationMode(.middle)
+                            }
+                        }
                         Button {
-                            choice = mode
+                            selected = target
                             picking = true
                         } label: {
-                            HStack(spacing: 13) {
-                                Image(systemName: mode.symbol).foregroundStyle(.green)
-                                    .frame(width: 29)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(mode.title).foregroundStyle(.primary)
-                                    Text(mode.subtitle).font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Image(systemName: "square.and.arrow.down")
-                                    .foregroundStyle(.secondary)
-                            }
-                        }.disabled(busy || hostBusy
-                                   || ((mode == .androidData || mode == .privateFiles)
-                                       && BloomBoxHuskDataImport.validPackage(game.packageID) == nil))
-                    }
-                }
-            }
-            Section(header: Text(english ? "Explore files" : "Explorar archivos")) {
-                NavigationLink(destination: BloomBoxHuskFolderView(
-                    root: game.directory, current: game.directory, title: game.name)) {
-                    Label(english ? "View game folder" : "Ver carpeta del juego", systemImage: "folder")
+                            Image(systemName: "square.and.arrow.down.fill")
+                                .font(.title3)
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel((english ? "Import into " : "Importar en ") + target.label)
+                        .disabled(busy)
+                    }.padding(.vertical, 3)
                 }
             }
             Section {
+                Toggle(english ? "Replace existing files" : "Reemplazar archivos existentes",
+                       isOn: $overwrite)
                 Text(english
-                     ? "Supports .obb, ZIP, and folders. Files are copied without overwriting existing game data."
-                     : "Admite .obb, ZIP y carpetas. Copia los datos sin sobrescribir archivos existentes.")
+                     ? "Advanced mode: you can import, rename and delete files in these folders. Replacing or deleting game data can break apps or saves. Husk and iOS container boundaries still apply."
+                     : "Modo avanzado: puedes importar, renombrar y borrar archivos. Reemplazar o borrar datos puede dañar apps y partidas. El acceso sigue limitado al contenedor de Husk.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
             if busy { Section { ProgressView(english ? "Importing…" : "Importando…") } }
         }
         .navigationTitle(english ? "Game files" : "Archivos del juego")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button { refreshVersion += 1 } label: { Image(systemName: "arrow.clockwise") }
+            }
+        }
         .fileImporter(isPresented: $picking, allowedContentTypes: [.item, .folder],
                       allowsMultipleSelection: true) { result in
             switch result {
@@ -1087,47 +1120,44 @@ private struct BloomBoxHuskGameView: View {
             case .failure(let error): notice = error.localizedDescription
             }
         }
-        .confirmationDialog(english ? "Import these files?" : "¿Importar estos archivos?",
+        .confirmationDialog(english ? "Import selected files?" : "¿Importar archivos?",
                             isPresented: $confirming, titleVisibility: .visible) {
-            Button(english ? "Import · Keep existing files" : "Importar · Conservar archivos existentes") {
+            Button(overwrite
+                   ? (english ? "Import and replace files" : "Importar y reemplazar")
+                   : (english ? "Import without replacing" : "Importar sin reemplazar")) {
                 importChosen()
             }
             Button(english ? "Cancel" : "Cancelar", role: .cancel) { chosen = [] }
         } message: {
-            let count = chosen.count
-            let dest = (try? BloomBoxHuskDataImport.destination(
-                for: game, mode: choice, sharedRoot: sharedRoot))?.path ?? "—"
-            Text("\(count) archivo(s) → \(dest)")
+            Text((selected?.folder.path ?? "—") +
+                 (overwrite
+                  ? (english ? "\nExisting files will be replaced." : "\nSe reemplazarán archivos existentes.")
+                  : (english ? "\nExisting files will be kept." : "\nSe conservarán los archivos existentes.")))
         }
-        .alert(english ? "Game data" : "Datos del juego",
+        .alert(english ? "Game files" : "Datos del juego",
                isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
             Button("OK") { notice = nil }
         } message: { Text(notice ?? "") }
     }
 
     private func importChosen() {
-        guard !busy, !hostBusy, !chosen.isEmpty else {
-            notice = english ? "Close Husk before importing." : "Cierra Husk antes de importar."
-            return
-        }
-        let selected = chosen
+        guard !busy, !chosen.isEmpty, let target = selected else { return }
+        let sources = chosen
         chosen = []
-        let mode = choice
-        let game = game
-        let shared = sharedRoot
         busy = true
         Task {
             do {
+                let replaced = overwrite
                 let result = try await Task.detached(priority: .userInitiated) {
-                    try BloomBoxHuskDataImport.install(selected, game: game, mode: mode,
-                                                       sharedRoot: shared)
+                    try BloomBoxHuskDataImport.installDirect(
+                        sources, into: target.folder, under: target.root,
+                        replaceExisting: replaced)
                 }.value
                 notice = english
-                    ? "Imported \(result.copied) files. Kept \(result.skipped) existing files."
-                    : "Se importaron \(result.copied) archivos. Se conservaron \(result.skipped) archivos existentes."
-            } catch {
-                notice = error.localizedDescription
-            }
+                    ? "Copied \(result.copied) files, skipped \(result.skipped)."
+                    : "Copiados \(result.copied) archivos; omitidos \(result.skipped)."
+                refreshVersion += 1
+            } catch { notice = error.localizedDescription }
             busy = false
         }
     }
