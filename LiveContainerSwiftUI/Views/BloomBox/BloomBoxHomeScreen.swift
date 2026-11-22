@@ -3012,7 +3012,7 @@ struct BloomBoxHomeScreen: View {
             categories: BloomBoxHomeAppPolicy.categoryNames(from: homeCategories),
             mediaTag: BloomBoxMediaTagStore.selection(
                 for: app.bundleIdentifier,
-                defaults: LCUtils.appGroupUserDefault)
+                defaults: LiveContainerPreferencesAdapter.defaults)
         )
         let actions = BloomBoxHomeContextMenu.Actions(
             launch: { requestLaunch(app) },
@@ -3039,7 +3039,7 @@ struct BloomBoxHomeScreen: View {
             newCategory: { categoryApp = key; categoryName = ""; addingCategory = true },
             setMediaTag: { tag in
                 BloomBoxMediaTagStore.set(tag, for: app.bundleIdentifier,
-                                           defaults: LCUtils.appGroupUserDefault)
+                                           defaults: LiveContainerPreferencesAdapter.defaults)
                 mediaTagsVersion &+= 1
             },
             toggleNetwork: {
