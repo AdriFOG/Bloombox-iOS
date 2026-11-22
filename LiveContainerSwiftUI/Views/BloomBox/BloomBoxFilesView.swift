@@ -929,162 +929,91 @@ private struct BloomBoxHuskGameView: View {
     let containerID: String
     let sharedRoot: URL?
 
-    @EnvironmentObject private var sharedModel: SharedModel
-    @State private var selected: BloomBoxHuskRuntimeScanner.Destination?
-    @State private var picking = false
-    @State private var confirming = false
-    @State private var chosen: [URL] = []
-    @State private var overwrite = false
-    @State private var busy = false
-    @State private var notice: String?
     @State private var refreshVersion = 0
-
     private var english: Bool { BloomBoxL10n.isEnglish }
-    private var folders: [BloomBoxHuskRuntimeScanner.Destination] {
+
+    /// The game's actual existing engine folder, never a made-up destination.
+    /// An ambiguous set of -data folders must not be guessed: the APK
+    /// container remains available for manual browsing in that case.
+    private var runtime: URL? {
         _ = refreshVersion
-        return BloomBoxHuskRuntimeScanner.destinations(
-            in: game.directory, package: BloomBoxHuskDataImport.validPackage(game.packageID),
-            sharedRoot: sharedRoot)
-    }
-    private var runtime: URL? { BloomBoxHuskRuntimeScanner.preferredRuntime(in: game.directory) }
-    private var huskRunning: Bool {
-        sharedModel.apps.first(where: { $0.bundleIdentifier == "com.husk.app" })?
-            .isAppRunning == true ||
-            MultitaskManager.isUsing(container: containerID)
+        return BloomBoxHuskRuntimeScanner.preferredRuntime(in: game.directory)
     }
 
     var body: some View {
         List {
             Section {
-                VStack(alignment: .leading, spacing: 7) {
-                    Text(game.name).font(.title3.bold())
-                    if let pkg = game.packageID {
-                        Text(pkg).font(.caption).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(game.name).font(.headline)
+                    if let package = game.packageID {
+                        Text(package).font(.caption).foregroundStyle(.secondary)
                     }
-                    if let runtime {
-                        Label((english ? "Engine folder: " : "Carpeta del motor: ") +
-                              runtime.lastPathComponent, systemImage: "checkmark.circle")
-                            .font(.subheadline).foregroundStyle(.green)
-                    } else {
-                        Label(english ? "Select an existing folder below."
-                                      : "Elige una carpeta existente abajo.",
-                              systemImage: "info.circle").font(.subheadline)
-                    }
-                    Text(english
-                         ? "Husk uses different folders for different game engines. BloomBox scans the existing folders instead of creating guessed paths."
-                         : "Husk guarda datos en distintas carpetas según el motor. BloomBox busca carpetas reales sin inventar rutas.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-                if huskRunning {
-                    Label(english ? "Husk is running. Editing files may corrupt a game."
-                                  : "Husk está abierto. Editar archivos podría dañar el juego.",
-                          systemImage: "exclamationmark.triangle")
-                        .font(.footnote).foregroundStyle(.orange)
-                }
+                }.padding(.vertical, 4)
             }
-            Section(header: Text(english ? "Existing folders" : "Carpetas encontradas")) {
-                if folders.isEmpty {
-                    Text(english ? "No accessible folders. Open Husk and retry."
-                                 : "No encontramos carpetas accesibles. Abre Husk y actualiza.")
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(folders) { target in
-                    HStack(spacing: 12) {
-                        Image(systemName: target.kind == "shared" ? "folder.fill.badge.person.crop"
-                                          : "folder.fill")
-                            .foregroundStyle(target.kind == "shared" ? Color.blue : Color.green)
-                            .frame(width: 27)
-                        NavigationLink(destination: BloomBoxHuskFolderView(
-                            root: target.root, current: target.folder,
-                            title: target.folder.lastPathComponent)) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(target.label).font(.subheadline.weight(.medium))
-                                Text(target.folder.lastPathComponent == game.directory.lastPathComponent
-                                     ? (english ? "Game root" : "Raíz del juego")
-                                     : target.folder.path.replacingOccurrences(
-                                        of: game.directory.path + "/", with: ""))
-                                    .font(.caption2).foregroundStyle(.secondary)
-                                    .lineLimit(2).truncationMode(.middle)
-                            }
-                        }
-                        Button {
-                            selected = target
-                            picking = true
-                        } label: {
-                            Image(systemName: "square.and.arrow.down.fill")
-                                .font(.title3)
-                        }
-                        .buttonStyle(.borderless)
-                        .accessibilityLabel((english ? "Import into " : "Importar en ") + target.label)
-                        .disabled(busy)
-                    }.padding(.vertical, 3)
-                }
-            }
+
             Section {
-                Toggle(english ? "Replace existing files" : "Reemplazar archivos existentes",
-                       isOn: $overwrite)
+                NavigationLink(destination: BloomBoxHuskFolderView(
+                    root: game.directory, current: game.directory,
+                    title: english ? "APK container" : "Contenedor del APK")) {
+                    HStack(spacing: 13) {
+                        Image(systemName: "shippingbox.fill")
+                            .font(.title3).foregroundStyle(.green).frame(width: 32)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(english ? "APK container" : "Contenedor del APK")
+                                .font(.headline)
+                            Text(english ? "All files of this app" : "Todos los archivos de esta app")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }.padding(.vertical, 9)
+                }
+
+                if let runtime {
+                    NavigationLink(destination: BloomBoxHuskFolderView(
+                        root: game.directory, current: runtime,
+                        title: runtime.lastPathComponent)) {
+                        HStack(spacing: 13) {
+                            Image(systemName: "folder.fill")
+                                .font(.title3).foregroundStyle(.green).frame(width: 32)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(english ? "Game data" : "Datos del juego")
+                                    .font(.headline)
+                                Text(runtime.lastPathComponent)
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }.padding(.vertical, 9)
+                    }
+                } else {
+                    HStack(spacing: 13) {
+                        Image(systemName: "folder.fill")
+                            .font(.title3).foregroundStyle(.secondary).frame(width: 32)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(english ? "Game data" : "Datos del juego")
+                                .font(.headline)
+                            Text(english
+                                 ? "No unique -data folder found; check the APK container"
+                                 : "No hay una carpeta -data identificable; revisa el contenedor")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }.padding(.vertical, 9)
+                }
+            } header: {
+                Text(english ? "Browse files" : "Explorar archivos")
+            } footer: {
                 Text(english
-                     ? "Advanced mode: you can import, rename and delete files in these folders. Replacing or deleting game data can break apps or saves. Husk and iOS container boundaries still apply."
-                     : "Modo avanzado: puedes importar, renombrar y borrar archivos. Reemplazar o borrar datos puede dañar apps y partidas. El acceso sigue limitado al contenedor de Husk.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                     ? "Open either folder to import, rename, create, replace or delete files. Changes can affect the game."
+                     : "Abre una carpeta para importar, renombrar, crear, reemplazar o borrar archivos. Los cambios pueden afectar al juego.")
             }
-            if busy { Section { ProgressView(english ? "Importing…" : "Importando…") } }
         }
         .navigationTitle(english ? "Game files" : "Archivos del juego")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button { refreshVersion += 1 } label: { Image(systemName: "arrow.clockwise") }
+                Button { refreshVersion += 1 } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .accessibilityLabel(english ? "Refresh folders" : "Actualizar carpetas")
             }
         }
-        .fileImporter(isPresented: $picking, allowedContentTypes: [.item, .folder],
-                      allowsMultipleSelection: true) { result in
-            switch result {
-            case .success(let urls):
-                chosen = urls
-                confirming = !urls.isEmpty
-            case .failure(let error): notice = error.localizedDescription
-            }
-        }
-        .confirmationDialog(english ? "Import selected files?" : "¿Importar archivos?",
-                            isPresented: $confirming, titleVisibility: .visible) {
-            Button(overwrite
-                   ? (english ? "Import and replace files" : "Importar y reemplazar")
-                   : (english ? "Import without replacing" : "Importar sin reemplazar")) {
-                importChosen()
-            }
-            Button(english ? "Cancel" : "Cancelar", role: .cancel) { chosen = [] }
-        } message: {
-            Text((selected?.folder.path ?? "—") +
-                 (overwrite
-                  ? (english ? "\nExisting files will be replaced." : "\nSe reemplazarán archivos existentes.")
-                  : (english ? "\nExisting files will be kept." : "\nSe conservarán los archivos existentes.")))
-        }
-        .alert(english ? "Game files" : "Datos del juego",
-               isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
-            Button("OK") { notice = nil }
-        } message: { Text(notice ?? "") }
-    }
-
-    private func importChosen() {
-        guard !busy, !chosen.isEmpty, let target = selected else { return }
-        let sources = chosen
-        chosen = []
-        busy = true
-        Task {
-            do {
-                let replaced = overwrite
-                let result = try await Task.detached(priority: .userInitiated) {
-                    try BloomBoxHuskDataImport.installDirect(
-                        sources, into: target.folder, under: target.root,
-                        replaceExisting: replaced)
-                }.value
-                notice = english
-                    ? "Copied \(result.copied) files, skipped \(result.skipped)."
-                    : "Copiados \(result.copied) archivos; omitidos \(result.skipped)."
-                refreshVersion += 1
-            } catch { notice = error.localizedDescription }
-            busy = false
-        }
+        .onAppear { refreshVersion += 1 }
     }
 }
