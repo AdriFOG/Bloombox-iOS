@@ -76,6 +76,10 @@ jobs:
         run: |
           swiftc LiveContainerSwiftUI/Views/BloomBox/BloomBoxFileStore.swift Tests/android-files/main.swift -o "$RUNNER_TEMP/bloombox-husk-path-tests"
           "$RUNNER_TEMP/bloombox-husk-path-tests"
+      - name: Test BloomBox 1 GB temporary storage cleanup and safety
+        run: |
+          swiftc LiveContainerSwiftUI/Views/BloomBox/BloomBoxFileStore.swift Tests/bloombox-temp-cleanup/main.swift -o "$RUNNER_TEMP/bloombox-temp-tests"
+          "$RUNNER_TEMP/bloombox-temp-tests"
       - name: Test Kirby installation animation, five-second hold and gift reveal
         run: python3 Tests/ipa-install-celebration/test_install_celebration.py
       - name: Test independent BloomBox Files engine and legacy data
