@@ -70,6 +70,8 @@ jobs:
         run: python3 Tests/ios-port-store/test_ios_ports.py
       - name: Test Husk Android Files UI and retired orange shortcut
         run: python3 Tests/android-files/test_android_files.py
+      - name: Test unified Files choices and iOS per-app data access
+        run: python3 Tests/ios-files/test_ios_files.py
       - name: Test Husk scoped storage and engine -data folders in Swift
         run: |
           swiftc LiveContainerSwiftUI/Views/BloomBox/BloomBoxFileStore.swift Tests/android-files/main.swift -o "$RUNNER_TEMP/bloombox-husk-path-tests"

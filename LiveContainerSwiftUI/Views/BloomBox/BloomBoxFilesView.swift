@@ -537,10 +537,12 @@ private struct BloomBoxHuskFolderView: View {
     let root: URL
     let current: URL
     let title: String
+    var sourceLabel = "Husk"
 
     @State private var entries: [URL] = []
     @State private var error: String?
     @State private var preview: BloomBoxFileSelection?
+    @State private var exporting: BloomBoxFileSelection?
     @State private var importing = false
     @State private var chosen: [URL] = []
     @State private var importConfirmation = false
@@ -559,7 +561,7 @@ private struct BloomBoxHuskFolderView: View {
     var body: some View {
         List {
             Section {
-                Label(english ? "Full file access · Husk" : "Acceso completo · Husk",
+                Label((english ? "File manager · " : "Gestor de archivos · ") + sourceLabel,
                       systemImage: "folder.fill.badge.gearshape")
                     .font(.footnote)
                 Text(english
@@ -578,7 +580,8 @@ private struct BloomBoxHuskFolderView: View {
                 Group {
                     if directory {
                         NavigationLink(destination: BloomBoxHuskFolderView(
-                            root: root, current: entry, title: entry.lastPathComponent)) {
+                            root: root, current: entry, title: entry.lastPathComponent,
+                            sourceLabel: sourceLabel)) {
                             Label(entry.lastPathComponent, systemImage: "folder.fill")
                         }
                     } else {
@@ -588,6 +591,12 @@ private struct BloomBoxHuskFolderView: View {
                     }
                 }
                 .contextMenu {
+                    if !directory {
+                        Button(english ? "Share / Export" : "Compartir / Exportar",
+                               systemImage: "square.and.arrow.up") {
+                            exporting = BloomBoxFileSelection(url: entry)
+                        }
+                    }
                     Button(english ? "Rename" : "Renombrar", systemImage: "pencil") {
                         renameItem = entry
                         newName = entry.lastPathComponent
@@ -632,6 +641,7 @@ private struct BloomBoxHuskFolderView: View {
         .onAppear(perform: reload)
         .refreshable { reload() }
         .sheet(item: $preview) { BloomBoxFilePreview(url: $0.url) }
+        .sheet(item: $exporting) { BloomBoxShareFile(url: $0.url) }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.item, .folder],
                       allowsMultipleSelection: true) { result in
             switch result {
@@ -673,7 +683,7 @@ private struct BloomBoxHuskFolderView: View {
             Text((deleteItem?.lastPathComponent ?? "") +
                  (english ? "\nThis cannot be undone." : "\nNo se puede deshacer."))
         }
-        .alert(english ? "Husk files" : "Archivos Husk",
+        .alert((english ? "Files · " : "Archivos · ") + sourceLabel,
                isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Button("OK") { message = nil }
         } message: { Text(message ?? "") }
@@ -1017,3 +1027,282 @@ private struct BloomBoxHuskGameView: View {
         .onAppear { refreshVersion += 1 }
     }
 }
+
+// MARK: - Two storage choices and a scoped file manager for iOS guest apps.
+
+struct BloomBoxFilesHubView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var ios = false
+    @State private var android = false
+    private var en: Bool { BloomBoxL10n.isEnglish }
+
+    var body: some View {
+        NavigationView {
+            List {
+                Section {
+                    Button { ios = true } label: {
+                        item("apple.logo", color: .gray,
+                             title: en ? "iOS Files" : "Archivos iOS",
+                             subtitle: en ? "Installed BloomBox apps and documents"
+                                          : "Apps instaladas y documentos de BloomBox")
+                    }
+                    .accessibilityIdentifier("bloombox.files.choose.ios")
+                    Button { android = true } label: {
+                        item("folder.fill", color: .green,
+                             title: en ? "Android Files" : "Archivos Android",
+                             subtitle: en ? "Husk games, data and OBB"
+                                          : "Juegos Husk, datos y OBB")
+                    }
+                    .accessibilityIdentifier("bloombox.files.choose.android")
+                } header: {
+                    Text(en ? "Choose storage" : "Elige el almacenamiento")
+                } footer: {
+                    Text(en ? "Only files accessible to BloomBox can be managed."
+                            : "Solo se pueden administrar archivos accesibles para BloomBox.")
+                }
+            }
+            .navigationTitle(en ? "Files" : "Archivos")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(en ? "Done" : "Listo") { dismiss() }
+                }
+            }
+        }
+        .navigationViewStyle(.stack)
+        .sheet(isPresented: $ios) { BloomBoxIOSFilesView() }
+        .sheet(isPresented: $android) { BloomBoxAndroidFilesView() }
+    }
+
+    private func item(_ systemImage: String, color: Color,
+                      title: String, subtitle: String) -> some View {
+        HStack(spacing: 15) {
+            Image(systemName: systemImage)
+                .font(.system(size: 26, weight: .medium))
+                .foregroundStyle(.white)
+                .frame(width: 55, height: 55)
+                .background(color, in: RoundedRectangle(cornerRadius: 15))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.headline).foregroundStyle(.primary)
+                Text(subtitle).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.right")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 9)
+        .contentShape(Rectangle())
+    }
+}
+
+/// Never create, adopt or mutate an app container just to browse. A secondary
+/// BloomBox profile only exposes its own previously created guest container.
+private enum BloomBoxIOSDataAccess {
+    enum Result {
+        case available(root: URL, name: String)
+        case unavailable(String)
+    }
+
+    static func resolve(_ app: LCAppModel, unlocked: Bool) -> Result {
+        let en = BloomBoxL10n.isEnglish
+        guard !app.appInfo.isLocked || unlocked else {
+            return .unavailable(en ? "Unlock this app first." : "Desbloquea esta app primero.")
+        }
+        let profile = BloomBoxProfileStore.active
+        let selected: String?
+        if profile.id == BloomBoxUserProfile.primaryID {
+            selected = app.uiDefaultDataFolder ?? app.appInfo.dataUUID
+                ?? app.uiContainers.first?.folderName
+        } else {
+            let key = (app.uiIsShared ? "shared/" : "private/")
+                + (app.appInfo.relativeBundlePath ?? "") + "/" + app.bundleIdentifier
+            selected = BloomBoxProfileStore.mapping(for: profile.id, appKey: key)
+                ?? app.uiContainers.first(where: {
+                    $0.name.hasPrefix("[BloomBox:\(profile.id)]")
+                        && $0.appIdentifier == app.bundleIdentifier
+                })?.folderName
+        }
+        guard let selected,
+              let container = app.uiContainers.first(where: {
+                  $0.folderName == selected &&
+                  ($0.appIdentifier == nil || $0.appIdentifier == app.bundleIdentifier)
+              }) else {
+            return .unavailable(en ? "No existing app data for this profile. Open the app first."
+                                   : "Este perfil todavía no tiene datos. Abre la app primero.")
+        }
+        let folder = container.folderName
+        guard !folder.isEmpty, folder != ".", folder != "..",
+              !folder.contains("/"), !folder.contains("\\") else {
+            return .unavailable(en ? "Invalid container name." : "Nombre de contenedor no válido.")
+        }
+        // External bookmarks and system app containers are intentionally out of scope.
+        let base = container.isShared ? LCPath.lcGroupDataPath : LCPath.dataPath
+        let expected = base.appendingPathComponent(folder, isDirectory: true).standardizedFileURL
+        let root = container.containerURL.standardizedFileURL
+        guard root.isFileURL, root.path == expected.path,
+              BloomBoxHuskFiles.isDirectory(root),
+              root.resolvingSymlinksInPath().path == expected.resolvingSymlinksInPath().path
+        else {
+            return .unavailable(en ? "This data folder is not available inside BloomBox."
+                                   : "Este contenedor no está accesible dentro de BloomBox.")
+        }
+        return .available(root: root, name: container.name)
+    }
+}
+
+struct BloomBoxIOSFilesView: View {
+    @EnvironmentObject private var sharedModel: SharedModel
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var showPersonal = false
+    @State private var revision = 0
+    @State private var query = ""
+    private var en: Bool { BloomBoxL10n.isEnglish }
+    private var apps: [LCAppModel] {
+        _ = revision
+        let unlocked = sharedModel.isHiddenAppUnlocked
+        return (sharedModel.apps + (unlocked ? sharedModel.hiddenApps : []))
+            .filter {
+                !($0.appInfo is BuiltInSideStoreAppInfo) &&
+                (!$0.appInfo.isLocked || unlocked) &&
+                (!$0.appInfo.isHidden || unlocked) &&
+                (query.isEmpty ||
+                 $0.displayName.localizedCaseInsensitiveContains(query) ||
+                 $0.bundleIdentifier.localizedCaseInsensitiveContains(query))
+            }
+            .sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
+    }
+
+    var body: some View {
+        NavigationView {
+            List {
+                Section {
+                    Button { showPersonal = true } label: {
+                        Label(en ? "BloomBox documents" : "Documentos de BloomBox",
+                              systemImage: "folder.fill")
+                    }
+                    .accessibilityIdentifier("bloombox.files.ios.documents")
+                } footer: {
+                    Text(en ? "Your saved documents are separate from guest app data."
+                            : "Tus documentos están separados de los datos de las apps.")
+                }
+                Section {
+                    if apps.isEmpty {
+                        Text(en ? "No apps available in this profile."
+                                : "No hay apps disponibles en este perfil.")
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(apps, id: \.self) { app in
+                        NavigationLink(destination: BloomBoxIOSAppFilesView(app: app)) {
+                            HStack(spacing: 12) {
+                                Image(systemName: "app.fill")
+                                    .foregroundStyle(.blue).frame(width: 34, height: 40)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(app.displayName).font(.headline)
+                                    Text(app.bundleIdentifier).font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                if app.isAppRunning {
+                                    Image(systemName: "circle.fill")
+                                        .font(.system(size: 8)).foregroundStyle(.orange)
+                                }
+                            }.padding(.vertical, 3)
+                        }
+                        .accessibilityIdentifier("bloombox.files.ios.app")
+                    }
+                } header: {
+                    Text(en ? "Installed apps" : "Apps instaladas")
+                } footer: {
+                    Text(en ? "Only containers from the current BloomBox profile are shown. Other iPhone apps cannot be accessed."
+                            : "Solo contenedores del perfil activo de BloomBox. No se accede a apps externas del iPhone.")
+                }
+            }
+            .searchable(text: $query, prompt: en ? "Find app" : "Buscar app")
+            .navigationTitle(en ? "iOS Files" : "Archivos iOS")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(en ? "Done" : "Listo") { dismiss() }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { revision += 1 } label: { Image(systemName: "arrow.clockwise") }
+                }
+            }
+        }
+        .navigationViewStyle(.stack)
+        .sheet(isPresented: $showPersonal) { BloomBoxFilesView() }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active { revision += 1 }
+        }
+    }
+}
+
+private struct BloomBoxIOSAppFilesView: View {
+    @ObservedObject var app: LCAppModel
+    @EnvironmentObject private var sharedModel: SharedModel
+    @State private var revision = 0
+    private var en: Bool { BloomBoxL10n.isEnglish }
+    private var status: BloomBoxIOSDataAccess.Result {
+        _ = revision
+        return BloomBoxIOSDataAccess.resolve(app, unlocked: sharedModel.isHiddenAppUnlocked)
+    }
+
+    var body: some View {
+        List {
+            Section {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(app.displayName).font(.headline)
+                    Text(app.bundleIdentifier).font(.caption).foregroundStyle(.secondary)
+                    if app.isAppRunning {
+                        Label(en ? "App is running: avoid editing its active files."
+                                 : "App abierta: evita modificar archivos en uso.",
+                              systemImage: "exclamationmark.triangle")
+                            .font(.footnote).foregroundStyle(.orange)
+                    }
+                }
+            }
+            switch status {
+            case .unavailable(let reason):
+                Section { Text(reason).foregroundStyle(.secondary) }
+            case .available(let root, let name):
+                Section {
+                    NavigationLink(destination: BloomBoxHuskFolderView(
+                        root: root, current: root,
+                        title: en ? "App data container" : "Contenedor de datos",
+                        sourceLabel: "iOS")) {
+                        Label(en ? "App data container" : "Contenedor de datos",
+                              systemImage: "shippingbox.fill")
+                    }
+                    for folder in ["Documents", "Library", "tmp"] {
+                        let url = root.appendingPathComponent(folder, isDirectory: true)
+                        if BloomBoxHuskFiles.isDirectory(url) {
+                            NavigationLink(destination: BloomBoxHuskFolderView(
+                                root: root, current: url, title: folder,
+                                sourceLabel: "iOS")) {
+                                Label(folder, systemImage: "folder.fill")
+                            }
+                        }
+                    }
+                } header: {
+                    Text(en ? "Existing folders" : "Carpetas existentes")
+                } footer: {
+                    Text(en ? "Open a folder to import, export, rename or delete files. Back up saves first."
+                            : "Abre una carpeta para importar, exportar, renombrar o borrar. Respalda tus datos.")
+                }
+                Section {
+                    Text((en ? "Active container: " : "Contenedor activo: ") + name)
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .navigationTitle(en ? "App files" : "Archivos de app")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button { revision += 1 } label: { Image(systemName: "arrow.clockwise") }
+            }
+        }
+    }
+}
+

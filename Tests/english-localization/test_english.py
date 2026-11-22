@@ -83,7 +83,7 @@ for expected in [
     "Text(BloomBoxL10n.t(section.title))",
     "name: BloomBoxL10n.t(title(key, appsByKey: appsByKey))",
     "Text(BloomBoxL10n.t(title(key)))",
-    'if key == Self.androidFilesKey { return englishUI ? "Android Files" : "Archivos Android" }',
+    'if key == Self.androidFilesKey { return englishUI ? "Files" : "Archivos" }',
     'englishUI ? "Page \\(index + 1)"',
 ]:
     assert expected in home, f"Home English runtime path lost: {expected}"

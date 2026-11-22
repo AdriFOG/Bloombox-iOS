@@ -92,7 +92,7 @@ assert "Never overwrite existing saves" not in files  # explicit user replacemen
 
 for expected in (
     'private static let androidFilesKey = "manzana:androidfiles"',
-    ".sheet(isPresented: $androidFilesPresented) { BloomBoxAndroidFilesView() }",
+    ".sheet(isPresented: $androidFilesPresented) { BloomBoxFilesHubView() }",
 ):
     assert expected in home, f"Missing Home shortcut: {expected}"
 
