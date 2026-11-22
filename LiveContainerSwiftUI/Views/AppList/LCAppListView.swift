@@ -407,6 +407,27 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     }
     
 
+    // A second, independently packaged LiveContainer instance only sees
+    // recognized shared media apps, never the game launcher or APK catalog.
+    private var mediaLauncher: some View {
+        BloomBoxMediaHome(apps: sortedApps) { app in
+            Task { await launchFromBloomBoxMedia(app) }
+        }
+    }
+
+    @MainActor
+    private func launchFromBloomBoxMedia(_ app: LCAppModel) async {
+        guard app.uiIsShared, BloomBoxMediaCatalog.kind(for: app) != nil else { return }
+        do {
+            // Reuse the normal LiveContainer runner; do not set GameBox flags
+            // or mutate the primary instance's saved launcher preferences.
+            try await app.launchFromLibrary(multitask: false)
+        } catch {
+            errorInfo = error.localizedDescription
+            errorShow = true
+        }
+    }
+
     // BloomBox Home is the only installed launcher; reserved is reusable.
     private var iosLauncher: some View {
         LiveBoardHomeScreen(apps: launcherApps,
@@ -550,7 +571,9 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         NavigationView {
             ZStack {
                 NavigationLink(destination: navigateTo, isActive: $isNavigationActive) { EmptyView() }.hidden()
-                if !manageLibrary && liveBoardMode == "gamebox" {
+                if BloomBoxMediaBuild.isEnabled {
+                    mediaLauncher
+                } else if !manageLibrary && liveBoardMode == "gamebox" {
                     if #available(iOS 16.0, *) {
                         gameBoxV2
                     } else {
