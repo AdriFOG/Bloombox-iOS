@@ -207,12 +207,12 @@ private struct BloomBoxHomeDockGlassSurface: ViewModifier {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         if reduceTransparency {
             content
-                .background(Color(white: 0.13).opacity(0.95), in: shape)
+                .background(Color(white: 0.28).opacity(0.88), in: shape)
                 .overlay(shape.strokeBorder(.white.opacity(0.28), lineWidth: 1))
         } else if #available(iOS 26.0, *) {
             content
-                .background(Color.black.opacity(0.16), in: shape)
-                .glassEffect(.regular.interactive(false), in: shape)
+                .background(Color.white.opacity(0.055), in: shape)
+                .glassEffect(.clear.interactive(false), in: shape)
                 .overlay(shape.strokeBorder(.white.opacity(0.24), lineWidth: 0.9))
         } else {
             content
