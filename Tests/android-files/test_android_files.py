@@ -56,7 +56,7 @@ for expected in (
     '"report.json"',
     'case "Unreal Engine": return "ue4-data"',
     'if engine == "Unity 6" { return "java-data" }',
-    'if engine == "Minecraft" { return "minecraft-data" }',
+    'case "Minecraft": return "minecraft-data"',
     'case "Python", "Java", "libGDX", "React Native", ".NET / Xamarin", "Flutter"',
     "existingPath(runtime,",
     'label: name + " · Android/data/files"',
