@@ -373,8 +373,10 @@ enum BloomBoxHuskRuntimeScanner {
               let contents = try? FileManager.default.contentsOfDirectory(
                 at: game, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey])
         else { return [] }
+        // The folder name, not a fixed list of engines, is the fallback.
+        // New Husk engines can introduce new <engine>-data folders.
         return contents.filter {
-            engineDirectories.contains($0.lastPathComponent) && readableFolder($0)
+            $0.lastPathComponent.lowercased().hasSuffix("-data") && readableFolder($0)
         }.sorted { $0.lastPathComponent.localizedStandardCompare(
             $1.lastPathComponent) == .orderedAscending }
     }
