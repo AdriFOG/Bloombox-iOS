@@ -269,29 +269,58 @@ struct LCAppSettingsView: View {
             
             Section {
                 NavigationLink {
-                    if let supportedLanguage = model.supportedLanguages {
+                    if let detectedLanguages = model.supportedLanguages {
+                        let manualLanguages = BloomBoxGuestLanguageCatalog.manualChoices
+                            .filter { !detectedLanguages.contains($0) }
                         Form {
                             Picker(selection: $model.uiSelectedLanguage) {
                                 Text("lc.common.auto".loc).tag("")
-                                
-                                ForEach(supportedLanguage, id:\.self) { language in
-                                    if language != "Base" {
+
+                                if !detectedLanguages.isEmpty {
+                                    Section {
+                                        ForEach(detectedLanguages, id: \.self) { language in
+                                            VStack(alignment: .leading) {
+                                                Text(Locale(identifier: language).localizedString(forIdentifier: language) ?? language)
+                                                Text("\(Locale.current.localizedString(forIdentifier: language) ?? language) · \(language)")
+                                                    .font(.footnote)
+                                                    .foregroundStyle(.gray)
+                                            }.tag(language)
+                                        }
+                                    } header: {
+                                        Text(BloomBoxL10n.isEnglish ? "Detected in app" : "Detectados en la app")
+                                    }
+                                }
+
+                                Section {
+                                    ForEach(manualLanguages, id: \.self) { language in
                                         VStack(alignment: .leading) {
                                             Text(Locale(identifier: language).localizedString(forIdentifier: language) ?? language)
-                                            Text("\(Locale.current.localizedString(forIdentifier: language) ?? "") - \(language)")
+                                            Text("\(Locale.current.localizedString(forIdentifier: language) ?? language) · \(language)")
                                                 .font(.footnote)
                                                 .foregroundStyle(.gray)
-                                        }
-                                        .tag(language)
+                                        }.tag(language)
                                     }
-
+                                    if !model.uiSelectedLanguage.isEmpty &&
+                                        !detectedLanguages.contains(model.uiSelectedLanguage) &&
+                                        !manualLanguages.contains(model.uiSelectedLanguage) {
+                                        Text(model.uiSelectedLanguage).tag(model.uiSelectedLanguage)
+                                    }
+                                } header: {
+                                    Text(BloomBoxL10n.isEnglish ? "Choose manually" : "Elegir manualmente")
                                 }
                             } label: {
                                 Text("lc.common.language".loc)
                             }
                             .pickerStyle(.inline)
-                        }
 
+                            Section {
+                                Text(BloomBoxL10n.isEnglish
+                                     ? "Close and reopen the app to apply the language. Manual selection requests a language; games using their own translation system may ignore it."
+                                     : "Cierra y vuelve a abrir la app para aplicar el idioma. La selección manual solicita ese idioma; los juegos con un sistema de traducción propio pueden ignorarlo.")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     } else {
                         Text("lc.common.loading".loc)
                             .onAppear() {
