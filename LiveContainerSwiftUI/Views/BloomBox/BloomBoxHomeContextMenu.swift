@@ -21,6 +21,7 @@ struct BloomBoxHomeContextMenu: View {
         let pageIndices: [Int]
         let folders: [Folder]
         let categories: [String]
+        let mediaTag: BloomBoxMediaTag
     }
 
     struct Actions {
@@ -39,6 +40,7 @@ struct BloomBoxHomeContextMenu: View {
         let removeFromFolder: () -> Void
         let setCategory: (String?) -> Void
         let newCategory: () -> Void
+        let setMediaTag: (BloomBoxMediaTag) -> Void
         let toggleNetwork: () -> Void
         let addTweak: () -> Void
         let settings: () -> Void
@@ -93,6 +95,21 @@ struct BloomBoxHomeContextMenu: View {
             }
             if state.isInFolder {
                 Button(state.englishUI ? "Move out of Folder" : "Sacar de carpeta", action: actions.removeFromFolder)
+            }
+        }
+        Menu(state.englishUI ? "Labels" : "Etiquetas", systemImage: "tag.fill") {
+            ForEach(BloomBoxMediaTag.allCases) { tag in
+                Button {
+                    actions.setMediaTag(tag)
+                } label: {
+                    Label(
+                        tag == .automatic ? (state.englishUI ? "Automatic" : "Automático")
+                        : tag == .music ? (state.englishUI ? "Music" : "Música")
+                        : tag == .video ? "Video"
+                        : (state.englishUI ? "Not media" : "No es multimedia"),
+                        systemImage: state.mediaTag == tag ? "checkmark.circle.fill" : "circle"
+                    )
+                }
             }
         }
         Menu(state.englishUI ? "Category" : "Categoría", systemImage: "tag") {
