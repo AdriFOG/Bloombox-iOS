@@ -62,7 +62,7 @@ jobs:
         run: python3 Tests/livecontainer-upstream-backport/test_contract.py
       - name: Test BloomBox guest language discovery and per-app JIT routing
         run: |
-          swiftc LiveContainerSwiftUI/Models/BloomBoxGuestLanguageCatalog.swift Tests/guest-language/main.swift -o "$RUNNER_TEMP/bloombox-language-tests"
+          swiftc -parse-as-library LiveContainerSwiftUI/Models/BloomBoxGuestLanguageCatalog.swift Tests/guest-language/main.swift -o "$RUNNER_TEMP/bloombox-language-tests"
           "$RUNNER_TEMP/bloombox-language-tests"
           python3 Tests/guest-language/test_contract.py
       - name: Test iOS Files IPA destination routing
