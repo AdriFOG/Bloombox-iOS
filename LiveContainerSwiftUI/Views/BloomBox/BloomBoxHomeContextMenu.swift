@@ -18,6 +18,7 @@ struct BloomBoxHomeContextMenu: View {
         let dockHasSpace: Bool
         let isInFolder: Bool
         let networkBlocked: Bool
+        let simultaneousAudioEnabled: Bool
         let pageIndices: [Int]
         let folders: [Folder]
         let categories: [String]
@@ -42,6 +43,7 @@ struct BloomBoxHomeContextMenu: View {
         let newCategory: () -> Void
         let setMediaTag: (BloomBoxMediaTag) -> Void
         let toggleNetwork: () -> Void
+        let toggleSimultaneousAudio: () -> Void
         let addTweak: () -> Void
         let settings: () -> Void
         let uninstall: () -> Void
@@ -122,6 +124,12 @@ struct BloomBoxHomeContextMenu: View {
     }
 
     @ViewBuilder private var guestActions: some View {
+        Button(state.simultaneousAudioEnabled
+               ? (state.englishUI ? "Disable simultaneous audio" : "Desactivar audio simultáneo")
+               : (state.englishUI ? "Allow simultaneous audio" : "Permitir audio simultáneo"),
+               systemImage: state.simultaneousAudioEnabled ? "speaker.wave.2.fill" : "speaker.wave.2",
+               action: actions.toggleSimultaneousAudio)
+            .disabled(state.isRunning || state.isSigning)
         Button(state.networkBlocked ? (state.englishUI ? "Allow Internet" : "Permitir Internet") : (state.englishUI ? "Block Internet (experimental)" : "Bloquear Internet (experimental)"),
                systemImage: state.networkBlocked ? "wifi" : "wifi.slash",
                action: actions.toggleNetwork)
