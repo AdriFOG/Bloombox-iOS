@@ -144,7 +144,11 @@ enum BloomBoxJITWorker {
                             jitReady = true
                             report("JIT ready: executable memory prepared and guest acknowledged.")
                         })
-                    report("JIT request completed.", done: true, success: true)
+                    if jitReady {
+                        report("JIT request completed.", done: true, success: true)
+                    } else {
+                        report("Debugger script ended without confirmed JIT memory handoff.", done: true)
+                    }
                 }
             } catch {
                 if jitReady {
