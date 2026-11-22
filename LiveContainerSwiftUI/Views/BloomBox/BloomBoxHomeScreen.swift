@@ -965,9 +965,9 @@ struct BloomBoxHomeScreen: View {
             })
         }
         .sheet(isPresented: $newsFilesPresented) {
-            BloomBoxFilesView()
+            BloomBoxFilesHubView()
         }
-        .sheet(isPresented: $androidFilesPresented) { BloomBoxAndroidFilesView() }
+        .sheet(isPresented: $androidFilesPresented) { BloomBoxFilesHubView() }
         .sheet(isPresented: $newsRAMPresented, onDismiss: {
             if newsOpenSideStoreAfterRAMDismiss {
                 newsOpenSideStoreAfterRAMDismiss = false
@@ -3632,7 +3632,7 @@ struct BloomBoxHomeScreen: View {
         if key == Self.tweakStoreKey { return "Tweak Store" }
         if key == Self.appStoreKey { return "App Store" }
         if key == Self.portStoreKey { return "ApkStore" }
-        if key == Self.androidFilesKey { return englishUI ? "Android Files" : "Archivos Android" }
+        if key == Self.androidFilesKey { return englishUI ? "Files" : "Archivos" }
         if key == Self.modulesKey { return "Módulos" }
         if key == Self.themesKey { return "Temas" }
         if let folder = layout.folders.first(where: { $0.id == key }) { return folder.name }

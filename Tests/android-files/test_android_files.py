@@ -71,7 +71,7 @@ for expected in (
     assert expected in store or expected in files, f"Missing engine-scanning contract: {expected}"
 
 # Two direct entries only, without redundant Android/data/obb subfolder cards.
-game_ui = files.split("private struct BloomBoxHuskGameView: View {", 1)[1]
+game_ui = files.split("private struct BloomBoxHuskGameView: View {", 1)[1].split("// MARK: - Two storage choices", 1)[0]
 assert game_ui.count("NavigationLink(destination: BloomBoxHuskFolderView(") == 2
 assert "ForEach(folders)" not in game_ui
 assert "Existing folders" not in game_ui
@@ -92,7 +92,7 @@ assert "Never overwrite existing saves" not in files  # explicit user replacemen
 
 for expected in (
     'private static let androidFilesKey = "manzana:androidfiles"',
-    ".sheet(isPresented: $androidFilesPresented) { BloomBoxAndroidFilesView() }",
+    ".sheet(isPresented: $androidFilesPresented) { BloomBoxFilesHubView() }",
 ):
     assert expected in home, f"Missing Home shortcut: {expected}"
 

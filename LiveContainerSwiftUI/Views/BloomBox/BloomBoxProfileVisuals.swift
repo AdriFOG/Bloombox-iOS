@@ -279,10 +279,9 @@ struct BloomBoxProfileSwitcherWidget: View {
         }
         .padding(11)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            Color(red: 0.10, green: 0.11, blue: 0.22).opacity(0.97),
-            in: RoundedRectangle(cornerRadius: 21, style: .continuous)
-        )
+        // Share the same transparent material as the other News cards.
+        .background(.ultraThinMaterial,
+                    in: RoundedRectangle(cornerRadius: 21, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 21, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.8)
