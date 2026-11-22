@@ -474,3 +474,88 @@ enum BloomBoxHuskRuntimeScanner {
         return result
     }
 }
+
+
+/// Recovers only BloomBox-owned, abandoned staging files.
+/// Never walks Documents, Husk's data/OBB, app containers or unknown system tmp files.
+enum BloomBoxTemporaryStorage {
+    private struct Artifact {
+        let url: URL
+        let bytes: Int64
+        let lastModified: Date
+    }
+
+    private static func artifact(at url: URL, using fm: FileManager) -> Artifact? {
+        let keys: Set<URLResourceKey> = [
+            .isSymbolicLinkKey, .isDirectoryKey, .isRegularFileKey,
+            .fileSizeKey, .contentModificationDateKey
+        ]
+        guard let values = try? url.resourceValues(forKeys: keys),
+              values.isSymbolicLink != true else { return nil }
+        var bytes: Int64 = values.isRegularFile == true ? Int64(values.fileSize ?? 0) : 0
+        var latest = values.contentModificationDate ?? Date.distantFuture
+        if values.isDirectory == true {
+            guard let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: Array(keys),
+                                                 options: [.skipsHiddenFiles]) else { return nil }
+            for case let child as URL in enumerator {
+                guard let info = try? child.resourceValues(forKeys: keys),
+                      info.isSymbolicLink != true else { return nil }
+                if info.isRegularFile == true {
+                    bytes += Int64(info.fileSize ?? 0)
+                }
+                if let modified = info.contentModificationDate, modified > latest {
+                    latest = modified
+                }
+            }
+        }
+        return Artifact(url: url, bytes: bytes, lastModified: latest)
+    }
+
+    /// Check on launch/foreground. Young files stay untouched even above the
+    /// limit because an installation or SideStore handoff may still be active.
+    @discardableResult
+    static func cleanupIfNeeded(root: URL = FileManager.default.temporaryDirectory,
+                                thresholdBytes: Int64 = 1_000_000_000,
+                                minimumAge: TimeInterval = 6 * 60 * 60,
+                                now: Date = Date()) -> Int64 {
+        let fm = FileManager.default
+        let rootURL = root.standardizedFileURL
+        guard let items = try? fm.contentsOfDirectory(at: rootURL,
+                    includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+                    options: [.skipsHiddenFiles]) else { return 0 }
+
+        var candidates: [Artifact] = []
+        for item in items {
+            let name = item.lastPathComponent
+            if name == "BloomBoxSideStoreHandoff" {
+                guard let handoffs = try? fm.contentsOfDirectory(
+                    at: item, includingPropertiesForKeys: [.isSymbolicLinkKey],
+                    options: [.skipsHiddenFiles]) else { continue }
+                for ipa in handoffs where ipa.pathExtension.lowercased() == "ipa" {
+                    if let candidate = artifact(at: ipa, using: fm) { candidates.append(candidate) }
+                }
+            } else if name.hasPrefix("BloomBoxInstall-") ||
+                        name.hasPrefix("BloomBox-Husk-Import-") ||
+                        (name.hasPrefix("BloomBox-GetMoreRam-") && item.pathExtension == "ipa") {
+                if let candidate = artifact(at: item, using: fm) { candidates.append(candidate) }
+            }
+        }
+        var total = candidates.reduce(Int64(0)) { $0 + $1.bytes }
+        guard total > thresholdBytes else { return 0 }
+        var removed: Int64 = 0
+        for candidate in candidates.sorted(by: { $0.lastModified < $1.lastModified }) {
+            if total <= thresholdBytes { break }
+            guard now.timeIntervalSince(candidate.lastModified) >= minimumAge else { continue }
+            do {
+                try fm.removeItem(at: candidate.url)
+                total -= candidate.bytes
+                removed += candidate.bytes
+            } catch {
+                NSLog("BloomBox temp cleanup skipped %@: %@", candidate.url.lastPathComponent,
+                      error.localizedDescription)
+            }
+        }
+        if removed > 0 { NSLog("BloomBox cleared %lld bytes of abandoned temporary files", removed) }
+        return removed
+    }
+}
