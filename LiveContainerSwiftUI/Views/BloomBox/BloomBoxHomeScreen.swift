@@ -2898,8 +2898,13 @@ struct BloomBoxHomeScreen: View {
             if layout.hidden.contains(key) {
                 Button(englishUI ? "Add to Home Screen" : "Añadir al escritorio",
                        systemImage: "plus.circle") {
-                    layout.place(key, on: max(0, page - 1))
+                    // App Library is after the last Home page: restore onto a
+                    // visible page, never create a stray page behind Library.
+                    let target = (page > 0 && page <= layout.pages.count)
+                        ? page - 1 : (visiblePageIndices.first ?? 0)
+                    layout.place(key, on: target)
                     reconcile()
+                    page = target + 1
                 }
             } else {
                 Button(englishUI ? "Remove from Home Screen" : "Quitar del escritorio",
