@@ -318,3 +318,157 @@ enum BloomBoxHuskPathPolicy {
         }
     }
 }
+
+
+/// Discovers Husk's actual per-engine data folders; never creates a guessed
+/// "java-data", "sdcard", "obb", or "Android/data" directory during discovery.
+/// Husk/src/app/Husk/TechnicalDetails.swift is the source of folder naming.
+enum BloomBoxHuskRuntimeScanner {
+    struct Destination: Identifiable {
+        let id: String
+        let label: String
+        let folder: URL
+        let root: URL
+        let kind: String
+    }
+
+    static let engineDirectories = [
+        "java-data", "ue4-data", "unity-data", "cocos-data",
+        "minecraft-data", "sdl-data", "gta-data", "godot-data",
+        "na-data", "gm-data", "flutter-data", "classic-data", "web"
+    ]
+
+    private static func readableFolder(_ url: URL) -> Bool {
+        let flags = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        return flags?.isDirectory == true && flags?.isSymbolicLink != true &&
+            FileManager.default.isReadableFile(atPath: url.path)
+    }
+
+    static func existingChild(_ parent: URL, named name: String) -> URL? {
+        guard readableFolder(parent), !name.isEmpty,
+              !name.contains("/"), name != ".", name != "..",
+              let items = try? FileManager.default.contentsOfDirectory(
+                at: parent, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        else { return nil }
+        // Exact spelling takes precedence, then case-insensitive lookup.
+        let matching = items.first(where: { $0.lastPathComponent == name })
+            ?? items.first(where: {
+                $0.lastPathComponent.caseInsensitiveCompare(name) == .orderedSame
+            })
+        guard let matching, readableFolder(matching) else { return nil }
+        return matching
+    }
+
+    static func existingPath(_ root: URL, _ components: [String]) -> URL? {
+        var cursor = root
+        for name in components {
+            guard let next = existingChild(cursor, named: name) else { return nil }
+            cursor = next
+        }
+        return readableFolder(cursor) ? cursor : nil
+    }
+
+    static func runtimeFolders(in game: URL) -> [URL] {
+        guard readableFolder(game),
+              let contents = try? FileManager.default.contentsOfDirectory(
+                at: game, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        else { return [] }
+        return contents.filter {
+            engineDirectories.contains($0.lastPathComponent) && readableFolder($0)
+        }.sorted { $0.lastPathComponent.localizedStandardCompare(
+            $1.lastPathComponent) == .orderedAscending }
+    }
+
+    /// Same broad engine selection as Husk's TLReport.nativeEngine.
+    /// Never trust the report alone as evidence of an existing folder.
+    static func reportedFolder(in game: URL) -> String? {
+        let url = game.appendingPathComponent("report.json")
+        guard let raw = try? Data(contentsOf: url),
+              let json = try? JSONSerialization.jsonObject(with: raw) as? [String: Any]
+        else { return nil }
+        let engine = json["engine"] as? String ?? ""
+        let abis = json["abis"] as? [String] ?? []
+        let dexCount = json["dexCount"] as? Int ?? 0
+        let libraries = json["libraries"] as? [[String: Any]] ?? []
+        if abis.isEmpty && dexCount > 0 { return "java-data" }
+        if engine == "Unity 6" { return "java-data" }
+        if engine.hasPrefix("Unity") { return "unity-data" }
+        if engine == "Cocos" {
+            return libraries.contains(where: { ($0["name"] as? String) == "libfmod.so" })
+                ? "cocos-data" : "java-data"
+        }
+        switch engine {
+        case "Minecraft": return "minecraft-data"
+        case "SDL":
+            return libraries.contains(where: {
+                ($0["name"] as? String ?? "").hasPrefix("libdxvk")
+            }) ? "sdl-data" : "java-data"
+        case "Python", "Java", "libGDX", "React Native", ".NET / Xamarin", "Flutter":
+            return "java-data"
+        case "Unreal Engine": return "ue4-data"
+        case "Rockstar": return "gta-data"
+        case "Godot": return "godot-data"
+        case "NativeActivity": return "na-data"
+        case "GameMaker": return "gm-data"
+        default: return dexCount > 0 ? "java-data" : nil
+        }
+    }
+
+    static func preferredRuntime(in game: URL) -> URL? {
+        let found = runtimeFolders(in: game)
+        guard !found.isEmpty else { return nil }
+        if let reported = reportedFolder(in: game),
+           let exact = found.first(where: { $0.lastPathComponent == reported }) {
+            return exact
+        }
+        return found.count == 1 ? found[0] : nil
+    }
+
+    /// Only folders that are already present on disk are offered as import
+    /// destinations. This preserves runtime layouts and avoids fake trees.
+    static func destinations(in game: URL, package: String?,
+                             sharedRoot: URL?) -> [Destination] {
+        guard readableFolder(game) else { return [] }
+        var result: [Destination] = []
+        var seen = Set<String>()
+        func add(_ url: URL?, label: String, kind: String, root: URL) {
+            guard let url, readableFolder(url), seen.insert(url.standardizedFileURL.path).inserted
+            else { return }
+            result.append(Destination(id: url.standardizedFileURL.path, label: label,
+                                      folder: url, root: root, kind: kind))
+        }
+        let preferred = preferredRuntime(in: game)
+        let folders = runtimeFolders(in: game)
+        let sorted = folders.sorted {
+            if $0 == preferred { return true }
+            if $1 == preferred { return false }
+            return $0.lastPathComponent < $1.lastPathComponent
+        }
+        for runtime in sorted {
+            let name = runtime.lastPathComponent
+            let external = existingPath(runtime, ["sdcard", "Android"])
+            if let package {
+                add(existingPath(runtime, ["sdcard", "Android", "data", package, "files"]),
+                    label: name + " · Android/data/files", kind: "external-files", root: game)
+                add(existingPath(runtime, ["sdcard", "Android", "data", package]),
+                    label: name + " · Android/data", kind: "data", root: game)
+                add(existingPath(runtime, ["sdcard", "Android", "obb", package]),
+                    label: name + " · Android/obb", kind: "obb", root: game)
+            }
+            add(existingPath(external ?? runtime, external == nil ?
+                             ["sdcard", "Android", "data"] : ["data"]),
+                label: name + " · Android/data (sin paquete)", kind: "data-parent", root: game)
+            add(existingPath(runtime, ["files"]),
+                label: name + " · /data/data/files", kind: "private", root: game)
+            add(existingPath(runtime, ["sdcard"]),
+                label: name + " · sdcard", kind: "sdcard", root: game)
+            add(runtime, label: name + " · raíz del motor", kind: "runtime", root: game)
+        }
+        add(existingPath(game, ["obb"]), label: "obb · junto al APK (alternativa Husk)",
+            kind: "fallback-obb", root: game)
+        add(sharedRoot, label: "Almacenamiento compartido · /sdcard",
+            kind: "shared", root: sharedRoot ?? game)
+        add(game, label: "Carpeta completa del juego", kind: "game", root: game)
+        return result
+    }
+}
