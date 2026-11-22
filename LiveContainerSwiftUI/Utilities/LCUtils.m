@@ -362,7 +362,7 @@
     NSMutableDictionary *infoDict = [NSMutableDictionary dictionaryWithContentsOfURL:infoPath];
     if (!infoDict) return nil;
 
-    infoDict[@"CFBundleDisplayName"] = newBundleName;
+    infoDict[@"CFBundleDisplayName"] = [newBundleName isEqualToString:@"BloomBoxMedia"] ? @"BloomBox Media" : newBundleName;
     infoDict[@"CFBundleName"] = newBundleName;
     infoDict[@"CFBundleIdentifier"] = [NSString stringWithFormat:@"com.kdt.%@", newBundleName];
     infoDict[@"CFBundleURLTypes"][0][@"CFBundleURLSchemes"][0] = [newBundleName lowercaseString];
