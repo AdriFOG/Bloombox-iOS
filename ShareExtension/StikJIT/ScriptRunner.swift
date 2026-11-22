@@ -12,15 +12,19 @@ final class ScriptRunner {
     private let debugProxy: OpaquePointer
     private let script: StikJIT.Script
     private let progress: (String) -> Void
+    private let onJITReady: () -> Void
+    private var preparedRegionAddress: UInt64?
+    private var jitReadyReported = false
     private var context: JSContext?
     private var didDetach = false
     private var executionError: StikJITError?
 
-    init(targetPID: Int32, debugProxy: OpaquePointer, script: StikJIT.Script, progress: @escaping (String) -> Void) {
+    init(targetPID: Int32, debugProxy: OpaquePointer, script: StikJIT.Script, progress: @escaping (String) -> Void, onJITReady: @escaping () -> Void = {}) {
         self.targetPID = targetPID
         self.debugProxy = debugProxy
         self.script = script
         self.progress = progress
+        self.onJITReady = onJITReady
     }
 
     func run() throws {
@@ -78,6 +82,19 @@ final class ScriptRunner {
         guard let response else { return "" }
         defer { idevice_string_free(response) }
         let reply = String(cString: response)
+        // A native-only handshake: the JIT region must have been blessed by
+        // debugserver, AND the guest's X0 register must acknowledge its address.
+        // Never infer readiness from a script log, debugger attach, or a timer.
+        if reply == "OK", let preparedRegionAddress, !jitReadyReported {
+            let encodedAddress = withUnsafeBytes(of: preparedRegionAddress.littleEndian) {
+                $0.map { String(format: "%02x", $0) }.joined()
+            }
+            if command.lowercased().hasPrefix("p0=\(encodedAddress);thread:") {
+                jitReadyReported = true
+                progress("JIT memory handoff acknowledged by guest debugger.")
+                onJITReady()
+            }
+        }
         if command == "D" && reply == "OK" { didDetach = true }
         if command.hasPrefix("vAttach;") { progress("Debugger attach reply: " + reply) }
         return reply
@@ -119,6 +136,7 @@ final class ScriptRunner {
             }
         }
 
+        preparedRegionAddress = address
         progress("Blessed \(pageCount) JIT page(s) at 0x\(String(address, radix: 16))")
         return "OK"
     }
