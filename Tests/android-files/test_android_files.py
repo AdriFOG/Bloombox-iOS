@@ -26,9 +26,11 @@ for expected in (
     "https://itslevii.dev/docs/install",
     "bloombox.files.android.entry",
     "private struct BloomBoxHuskGameView",
-    "BloomBoxHuskRuntimeScanner.destinations(",
     "BloomBoxHuskRuntimeScanner.preferredRuntime(",
-    "Elige una carpeta existente abajo.",
+    '"Contenedor del APK"',
+    '"Datos del juego"',
+    '"Todos los archivos de esta app"',
+    '"No hay una carpeta -data identificable; revisa el contenedor"',
     "private struct BloomBoxHuskFolderView",
     "createFolder()",
     "renameSelected()",
@@ -37,7 +39,6 @@ for expected in (
     "FileManager.default.moveItem(at: item, to: renamed)",
     "FileManager.default.removeItem(at: item)",
     "BloomBoxHuskDataImport.installDirect(",
-    "replaceExisting: replaced",
     "replaceExisting: replace",
     "startAccessingSecurityScopedResource()",
     "stopAccessingSecurityScopedResource()",
@@ -59,6 +60,7 @@ for expected in (
     'case "Minecraft": return "minecraft-data"',
     'case "Python", "Java", "libGDX", "React Native", ".NET / Xamarin", "Flutter"',
     "existingPath(runtime,",
+    'lastPathComponent.lowercased().hasSuffix("-data")',
     'label: name + " · Android/data/files"',
     'label: name + " · Android/data"',
     'label: name + " · Android/obb"',
@@ -67,6 +69,16 @@ for expected in (
     "if isSymbolicLink(current)",
 ):
     assert expected in store or expected in files, f"Missing engine-scanning contract: {expected}"
+
+# Two direct entries only, without redundant Android/data/obb subfolder cards.
+game_ui = files.split("private struct BloomBoxHuskGameView: View {", 1)[1]
+assert game_ui.count("NavigationLink(destination: BloomBoxHuskFolderView(") == 2
+assert "ForEach(folders)" not in game_ui
+assert "Existing folders" not in game_ui
+assert "Carpetas encontradas" not in game_ui
+assert ".fileImporter(" not in game_ui  # Import from inside the selected folder
+assert 'current: game.directory' in game_ui
+assert 'current: runtime' in game_ui
 
 # The previous importer constructed fake gameRoot/obb and gameRoot/sdcard
 # paths regardless of engine. This is gone; only real folders can be targeted.
@@ -89,4 +101,4 @@ assert 'appendingPathComponent("BloomBox Files"' in store
 assert 'appendingPathComponent("Manzana Files"' in store
 assert "typealias ManzanaFilesView = BloomBoxFilesView" in files
 
-print("PASS: Husk detects engine folders, imports to existing destinations, and exposes editing controls")
+print("PASS: Husk offers exactly two game file entrances, dynamic -data, and scoped editing")
