@@ -102,7 +102,8 @@ public enum StikJIT {
                                  script: Script = .universal,
                                  forceScript: Bool = false,
                                  preparationProgress: @escaping (PreparationStage) -> Void = { _ in },
-                                 progress: @escaping (String) -> Void = { _ in }) throws {
+                                 progress: @escaping (String) -> Void = { _ in },
+                                 onJITReady: @escaping () -> Void = {}) throws {
         let readiness = prepareDevice(pairingFile: pairingFile,
                                       paths: ddiPaths,
                                       configuration: configuration,
@@ -120,7 +121,8 @@ public enum StikJIT {
                               script: script,
                               forceScript: forceScript,
                               txmPresence: TXMPresence(isPresent: securityState.isTXMPresent),
-                              progress: progress)
+                              progress: progress,
+                              onJITReady: onJITReady)
     }
 
     public static var isTXMPresent: Bool? {
