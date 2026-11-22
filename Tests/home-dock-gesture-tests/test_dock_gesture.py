@@ -17,7 +17,8 @@ assert 'padding(.bottom, -22)' not in home, "Negative Dock padding makes its gla
 assert "let panelWidth = max(240, width - 24)" in home
 assert "let cellWidth = (panelWidth - 16) / 4" in home
 assert "private struct BloomBoxHomeDockGlassSurface: ViewModifier" in visuals
-assert ".glassEffect(.regular.interactive(false), in: shape)" in visuals
+assert ".glassEffect(.clear.interactive(false), in: shape)" in visuals
+assert ".background(Color.black.opacity(0.16), in: shape)" not in visuals, "Dock must not be darker than other glass surfaces"
 
 assert '"BloomBoxDeferBottomSystemGestures"' in launcher
 assert "private var protectBottomGestures = true" in launcher

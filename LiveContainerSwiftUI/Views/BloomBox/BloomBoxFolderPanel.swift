@@ -16,7 +16,7 @@ struct BloomBoxFolderPanel<Icon: View>: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.12)
+            Color.black.opacity(0.045)
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture(perform: close)

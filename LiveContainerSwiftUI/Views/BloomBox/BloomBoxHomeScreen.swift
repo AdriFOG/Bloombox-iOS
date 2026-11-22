@@ -369,13 +369,14 @@ struct BloomBoxHomeScreen: View {
         GeometryReader { geometry in
             ZStack(alignment: .top) {
                 background
-                    .blur(radius: (searching || page == libraryPageIndex) ? 14 : 0)
+                    .blur(radius: openFolder != nil ? 24 : ((searching || page == libraryPageIndex) ? 14 : 0))
                     .animation(reduceMotion ? nil : .easeInOut(duration: 0.38), value: page == libraryPageIndex)
                 // Dock belongs to each Home page, not a floating overlay.
                 // Swiping to News or App Library moves the Dock away with Home.
                 TabView(selection: $page) {
                     BloomBoxNewsPage(openSettings: { desktopSettings = true },
                                      openGameBox: openGameBox,
+                                     openInstall: openInstall,
                                      gameNames: newsGameNames,
                                      openShortcut: { shortcut in
                                          switch shortcut {
@@ -605,6 +606,19 @@ struct BloomBoxHomeScreen: View {
                 }
                 page = navigation.safePage
                 startBloomBoxAlive()
+                // A GameBox APK selection returns to Home, which owns Husk's
+                // orientation prompt, JIT gate and native launch implementation.
+                let preferences = LiveContainerPreferencesAdapter.defaults
+                if let pendingKey = preferences.string(forKey: "BloomBoxPendingHuskLaunchKey") {
+                    preferences.removeObject(forKey: "BloomBoxPendingHuskLaunchKey")
+                    if huskGames.contains(where: { $0.key == pendingKey }) {
+                        DispatchQueue.main.async { launchLibraryKey(pendingKey) }
+                    } else {
+                        huskError = englishUI
+                            ? "This Android app is no longer installed in the active profile."
+                            : "Esta app Android ya no está instalada en el perfil activo."
+                    }
+                }
             }
             .task {
                 // Noncritical popups and status notices are intentionally quiet
@@ -923,13 +937,23 @@ struct BloomBoxHomeScreen: View {
         }
         .sheet(item: $expandedLibraryCategory) { section in
             NavigationView {
-                ScrollView {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 18), count: 4), spacing: 24) {
-                        ForEach(section.keys, id: \.self) { key in
-                            libraryLaunchIcon(key, size: 64, label: true)
+                ZStack {
+                    // The App Library category is a full-screen folder.
+                    // Its backdrop follows the actual user wallpaper, not
+                    // the previous opaque system-gray sheet background.
+                    wallpaperBackground(paused: true)
+                        .blur(radius: 28)
+                        .overlay(Color.black.opacity(0.18))
+                        .ignoresSafeArea()
+                        .accessibilityHidden(true)
+                    ScrollView {
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 18), count: 4), spacing: 24) {
+                            ForEach(section.keys, id: \.self) { key in
+                                libraryLaunchIcon(key, size: 64, label: true)
+                            }
                         }
+                        .padding(20)
                     }
-                    .padding(20)
                 }
                 .navigationTitle(BloomBoxL10n.t(section.title))
                 .navigationBarTitleDisplayMode(.inline)

@@ -6,6 +6,7 @@ import CryptoKit
 struct BloomBoxNewsPage: View {
     let openSettings: () -> Void
     var openGameBox: () -> Void = {}
+    var openInstall: () -> Void = {}
     var gameNames: [String: String] = [:]
     var singleWidget: String? = nil
 
@@ -31,6 +32,14 @@ struct BloomBoxNewsPage: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 4)
+                    Button(action: openInstall) {
+                        Image(systemName: "square.and.arrow.down.fill")
+                            .font(.system(size: 18, weight: .medium))
+                            .frame(width: 44, height: 44)
+                            .background(.thinMaterial, in: Circle())
+                    }
+                    .accessibilityLabel(english ? "Install APK, IPA or TIPA" : "Instalar APK, IPA o TIPA")
+                    .accessibilityIdentifier("bloombox.news.install")
                     Button(action: openSettings) {
                         Image(systemName: "paintbrush.pointed.fill")
                             .font(.system(size: 18, weight: .medium))

@@ -109,6 +109,9 @@ struct BloomBoxGameBoxV2Screen: View {
     @State private var showSafeGraphicsAlert = false
     @AppStorage("BloomBoxGameBoxV2Favorites", store: LiveContainerPreferencesAdapter.defaults)
     private var favoritesJSON = "[]"
+    @AppStorage("BloomBoxGameBoxV2HiddenApps", store: LiveContainerPreferencesAdapter.defaults)
+    private var hiddenAppsJSON = "[]"
+    @State private var showHiddenApps = false
     @AppStorage("LiveBoardReduceMotion", store: LiveContainerPreferencesAdapter.defaults)
     private var localReduceMotion = false
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
@@ -165,11 +168,26 @@ struct BloomBoxGameBoxV2Screen: View {
     private var favorites: Set<String> {
         Set(BloomBoxHomeAppPolicy.favorites(from: favoritesJSON))
     }
+    private var hiddenIDs: Set<String> {
+        guard let data = hiddenAppsJSON.data(using: .utf8),
+              let saved = try? JSONDecoder().decode([String].self, from: data) else { return [] }
+        return Set(saved)
+    }
+    private func setHidden(_ app: BloomBoxGameBoxEntry, hidden: Bool) {
+        var values = hiddenIDs
+        if hidden { values.insert(app.id) } else { values.remove(app.id) }
+        guard let data = try? JSONEncoder().encode(values.sorted()),
+              let json = String(data: data, encoding: .utf8) else { return }
+        hiddenAppsJSON = json
+        if hidden && focusedKey == app.id { focusedKey = nil }
+    }
     private func key(_ app: BloomBoxGameBoxEntry) -> String { app.id }
     private func title(_ app: BloomBoxGameBoxEntry) -> String { app.name }
 
     private var visibleApps: [BloomBoxGameBoxEntry] {
-        let indexed = Array(entries.enumerated())
+        let indexed = Array(entries.enumerated()).filter {
+            showHiddenApps || !hiddenIDs.contains(key($0.element))
+        }
         return indexed.sorted { lhs, rhs in
             let favoriteL = favorites.contains(key(lhs.element))
             let favoriteR = favorites.contains(key(rhs.element))
@@ -487,6 +505,14 @@ struct BloomBoxGameBoxV2Screen: View {
             )
         }
         .confirmationDialog("GameBox", isPresented: $quickMenu) {
+            if !hiddenIDs.isEmpty {
+                Button(BloomBoxL10n.isEnglish
+                       ? (showHiddenApps ? "Hide hidden apps" : "Show hidden apps")
+                       : (showHiddenApps ? "Ocultar apps escondidas" : "Mostrar apps escondidas"),
+                       systemImage: showHiddenApps ? "eye.slash" : "eye") {
+                    showHiddenApps.toggle()
+                }
+            }
             if safeGraphics {
                 Button("Reactivar fondos de GameBox", systemImage: "photo") {
                     showSafeGraphicsAlert = true
@@ -1011,6 +1037,14 @@ struct BloomBoxGameBoxV2Screen: View {
             // Select at first touch-up; do not wait for a second-tap timeout.
             handleIconTap(app)
         }
+        .contextMenu {
+            Button(BloomBoxL10n.isEnglish
+                   ? (hiddenIDs.contains(key(app)) ? "Show in GameBox" : "Hide from GameBox")
+                   : (hiddenIDs.contains(key(app)) ? "Mostrar en GameBox" : "Ocultar de GameBox"),
+                   systemImage: hiddenIDs.contains(key(app)) ? "eye" : "eye.slash") {
+                setHidden(app, hidden: !hiddenIDs.contains(key(app)))
+            }
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title(app) + (favorites.contains(key(app)) ? BloomBoxGameBoxL10n.t(", favorito") : ""))
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -1224,6 +1258,12 @@ struct BloomBoxGameBoxV2Screen: View {
                         Button(BloomBoxGameBoxL10n.t(favorites.contains(key(app)) ? "Quitar de favoritos" : "Añadir a favoritos"),
                                systemImage: "heart") { toggleFavorite(app) }
                         Button("Ajustes de esta app", systemImage: "gearshape") { manage(key(app)) }
+                        Button(BloomBoxL10n.isEnglish
+                               ? (hiddenIDs.contains(key(app)) ? "Show in GameBox" : "Hide from GameBox")
+                               : (hiddenIDs.contains(key(app)) ? "Mostrar en GameBox" : "Ocultar de GameBox"),
+                               systemImage: hiddenIDs.contains(key(app)) ? "eye" : "eye.slash") {
+                            setHidden(app, hidden: !hiddenIDs.contains(key(app)))
+                        }
                         Divider()
                         Button("Carátula desde Fotos", systemImage: "photo") {
                             chooseArtwork(for: app, kind: .cover)

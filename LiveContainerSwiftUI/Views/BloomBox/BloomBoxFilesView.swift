@@ -1030,6 +1030,20 @@ private struct BloomBoxHuskGameView: View {
 
 // MARK: - Two storage choices and a scoped file manager for iOS guest apps.
 
+/// Keep the colored animated backdrop on the iOS 15 deployment target
+/// while using the native transparent List API on iOS 16 and newer.
+private struct BloomBoxFilesHubBackdrop: ViewModifier {
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(iOS 16.0, *) {
+            content
+                .scrollContentBackground(.hidden)
+                .background { BloomBoxProfileThemeBackdrop().ignoresSafeArea() }
+        } else {
+            content.background { BloomBoxProfileThemeBackdrop().ignoresSafeArea() }
+        }
+    }
+}
+
 struct BloomBoxFilesHubView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var ios = false
@@ -1061,6 +1075,7 @@ struct BloomBoxFilesHubView: View {
                             : "Solo se pueden administrar archivos accesibles para BloomBox.")
                 }
             }
+            .modifier(BloomBoxFilesHubBackdrop())
             .navigationTitle(en ? "Files" : "Archivos")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
