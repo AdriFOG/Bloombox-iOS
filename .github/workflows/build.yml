@@ -60,6 +60,11 @@ jobs:
           fi
       - name: Validate LiveContainer 3.8.14 selective backport
         run: python3 Tests/livecontainer-upstream-backport/test_contract.py
+      - name: Test BloomBox guest language discovery and per-app JIT routing
+        run: |
+          swiftc -parse-as-library LiveContainerSwiftUI/Models/BloomBoxGuestLanguageCatalog.swift Tests/guest-language/main.swift -o "$RUNNER_TEMP/bloombox-language-tests"
+          "$RUNNER_TEMP/bloombox-language-tests"
+          python3 Tests/guest-language/test_contract.py
       - name: Test iOS Files IPA destination routing
         run: python3 Tests/ipa-file-routing/test_routing.py
       - name: Test Husk APK imports, orientation, and staged JIT launch
@@ -1291,3 +1296,70 @@ jobs:
             release/BloomBox-SideStore-unsigned.ipa
             release/SHA256SUMS.txt
           body_path: docs/BloomBox-3.3.0-Release-Notes.md
+
+  release__v331:
+    name: Publish BloomBox v3.3.1
+    if: >-
+      ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'release: BloomBox v3.3.1') }}
+    needs: [build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exact tested source
+        uses: actions/checkout@v6
+      - name: Download tested unsigned BloomBox IPA
+        uses: actions/download-artifact@v8
+        with:
+          name: BloomBox-SideStore-unsigned.ipa
+          path: release
+      - name: Validate BloomBox 3.3.1 IPA and calculate SHA256
+        run: |
+          set -euo pipefail
+          test -s release/BloomBox-SideStore-unsigned.ipa
+          python3 - <<'PY'
+          from zipfile import ZipFile
+          import plistlib
+          ipa = "release/BloomBox-SideStore-unsigned.ipa"
+          root = "Payload/LiveContainer.app/"
+          with ZipFile(ipa) as z:
+              if z.testzip() is not None:
+                  raise SystemExit("Damaged BloomBox 3.3.1 IPA")
+              names = set(z.namelist())
+              for path in (
+                  root + "Frameworks/LiveContainerSwiftUI.framework/LiveContainerSwiftUI",
+                  root + "PlugIns/LiveProcess.appex/LiveProcess",
+                  root + "PlugIns/JITHelper.appex/ShareExtension",
+                  root + "PlugIns/ManzanaExpiryWidget.appex/ManzanaExpiryWidget",
+                  root + "Frameworks/SideStoreApp.framework/SideStore",
+              ):
+                  if path not in names:
+                      raise SystemExit("Missing required BloomBox/SideStore component: " + path)
+              host = plistlib.loads(z.read(root + "Info.plist"))
+              widget = plistlib.loads(z.read(root + "PlugIns/ManzanaExpiryWidget.appex/Info.plist"))
+              if host.get("CFBundleShortVersionString") != "3.3.1" or str(host.get("CFBundleVersion")) != "33001":
+                  raise SystemExit("Incorrect BloomBox host version: expected 3.3.1 (33001)")
+              if widget.get("CFBundleShortVersionString") != "3.3.1" or str(widget.get("CFBundleVersion")) != "33001":
+                  raise SystemExit("BloomBox 3.3.1 widget version mismatch")
+              if host.get("CFBundleName") != "BloomBox" or host.get("CFBundleDisplayName") != "BloomBox":
+                  raise SystemExit("BloomBox branding missing")
+              if root + "en.lproj/Localizable.strings" not in names:
+                  raise SystemExit("Missing English UI translations")
+              print("Validated v3.3.1: version 33001, SideStore, LiveProcess, JIT, widget, and branding")
+          PY
+          (cd release && sha256sum BloomBox-SideStore-unsigned.ipa > SHA256SUMS.txt)
+      - name: Publish BloomBox v3.3.1 release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v3.3.1
+          name: "BloomBox 3.3.1 — App Language Selection"
+          target_commitish: ${{ github.sha }}
+          draft: false
+          prerelease: false
+          make_latest: true
+          generate_release_notes: false
+          fail_on_unmatched_files: true
+          files: |
+            release/BloomBox-SideStore-unsigned.ipa
+            release/SHA256SUMS.txt
+          body_path: docs/BloomBox-3.3.1-Release-Notes.md

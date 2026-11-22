@@ -619,20 +619,13 @@ class LCAppModel: ObservableObject, Hashable {
     }
     
     func loadSupportedLanguages() throws {
-        let fm = FileManager.default
-        if supportedLanguages != nil {
+        guard supportedLanguages == nil else { return }
+        guard let path = appInfo.bundlePath(), !path.isEmpty else {
+            supportedLanguages = []
             return
         }
-        supportedLanguages = []
-        let fileURLs = try fm.contentsOfDirectory(at: URL(fileURLWithPath: appInfo.bundlePath()!) , includingPropertiesForKeys: nil)
-        for fileURL in fileURLs {
-            let attributes = try fm.attributesOfItem(atPath: fileURL.path)
-            let fileType = attributes[.type] as? FileAttributeType
-            if(fileType == .typeDirectory && fileURL.lastPathComponent.hasSuffix(".lproj")) {
-                supportedLanguages?.append(fileURL.deletingPathExtension().lastPathComponent)
-            }
-        }
-        
+        supportedLanguages = BloomBoxGuestLanguageCatalog.detect(
+            in: URL(fileURLWithPath: path, isDirectory: true))
     }
     
     private func bringExistingMultitaskWindowIfNeeded(dataUUID: String, urlScheme: String?) async -> Bool {

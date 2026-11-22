@@ -72,18 +72,38 @@ void NUDGuestHooksInit(void) {
     NSUserDefaults.standardUserDefaults = newStandardUserDefaults;
 
 #if !TARGET_OS_SIMULATOR
-    NSString* selectedLanguage = NSUserDefaults.guestAppInfo[@"LCSelectedLanguage"];
-    if(selectedLanguage) {
-        [newStandardUserDefaults setObject:@[selectedLanguage] forKey:@"AppleLanguages"];
-        CFMutableArrayRef* _CFBundleUserLanguages = getCachedSymbol(@"__CFBundleUserLanguages", coreFoundationHeader);
-        if(!_CFBundleUserLanguages) {
-            _CFBundleUserLanguages = litehook_find_dsc_symbol(coreFoundationPath, "__CFBundleUserLanguages");
-            uint64_t offset = (uint64_t)((void*)_CFBundleUserLanguages - (void*)coreFoundationHeader);
-            saveCachedSymbol(@"__CFBundleUserLanguages", coreFoundationHeader, offset);
+    id rawSelectedLanguage = NSUserDefaults.guestAppInfo[@"LCSelectedLanguage"];
+    NSString* selectedLanguage = [rawSelectedLanguage isKindOfClass:NSString.class]
+        ? [rawSelectedLanguage stringByReplacingOccurrencesOfString:@"_" withString:@"-"] : nil;
+    if (selectedLanguage.length > 0) {
+        // Respect the chosen variant, then let Foundation fall back to its base
+        // language (es-MX -> es, zh-Hant-TW -> zh-Hant -> zh).
+        NSMutableArray<NSString*>* requestedLanguages = [NSMutableArray array];
+        NSArray<NSString*>* parts = [selectedLanguage componentsSeparatedByString:@"-"];
+        for (NSInteger count = parts.count; count > 0; count--) {
+            [requestedLanguages addObject:[[parts subarrayWithRange:NSMakeRange(0, count)]
+                componentsJoinedByString:@"-"]];
         }
-        // set _CFBundleUserLanguages to selected languages
-        NSMutableArray* newUserLanguages = [NSMutableArray arrayWithObjects:selectedLanguage, nil];
-        *_CFBundleUserLanguages = (__bridge CFMutableArrayRef)newUserLanguages;
+        [newStandardUserDefaults setObject:requestedLanguages forKey:@"AppleLanguages"];
+
+        // The cache is a private iOS detail; absence must not crash launching
+        // the guest. The per-guest AppleLanguages override remains the fallback.
+        if (coreFoundationHeader) {
+            CFMutableArrayRef* languageCache = getCachedSymbol(@"__CFBundleUserLanguages", coreFoundationHeader);
+            if (!languageCache) {
+                languageCache = litehook_find_dsc_symbol(coreFoundationPath, "__CFBundleUserLanguages");
+                if (languageCache) {
+                    uint64_t offset = (uint64_t)((void*)languageCache - (void*)coreFoundationHeader);
+                    saveCachedSymbol(@"__CFBundleUserLanguages", coreFoundationHeader, offset);
+                }
+            }
+            if (languageCache) {
+                // This process-global cache needs a retained value for its lifetime.
+                *languageCache = (CFMutableArrayRef)CFBridgingRetain([requestedLanguages mutableCopy]);
+            } else {
+                NSLog(@"[BloomBox] CoreFoundation language cache unavailable; using AppleLanguages");
+            }
+        }
     } else {
         [newStandardUserDefaults removeObjectForKey:@"AppleLanguages"];
     }
