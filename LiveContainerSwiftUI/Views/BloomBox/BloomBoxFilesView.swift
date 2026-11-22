@@ -537,38 +537,155 @@ private struct BloomBoxHuskFolderView: View {
     let root: URL
     let current: URL
     let title: String
+
     @State private var entries: [URL] = []
     @State private var error: String?
     @State private var preview: BloomBoxFileSelection?
+    @State private var importing = false
+    @State private var chosen: [URL] = []
+    @State private var importConfirmation = false
+    @State private var replaceExisting = false
+    @State private var busy = false
+    @State private var creating = false
+    @State private var newName = ""
+    @State private var renameItem: URL?
+    @State private var renameVisible = false
+    @State private var deleteItem: URL?
+    @State private var deleteVisible = false
+    @State private var message: String?
+
+    private var english: Bool { BloomBoxL10n.isEnglish }
 
     var body: some View {
         List {
+            Section {
+                Label(english ? "Full file access · Husk" : "Acceso completo · Husk",
+                      systemImage: "folder.fill.badge.gearshape")
+                    .font(.footnote)
+                Text(english
+                     ? "Changes to game files can break the game or erase saves."
+                     : "Los cambios pueden dañar el juego o borrar partidas.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
             if let error { Text(error).foregroundStyle(.red) }
             if entries.isEmpty && error == nil {
-                Text(BloomBoxL10n.isEnglish ? "This folder is empty."
-                                            : "Esta carpeta está vacía.")
+                Text(english ? "This folder is empty." : "Esta carpeta está vacía.")
                     .foregroundStyle(.secondary)
             }
-            ForEach(entries, id: \.path) { file in
-                let directory = (try? file.resourceValues(forKeys: [.isDirectoryKey]))?
+            ForEach(entries, id: \.path) { entry in
+                let directory = (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?
                     .isDirectory == true
-                if directory {
-                    NavigationLink(destination: BloomBoxHuskFolderView(
-                        root: root, current: file, title: file.lastPathComponent)) {
-                        Label(file.lastPathComponent, systemImage: "folder.fill")
-                    }
-                } else {
-                    Button { preview = BloomBoxFileSelection(url: file) } label: {
-                        Label(file.lastPathComponent, systemImage: "doc.fill")
+                Group {
+                    if directory {
+                        NavigationLink(destination: BloomBoxHuskFolderView(
+                            root: root, current: entry, title: entry.lastPathComponent)) {
+                            Label(entry.lastPathComponent, systemImage: "folder.fill")
+                        }
+                    } else {
+                        Button { preview = BloomBoxFileSelection(url: entry) } label: {
+                            Label(entry.lastPathComponent, systemImage: "doc.fill")
+                        }
                     }
                 }
+                .contextMenu {
+                    Button(english ? "Rename" : "Renombrar", systemImage: "pencil") {
+                        renameItem = entry
+                        newName = entry.lastPathComponent
+                        renameVisible = true
+                    }
+                    Button(english ? "Delete" : "Eliminar", systemImage: "trash",
+                           role: .destructive) {
+                        deleteItem = entry
+                        deleteVisible = true
+                    }
+                }
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button(role: .destructive) {
+                        deleteItem = entry
+                        deleteVisible = true
+                    } label: { Label(english ? "Delete" : "Eliminar", systemImage: "trash") }
+                }
+            }
+            Section {
+                Toggle(english ? "Replace existing on import"
+                               : "Reemplazar archivos al importar", isOn: $replaceExisting)
+                    .font(.subheadline)
+                if busy { ProgressView(english ? "Importing…" : "Importando…") }
             }
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                Button { importing = true } label: {
+                    Image(systemName: "square.and.arrow.down")
+                }.disabled(busy)
+                    .accessibilityLabel(english ? "Import into this folder" : "Importar aquí")
+                Button {
+                    newName = ""
+                    creating = true
+                } label: { Image(systemName: "folder.badge.plus") }
+                    .disabled(busy)
+                    .accessibilityLabel(english ? "New folder" : "Nueva carpeta")
+            }
+        }
         .onAppear(perform: reload)
         .refreshable { reload() }
         .sheet(item: $preview) { BloomBoxFilePreview(url: $0.url) }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.item, .folder],
+                      allowsMultipleSelection: true) { result in
+            switch result {
+            case .success(let urls):
+                chosen = urls
+                importConfirmation = !urls.isEmpty
+            case .failure(let failure): message = failure.localizedDescription
+            }
+        }
+        .confirmationDialog(english ? "Import here?" : "¿Importar en esta carpeta?",
+                            isPresented: $importConfirmation, titleVisibility: .visible) {
+            Button(replaceExisting
+                   ? (english ? "Import and replace" : "Importar y reemplazar")
+                   : (english ? "Import and keep existing" : "Importar sin reemplazar")) {
+                importHere()
+            }
+            Button(english ? "Cancel" : "Cancelar", role: .cancel) { chosen = [] }
+        } message: {
+            Text(current.path + (replaceExisting
+                 ? (english ? "\nExisting data will be replaced." : "\nSe reemplazarán archivos existentes.")
+                 : ""))
+        }
+        .alert(english ? "New folder" : "Nueva carpeta", isPresented: $creating) {
+            TextField(english ? "Name" : "Nombre", text: $newName)
+            Button(english ? "Create" : "Crear") { createFolder() }
+            Button(english ? "Cancel" : "Cancelar", role: .cancel) {}
+        }
+        .alert(english ? "Rename" : "Renombrar", isPresented: $renameVisible) {
+            TextField(english ? "Name" : "Nombre", text: $newName)
+            Button(english ? "Rename" : "Renombrar") { renameSelected() }
+            Button(english ? "Cancel" : "Cancelar", role: .cancel) {}
+        }
+        .confirmationDialog(english ? "Delete this item?" : "¿Eliminar este archivo o carpeta?",
+                            isPresented: $deleteVisible, titleVisibility: .visible) {
+            Button(english ? "Delete permanently" : "Eliminar definitivamente",
+                   role: .destructive) { deleteSelected() }
+            Button(english ? "Cancel" : "Cancelar", role: .cancel) { deleteItem = nil }
+        } message: {
+            Text((deleteItem?.lastPathComponent ?? "") +
+                 (english ? "\nThis cannot be undone." : "\nNo se puede deshacer."))
+        }
+        .alert(english ? "Husk files" : "Archivos Husk",
+               isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
+            Button("OK") { message = nil }
+        } message: { Text(message ?? "") }
+    }
+
+    private func safeURL(_ parts: [String], directory: Bool) throws -> URL {
+        try BloomBoxHuskDataImport.checkedURL(
+            in: root, components: parts, isDirectory: directory)
+    }
+
+    private func currentParts() throws -> [String] {
+        try BloomBoxHuskPathPolicy.relativeComponents(of: current, under: root)
     }
 
     private func reload() {
@@ -580,8 +697,63 @@ private struct BloomBoxHuskFolderView: View {
             self.error = error.localizedDescription
         }
     }
-}
 
+    private func createFolder() {
+        do {
+            let folder = try safeURL(currentParts() + [newName], directory: true)
+            try FileManager.default.createDirectory(at: folder,
+                withIntermediateDirectories: false)
+            reload()
+        } catch { message = error.localizedDescription }
+    }
+
+    private func renameSelected() {
+        guard let item = renameItem else { return }
+        defer { renameItem = nil }
+        do {
+            let relative = try BloomBoxHuskPathPolicy.relativeComponents(of: item, under: root)
+            guard !relative.isEmpty else { throw BloomBoxHuskPathPolicy.Failure.outsideRoot }
+            let renamed = try safeURL(Array(relative.dropLast()) + [newName],
+                                      directory: BloomBoxHuskFiles.isDirectory(item))
+            try FileManager.default.moveItem(at: item, to: renamed)
+            reload()
+        } catch { message = error.localizedDescription }
+    }
+
+    private func deleteSelected() {
+        guard let item = deleteItem else { return }
+        defer { deleteItem = nil }
+        do {
+            let relative = try BloomBoxHuskPathPolicy.relativeComponents(of: item, under: root)
+            guard !relative.isEmpty else { throw BloomBoxHuskPathPolicy.Failure.outsideRoot }
+            _ = try safeURL(relative, directory: BloomBoxHuskFiles.isDirectory(item))
+            try FileManager.default.removeItem(at: item)
+            reload()
+        } catch { message = error.localizedDescription }
+    }
+
+    private func importHere() {
+        guard !busy, !chosen.isEmpty else { return }
+        let selected = chosen
+        chosen = []
+        let current = current
+        let root = root
+        let replace = replaceExisting
+        busy = true
+        Task {
+            do {
+                let result = try await Task.detached(priority: .userInitiated) {
+                    try BloomBoxHuskDataImport.installDirect(
+                        selected, into: current, under: root, replaceExisting: replace)
+                }.value
+                reload()
+                message = english ? "Copied \(result.copied), skipped \(result.skipped)."
+                    : "Copiados \(result.copied), omitidos \(result.skipped)."
+            } catch { message = error.localizedDescription }
+            busy = false
+        }
+    }
+}
 
 // MARK: - Native Husk data import (Takopi-inspired guarded copying)
 //
