@@ -60,6 +60,11 @@ jobs:
           fi
       - name: Validate LiveContainer 3.8.14 selective backport
         run: python3 Tests/livecontainer-upstream-backport/test_contract.py
+      - name: Test BloomBox / MediaBloom shared app labels
+        run: |
+          swiftc LiveContainerSwiftUI/Views/BloomBox/BloomBoxMediaTags.swift Tests/media-labels/main.swift -o "$RUNNER_TEMP/bloombox-media-label-tests"
+          "$RUNNER_TEMP/bloombox-media-label-tests"
+          python3 Tests/media-labels/test_contract.py
       - name: Test BloomBox guest language discovery and per-app JIT routing
         run: |
           swiftc -parse-as-library LiveContainerSwiftUI/Models/BloomBoxGuestLanguageCatalog.swift Tests/guest-language/main.swift -o "$RUNNER_TEMP/bloombox-language-tests"
