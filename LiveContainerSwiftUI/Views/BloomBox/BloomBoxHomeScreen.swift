@@ -937,13 +937,23 @@ struct BloomBoxHomeScreen: View {
         }
         .sheet(item: $expandedLibraryCategory) { section in
             NavigationView {
-                ScrollView {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 18), count: 4), spacing: 24) {
-                        ForEach(section.keys, id: \.self) { key in
-                            libraryLaunchIcon(key, size: 64, label: true)
+                ZStack {
+                    // The App Library category is a full-screen folder.
+                    // Its backdrop follows the actual user wallpaper, not
+                    // the previous opaque system-gray sheet background.
+                    wallpaperBackground(paused: true)
+                        .blur(radius: 28)
+                        .overlay(Color.black.opacity(0.18))
+                        .ignoresSafeArea()
+                        .accessibilityHidden(true)
+                    ScrollView {
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 18), count: 4), spacing: 24) {
+                            ForEach(section.keys, id: \.self) { key in
+                                libraryLaunchIcon(key, size: 64, label: true)
+                            }
                         }
+                        .padding(20)
                     }
-                    .padding(20)
                 }
                 .navigationTitle(BloomBoxL10n.t(section.title))
                 .navigationBarTitleDisplayMode(.inline)
