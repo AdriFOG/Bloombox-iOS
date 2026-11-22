@@ -148,9 +148,10 @@ enum BloomBoxBuiltInJIT {
         try? bytes.write(to: destination, options: .atomic)
     }
 
-    static func enable(pid: Int32 = getpid(), script: String?, operation: String = "enable", progress: @escaping (String) -> Void) async -> Bool {
+    static func enable(pid: Int32 = getpid(), script: String?, operation: String = "enable", onReady: @escaping () -> Void = {}, progress: @escaping (String) -> Void) async -> Bool {
         var recentMessages: [String] = []
         var debuggerAttached = false
+        var confirmedJIT = false
         let report: (String) -> Void = { message in
             debuggerAttached = debuggerAttached || BloomBoxJITProgressMarker.attached(message)
             progress(message)
@@ -257,13 +258,20 @@ enum BloomBoxBuiltInJIT {
                         let message = result["message"] as? String ?? ""
                         if message != lastMessage { report(message); lastMessage = message }
                     }
+                    // This status is written only by the native debugger bridge.
+                    // It is independent from the script's final detach/connection.
+                    if operation == "enable", !confirmedJIT, result["jitReady"] as? Bool == true {
+                        confirmedJIT = true
+                        report("BloomBox JIT ready: guest acknowledged executable memory (PID \(pid)).")
+                        onReady()
+                    }
                     if let finished = result["done"] as? Bool, finished {
                         let completed = (result["success"] as? Bool) ?? false
                         if completed {
                             // Debugger success alone is not proof of executable JIT memory.
                             report("Debugger script finished. Verify executable JIT memory inside the guest before launching a game.")
                         }
-                        return completed
+                        return completed || (operation == "enable" && confirmedJIT)
                     }
                 }
                 if !receivedStatus {
@@ -282,7 +290,7 @@ enum BloomBoxBuiltInJIT {
             }
         } catch is CancellationError { report("JIT cancelled.") }
         catch { report(error.localizedDescription) }
-        return false
+        return operation == "enable" && confirmedJIT
     }
 }
 
@@ -334,6 +342,7 @@ final class BloomBoxJITLogStore: ObservableObject {
             case "debugger_attached": label = "Debugger conectado · sin confirmar"
             case "awaiting_guest": label = "Esperando respuesta del juego"
             case "timed_out_attached": label = "Sin confirmación del juego"
+            case "jit_ready": label = "JIT confirmado"
             case "completed": label = "JIT completado"
             case "failed": label = "Falló la activación"
             case "interrupted": label = "Proceso interrumpido"
@@ -429,7 +438,9 @@ final class BloomBoxJITLogStore: ObservableObject {
     func append(_ message: String, to id: UUID) {
         guard let index = attempts.firstIndex(where: { $0.id == id }) else { return }
         attempts[index].messages.append(String(message.prefix(4096)))
-        if BloomBoxJITProgressMarker.attached(message) {
+        if attempts[index].status == "jit_ready" || attempts[index].status == "completed" {
+            // Late debugger messages cannot downgrade a verified JIT handshake.
+        } else if BloomBoxJITProgressMarker.attached(message) {
             attempts[index].status = "debugger_attached"
         } else if BloomBoxJITProgressMarker.awaitingGuest(message) {
             // The script is waiting for another guest breakpoint or detach. This is
@@ -460,23 +471,46 @@ final class BloomBoxJITLogStore: ObservableObject {
         }
     }
 
+    /// Native memory handoff (blessed pages + acknowledged X0) is the
+    /// readiness signal. Do not wait for a later debugger disconnection.
+    func confirmReady(_ id: UUID) {
+        guard let index = attempts.firstIndex(where: { $0.id == id }) else { return }
+        guard !["completed", "jit_ready"].contains(attempts[index].status) else { return }
+        attempts[index].status = "jit_ready"
+        save()
+        guard activeAttemptID == id else { return }
+        collapseTask?.cancel()
+        idleTask?.cancel()
+        dismissTask?.cancel()
+        compact = true
+        phase = .success
+        dismissTask = Task {
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            guard !Task.isCancelled, self.activeAttemptID == id, self.phase == .success else { return }
+            self.setNotificationVisible(false)
+            self.activeAttemptID = nil
+        }
+    }
+
     func finish(_ id: UUID, success: Bool) {
         guard let index = attempts.firstIndex(where: { $0.id == id }) else { return }
-        let timedOutAfterAttach = !success
+        let jitWasReady = attempts[index].status == "jit_ready"
+        let completed = success || jitWasReady
+        let timedOutAfterAttach = !completed
             && ["debugger_attached", "awaiting_guest"].contains(attempts[index].status)
             && attempts[index].messages.suffix(3).contains(where: BloomBoxJITProgressMarker.didTimeOut)
-        attempts[index].status = success ? "completed" : timedOutAfterAttach ? "timed_out_attached" : "failed"
+        attempts[index].status = completed ? "completed" : timedOutAfterAttach ? "timed_out_attached" : "failed"
         save()
         guard activeAttemptID == id else { return }
         collapseTask?.cancel()
         idleTask?.cancel()
         compact = true
-        phase = success ? .success : timedOutAfterAttach ? .waiting : .failure
+        phase = completed ? .success : timedOutAfterAttach ? .waiting : .failure
         dismissTask?.cancel()
         if !visible { activeAttemptID = nil; return }
         dismissTask = Task {
             // Only a completed protocol produces a green confirmation.
-            try? await Task.sleep(nanoseconds: success ? 2_500_000_000 : 9_000_000_000)
+            try? await Task.sleep(nanoseconds: completed ? 2_500_000_000 : 9_000_000_000)
             guard !Task.isCancelled, self.activeAttemptID == id else { return }
             self.setNotificationVisible(false)
             self.activeAttemptID = nil
