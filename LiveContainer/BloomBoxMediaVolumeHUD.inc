@@ -14,6 +14,8 @@
 // takeover. First version targets YouTube Music and YouTube; may be expanded
 // when MediaBloom exports a broader 'currently playing' guest identity.
 
+#include <math.h>
+
 static NSString * const BBHUDYTMusicID = @"com.google.ios.youtubemusic";
 static NSString * const BBHUDYouTubeID = @"com.google.ios.youtube";
 static NSString * const BBHUDTargetPref = @"BloomBoxMediaVolumeHUDTargetV1";
