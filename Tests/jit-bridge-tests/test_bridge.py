@@ -24,6 +24,27 @@ for preserved in ('providerChooser', 'Replace pairing file', 'Remove pairing fil
                   'LCJITLessDiagnoseView', 'sharePrivateDataWithLiveProcess'):
     assert preserved in setup, preserved
 assert 'BloomBoxJITPairingSync.synchronize()' in coordinator
+# The verified JIT handoff must be native, not inferred from a log or a timer.
+script_runner = (root / "ShareExtension/StikJIT/ScriptRunner.swift").read_text()
+jit_session = (root / "ShareExtension/StikJIT/JITSession.swift").read_text()
+stikjit = (root / "ShareExtension/StikJIT/StikJIT.swift").read_text()
+app_list = (root / "LiveContainerSwiftUI/Views/AppList/LCAppListView.swift").read_text()
+home = (root / "LiveContainerSwiftUI/Views/BloomBox/BloomBoxHomeScreen.swift").read_text()
+assert "preparedRegionAddress = address" in script_runner
+assert 'if reply == "OK", let preparedRegionAddress, !jitReadyReported' in script_runner
+assert 'command.lowercased().hasPrefix("p0=' in script_runner
+assert "onJITReady()" in script_runner
+assert "onJITReady: onJITReady" in jit_session and "onJITReady: onJITReady" in stikjit
+assert '"jitReady": jitReady' in worker
+assert "jitReady = true" in worker
+assert "if jitReady {" in worker
+assert 'result["jitReady"] as? Bool == true' in coordinator
+assert 'onReady()' in coordinator
+assert 'func confirmReady(_ id: UUID)' in coordinator
+assert "BloomBoxJITLogStore.shared.confirmReady(record)" in app_list
+assert "try await waitForHuskJITReady(" in home
+assert "This screen will close when JIT is confirmed." in home
+assert "Hide, keep starting" not in home
 assert 'try storage.save(bytes)' in coordinator
 # The bundled SideStore stores RemoteRP pairing under the guest Documents folder.
 assert '"PairingFile_RemoteRP.plist"' in coordinator

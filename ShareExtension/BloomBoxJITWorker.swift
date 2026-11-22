@@ -87,6 +87,7 @@ enum BloomBoxJITWorker {
             // can lose fast script messages between the host's polling intervals.
             var messages: [String] = []
             var firstMessageIndex = 0
+            var jitReady = false
             func report(_ message: String, done: Bool = false, success: Bool = false) {
                 messages.append(String(message.prefix(4096)))
                 if messages.count > 400 {
@@ -94,7 +95,7 @@ enum BloomBoxJITWorker {
                     firstMessageIndex += 1
                 }
                 let object: [String: Any] = ["message": message, "done": done,
-                    "success": success, "messages": messages, "firstMessageIndex": firstMessageIndex]
+                    "success": success, "jitReady": jitReady, "messages": messages, "firstMessageIndex": firstMessageIndex]
                 try? fm.createDirectory(at: status.deletingLastPathComponent(), withIntermediateDirectories: true)
                 if let encoded = try? JSONSerialization.data(withJSONObject: object) { try? encoded.write(to: status, options: .atomic) }
             }
@@ -137,10 +138,28 @@ enum BloomBoxJITWorker {
                     report("Connecting debugger…")
                     // Preserve the guest's existing protocol; never substitute a universal script for an arbitrary engine.
                     try StikJIT.enableJIT(targetPID: pid, pairingFile: pairing, ddiPaths: paths, configuration: config,
-                        script: script.isEmpty ? .universal : .customBase64(script), progress: { report($0) })
-                    report("JIT request completed.", done: true, success: true)
+                        script: script.isEmpty ? .universal : .customBase64(script), progress: { report($0) },
+                        onJITReady: {
+                            guard !jitReady else { return }
+                            jitReady = true
+                            report("JIT ready: executable memory prepared and guest acknowledged.")
+                        })
+                    if jitReady {
+                        report("JIT request completed.", done: true, success: true)
+                    } else {
+                        report("Debugger script ended without confirmed JIT memory handoff.", done: true)
+                    }
                 }
-            } catch { report(error.localizedDescription, done: true) }
+            } catch {
+                if jitReady {
+                    // A disconnected debugger after the verified JIT handoff
+                    // must not erase the earlier positive readiness signal.
+                    report("Debugger session ended after confirmed JIT: " + error.localizedDescription,
+                           done: true, success: true)
+                } else {
+                    report(error.localizedDescription, done: true)
+                }
+            }
             context.completeRequest(returningItems: nil)
         }
         return true

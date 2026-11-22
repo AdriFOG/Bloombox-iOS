@@ -250,6 +250,7 @@ struct BloomBoxHomeScreen: View {
     @State private var huskStartingGame: HuskGame?
     @State private var huskLaunchingKey: String?
     @State private var huskStartingNote = ""
+    @State private var huskJITGateActive = false
     @State private var orientationGame: HuskGame?
     @State private var askForThisLaunch = false
     @State private var huskError: String?
@@ -437,14 +438,12 @@ struct BloomBoxHomeScreen: View {
                             Text(huskStartingNote)
                                 .font(.subheadline).multilineTextAlignment(.center)
                                 .foregroundStyle(.secondary)
-                            Button(englishUI ? "Hide, keep starting" : "Ocultar, seguir iniciando") {
-                                huskStartingGame = nil
-                                if #available(iOS 16.1, *) {
-                                    AppSceneViewController.bloomBoxEndStartup(forContainer: game.containerFolder)
-                                }
+                            if huskJITGateActive {
+                                Text(englishUI ? "This screen will close when JIT is confirmed." : "Esta pantalla se cerrará al confirmar JIT.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
                             }
-                            .font(.caption)
-                            .padding(.top, 4)
                         }
                         .padding(28).frame(maxWidth: 310)
                         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 30))
@@ -1444,7 +1443,40 @@ struct BloomBoxHomeScreen: View {
         return false
     }
 
-    // The LiveProcess scene can be a little later than the PID callback,
+    // Launching gameplay is needed to trigger Husk's BRK. Waiting happens
+    // AFTER delivery, so the visible gate cannot deadlock the JIT protocol.
+    @MainActor private func waitForHuskJITReady(
+        appName: String, startedAt: Date
+    ) async throws {
+        while true {
+            try Task.checkCancellation()
+            let attempt = BloomBoxJITLogStore.shared.attempts.first {
+                $0.appName == appName && $0.createdAt >= startedAt.addingTimeInterval(-1)
+            }
+            if let attempt {
+                switch attempt.status {
+                case "jit_ready", "completed":
+                    huskStartingNote = englishUI ? "JIT confirmed. Opening your game…" : "JIT confirmado. Abriendo tu juego…"
+                    return
+                case "failed", "interrupted", "timed_out_attached":
+                    throw englishUI
+                        ? "JIT was not confirmed. Check Modules > JIT to see the error and retry."
+                        : "JIT no se confirmó. Revisa el error en Módulos > JIT y vuelve a intentar."
+                default:
+                    break
+                }
+            }
+            // Safety fallback for a dead helper: error, never a fake success.
+            if Date().timeIntervalSince(startedAt) > 315 {
+                throw englishUI
+                    ? "JIT did not confirm within the helper's timeout. Check the log and retry."
+                    : "JIT no se confirmó antes de agotarse el tiempo. Revisa el registro e intenta otra vez."
+            }
+            try await Task.sleep(nanoseconds: 200_000_000)
+        }
+    }
+
+    // The LiveProcess scene can be a little later than the PID callback.
     // especially when the debugger is attaching. Retry only the delivery,
     // never spawn Husk a second time.
     @available(iOS 16.1, *)
@@ -1471,12 +1503,14 @@ struct BloomBoxHomeScreen: View {
                     AppSceneViewController.bloomBoxEndStartup(forContainer: game.containerFolder)
                 }
                 if huskLaunchingKey == game.key { huskLaunchingKey = nil }
+                huskJITGateActive = false
             }
             let appKey = host.appInfo.relativeBundlePath ?? ""
             let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
                 .flatMap { $0.windows }.first { $0.isKeyWindow }
             let started = Date()
             huskStartingGame = game
+            huskJITGateActive = false
             huskStartingNote = englishUI ? "Preparing Husk…" : "Preparando Husk…"
             do {
                 // Husk reads its own settings.json; the enclosing BloomBox scene
@@ -1506,6 +1540,7 @@ struct BloomBoxHomeScreen: View {
                     defaults.bool(forKey: "BloomBoxJITMainEnabled")
                 let stagedJIT = wantsJIT && builtInEnabled &&
                     defaults.integer(forKey: "LCJITEnablerType") == JITEnablerType.BuiltIn.rawValue
+                huskJITGateActive = stagedJIT
 
                 // Give UIKit a layout pass before LiveProcess builds its guest
                 // scene; otherwise an iPhone can create it as portrait forever.
@@ -1545,8 +1580,10 @@ struct BloomBoxHomeScreen: View {
                         throw englishUI ? "Husk did not expose its running game scene. Close Husk and retry."
                             : "No se encontró la ventana activa de Husk. Ciérralo y vuelve a intentarlo."
                     }
-                    // The JIT helper continues waiting for the GAME's memory
-                    // breakpoint. Its later success/failure still owns the log.
+                    // Husk can finish its executable-memory handshake before the
+                    // debugger session ends. Only that real signal clears the UI.
+                    huskStartingNote = englishUI ? "Waiting for JIT confirmation…" : "Esperando confirmación de JIT…"
+                    try await waitForHuskJITReady(appName: host.appInfo.displayName(), startedAt: started)
                 } else {
                     // External JIT providers do not offer a reliable local
                     // attachment signal. Preserve the existing launch path.
