@@ -886,6 +886,116 @@ private enum BloomBoxHuskDataImport {
         }
         return summary
     }
+
+    /// Copy directly into an EXISTING, user-selected Husk folder. The caller
+    /// decides whether to replace files; never invent runtime or OBB folders.
+    static func installDirect(_ sources: [URL], into existingFolder: URL,
+                              under authorizedRoot: URL,
+                              replaceExisting: Bool) throws -> Result {
+        let fm = FileManager.default
+        let parts = try BloomBoxHuskPathPolicy.relativeComponents(
+            of: existingFolder, under: authorizedRoot)
+        let targetRoot = try checkedURL(in: authorizedRoot,
+                                        components: parts, isDirectory: true)
+        guard BloomBoxHuskFiles.isDirectory(targetRoot) else {
+            throw ImportError.invalidTarget("Esa carpeta ya no existe. Actualiza el explorador.")
+        }
+
+        var summary = Result()
+        for source in sources {
+            let access = source.startAccessingSecurityScopedResource()
+            defer { if access { source.stopAccessingSecurityScopedResource() } }
+            let scratch = fm.temporaryDirectory.appendingPathComponent(
+                "BloomBox-Husk-Import-" + UUID().uuidString, isDirectory: true)
+            try fm.createDirectory(at: scratch, withIntermediateDirectories: false)
+            defer { try? fm.removeItem(at: scratch) }
+            let contents = scratch.appendingPathComponent("prepared", isDirectory: true)
+            try fm.createDirectory(at: contents, withIntermediateDirectories: false)
+
+            var sourceIsDir: ObjCBool = false
+            let pickedFolder = fm.fileExists(atPath: source.path, isDirectory: &sourceIsDir)
+                && sourceIsDir.boolValue
+            var coordinatorError: NSError?
+            var stagingError: Error?
+            NSFileCoordinator().coordinate(
+                readingItemAt: source, options: pickedFolder ? [.forUploading] : [],
+                error: &coordinatorError
+            ) { readable in
+                do {
+                    let flags = try readable.resourceValues(forKeys: [.isSymbolicLinkKey])
+                    if flags.isSymbolicLink == true { throw ImportError.unsafeLink }
+                    var folder: ObjCBool = false
+                    guard fm.fileExists(atPath: readable.path, isDirectory: &folder) else {
+                        throw ImportError.invalidTarget(
+                            "No se puede leer el archivo seleccionado: " + source.lastPathComponent)
+                    }
+                    if !folder.boolValue && readable.pathExtension.lowercased() == "zip" {
+                        try BloomBoxArchive.unpack(source: readable, destination: contents)
+                    } else {
+                        // A .obb or .dat is an ordinary file, not necessarily a ZIP.
+                        let name = pickedFolder ? source.lastPathComponent : readable.lastPathComponent
+                        let output = contents.appendingPathComponent(name)
+                        try fm.copyItem(at: readable, to: output)
+                    }
+                } catch { stagingError = error }
+            }
+            if let coordinatorError { throw coordinatorError }
+            if let stagingError { throw stagingError }
+
+            func copyTree(_ folder: URL, _ segments: [String]) throws {
+                let entries = try fm.contentsOfDirectory(
+                    at: folder, includingPropertiesForKeys: [
+                        .isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey
+                    ], options: [.skipsHiddenFiles])
+                for entry in entries {
+                    let type = try entry.resourceValues(forKeys: [
+                        .isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey
+                    ])
+                    if type.isSymbolicLink == true { throw ImportError.unsafeLink }
+                    let relative = segments + [entry.lastPathComponent]
+                    if type.isDirectory == true {
+                        let target = try checkedURL(in: authorizedRoot,
+                            components: parts + relative, isDirectory: true)
+                        if !fm.fileExists(atPath: target.path) {
+                            try fm.createDirectory(at: target, withIntermediateDirectories: false)
+                        }
+                        guard BloomBoxHuskFiles.isDirectory(target) else {
+                            throw ImportError.invalidTarget("No es una carpeta: " + entry.lastPathComponent)
+                        }
+                        try copyTree(entry, relative)
+                    } else if type.isRegularFile == true {
+                        let target = try checkedURL(in: authorizedRoot,
+                            components: parts + relative, isDirectory: false)
+                        if fm.fileExists(atPath: target.path) {
+                            if !replaceExisting {
+                                summary.skipped += 1
+                                continue
+                            }
+                            // Stage replacement in the same directory, then swap.
+                            let temp = target.deletingLastPathComponent()
+                                .appendingPathComponent(".bloombox-" + UUID().uuidString)
+                            try fm.copyItem(at: entry, to: temp)
+                            do {
+                                _ = try fm.replaceItemAt(target, withItemAt: temp,
+                                    backupItemName: nil, options: [])
+                            } catch {
+                                try? fm.removeItem(at: temp)
+                                throw error
+                            }
+                        } else {
+                            try fm.copyItem(at: entry, to: target)
+                        }
+                        summary.copied += 1
+                    } else {
+                        throw ImportError.invalidSource
+                    }
+                }
+            }
+            try copyTree(contents, [])
+        }
+        return summary
+    }
+
 }
 
 private struct BloomBoxHuskGameView: View {
