@@ -496,7 +496,7 @@ enum BloomBoxTemporaryStorage {
         var latest = values.contentModificationDate ?? Date.distantFuture
         if values.isDirectory == true {
             guard let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: Array(keys),
-                                                 options: [.skipsHiddenFiles]) else { return nil }
+                                                 options: []) else { return nil }
             for case let child as URL in enumerator {
                 guard let info = try? child.resourceValues(forKeys: keys),
                       info.isSymbolicLink != true else { return nil }
@@ -528,6 +528,10 @@ enum BloomBoxTemporaryStorage {
         for item in items {
             let name = item.lastPathComponent
             if name == "BloomBoxSideStoreHandoff" {
+                guard let handoffMetadata = try? item.resourceValues(forKeys: [
+                    .isDirectoryKey, .isSymbolicLinkKey
+                ]), handoffMetadata.isDirectory == true,
+                handoffMetadata.isSymbolicLink != true else { continue }
                 guard let handoffs = try? fm.contentsOfDirectory(
                     at: item, includingPropertiesForKeys: [.isSymbolicLinkKey],
                     options: [.skipsHiddenFiles]) else { continue }
