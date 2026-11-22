@@ -183,6 +183,10 @@ extension LCUtils {
     
     public static func forEachInstalledLC(isFree: Bool, block: (String, inout Bool) -> Void) {
         for scheme in LCSharedUtils.lcUrlSchemes() {
+            // The Media edition is intentionally excluded from generic free
+            // slot dispatch, so shared games can NEVER be sent there.
+            // Media apps are opened explicitly from BloomBox Media's own UI.
+            if scheme == "bloomboxmedia" { continue }
             if scheme == UserDefaults.lcAppUrlScheme() {
                 continue
             }
