@@ -31,3 +31,8 @@ assert 'if key == Self.androidFilesKey { return englishUI ? "Files" : "Archivos"
 assert 'Color(red: 0.10, green: 0.11, blue: 0.22).opacity(0.97)' not in profile
 assert '.background(.ultraThinMaterial,' in profile
 print("PASS: glass profiles and selectable iOS/Android Files with scoped editing")
+
+# Installed iOS apps show exactly the same guest icons as the Home launcher.
+assert 'LiveBoardIconImage(app: app, dark: darkIcons)' in files
+assert '@AppStorage("darkModeIcon", store: LiveContainerPreferencesAdapter.defaults)' in files
+assert 'Image(systemName: "app.fill")' not in files

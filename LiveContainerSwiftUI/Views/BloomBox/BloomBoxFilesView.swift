@@ -1157,6 +1157,8 @@ struct BloomBoxIOSFilesView: View {
     @State private var showPersonal = false
     @State private var revision = 0
     @State private var query = ""
+    @AppStorage("darkModeIcon", store: LiveContainerPreferencesAdapter.defaults)
+    private var darkIcons = false
     private var en: Bool { BloomBoxL10n.isEnglish }
     private var apps: [LCAppModel] {
         _ = revision
@@ -1195,8 +1197,11 @@ struct BloomBoxIOSFilesView: View {
                     ForEach(apps, id: \.self) { app in
                         NavigationLink(destination: BloomBoxIOSAppFilesView(app: app)) {
                             HStack(spacing: 12) {
-                                Image(systemName: "app.fill")
-                                    .foregroundStyle(.blue).frame(width: 34, height: 40)
+                                // Reuse the same cached/custom guest artwork used on Home.
+                                // This also reflects light/dark icons and user icon changes.
+                                LiveBoardIconImage(app: app, dark: darkIcons)
+                                    .frame(width: 46, height: 46)
+                                    .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(app.displayName).font(.headline)
                                     Text(app.bundleIdentifier).font(.caption)

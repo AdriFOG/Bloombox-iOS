@@ -6,7 +6,7 @@
 
 A personal home for your apps, widgets and files — with room to experiment.
 
-[**Download BloomBox 3.2.2**](https://github.com/AdriFOG/Bloombox-iOS/releases/tag/v3.2.2) · [Builds](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml) · [Report an issue](https://github.com/AdriFOG/Bloombox-iOS/issues)
+[**Download BloomBox 3.2.3**](https://github.com/AdriFOG/Bloombox-iOS/releases/tag/v3.2.3) · [Builds](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml) · [Report an issue](https://github.com/AdriFOG/Bloombox-iOS/issues)
 
 [![Build](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-purple.svg)](LICENSE) · [Original-work attribution](LICENSE-ADDITIONAL-TERMS.md)
@@ -17,7 +17,14 @@ A personal home for your apps, widgets and files — with room to experiment.
 
 Its home screen lives **inside the app**; it does not replace the iOS Home Screen. Experimental features are clearly identified below so you can choose what to try.
 
-## BloomBox 3.2.2 — Android Files + single green shortcut
+## BloomBox 3.2.3 — iOS & Android Files, App Icons, Transparent Profiles
+
+- The Files shortcut opens **iOS Files** or **Android Files**. iOS Files can browse and edit the existing data containers for compatible guests installed inside BloomBox, honoring the active profile and app locks.
+- iOS Files now shows the **real installed app icon** (including user custom icons and light/dark appearance), using the same icon renderer as the desktop.
+- The Profiles News card now uses the same **translucent material** as the other Home cards.
+- SideStore, Husk and other 3.2.2 fixes are retained.
+
+### Previous: BloomBox 3.2.2 — Android Files + single green shortcut
 
 - Husk browser opens the actual APK container and an existing `-data` folder; file editing stays inside the chosen game directory.
 - The duplicate orange Files app is removed from Home; the green Android Files app uses a minimal, flat robot + folder icon.
@@ -30,7 +37,7 @@ Its home screen lives **inside the app**; it does not replace the iOS Home Scree
 - **Compact GameBox and news:** one news item at a time, with arrows and full article view.
 - Husk, JIT and guest installation logic remains unchanged; previous known issues still apply.
 
-[3.2.1 release notes and installation guide](docs/BloomBox-3.2.1-Release-Notes.md). Latest: [3.2.2 release notes](docs/BloomBox-3.2.2-Release-Notes.md).
+[3.2.1 release notes and installation guide](docs/BloomBox-3.2.1-Release-Notes.md). Latest: [3.2.3 release notes](docs/BloomBox-3.2.3-Release-Notes.md).
 
 ## BloomBox 3.2.0 — Port Stores & RAM+
 
