@@ -6,7 +6,6 @@
 //
 
 import Combine
-import CoreTransferable
 import CryptoKit
 import SwiftUI
 import UniformTypeIdentifiers
@@ -44,22 +43,8 @@ private struct BloomBoxReceivedIPA: Identifiable {
     let url: URL
 }
 
-// Files opens BloomBox first. This is an in-app chooser, not a SpringBoard overlay.
-// SideStore's document importer accepts com.apple.itunes.ipa, not a shared
-// public.url. Share the IPA as an actual file representation with that UTI.
-@available(iOS 16.0, *)
-private struct BloomBoxSideStoreIPA: Transferable {
-    let fileURL: URL
-
-    static var transferRepresentation: some TransferRepresentation {
-        FileRepresentation(contentType: UTType(importedAs: "com.apple.itunes.ipa")) { item in
-            SentTransferredFile(item.fileURL)
-        } importing: { file in
-            Self(fileURL: file.file)
-        }
-    }
-}
-
+// Files opens BloomBox first. SideStore receives a local IPA via the existing
+// built-in guest deep-link launcher, never through the iOS Share sheet.
 private enum BloomBoxSideStoreHandoff {
     static func prepareFile(_ original: URL) async throws -> URL {
         try await Task.detached(priority: .userInitiated) {
@@ -93,6 +78,7 @@ private struct BloomBoxIPAOpenSheet: View {
     let hasSideStore: Bool
     let installInBloomBox: () -> Void
     let openSideStore: () -> Void
+    let installWithSideStore: (URL) -> Void
     let dismiss: () -> Void
     var isAPK = false
     var hasHusk = false
@@ -141,36 +127,54 @@ private struct BloomBoxIPAOpenSheet: View {
                     }
                     .buttonStyle(.borderedProminent)
 
-                    if #available(iOS 16.0, *) {
-                        if let sideStoreIPA {
-                            ShareLink(item: BloomBoxSideStoreIPA(fileURL: sideStoreIPA), preview: SharePreview(Text(fileURL.lastPathComponent))) {
-                                Label("Instalar con SideStore", systemImage: "square.and.arrow.up")
-                                    .font(.headline)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 9)
+                    if let sideStoreIPA {
+                        Button {
+                            // Hand the staged *local* IPA directly to embedded SideStore.
+                            // Use URLComponents to escape the file URL (spaces, #, ?).
+                            var link = URLComponents()
+                            link.scheme = "sidestore"
+                            link.host = "install"
+                            link.queryItems = [URLQueryItem(name: "url", value: sideStoreIPA.absoluteString)]
+                            if let installURL = link.url {
+                                installWithSideStore(installURL)
+                            } else {
+                                sideStoreHandoffError = BloomBoxL10n.isEnglish
+                                    ? "Unable to create the SideStore installation link."
+                                    : "No se pudo crear el enlace de instalación para SideStore."
                             }
-                            .buttonStyle(.bordered)
-                        } else if sideStoreHandoffError == nil {
-                            HStack(spacing: 8) {
-                                ProgressView()
-                                Text(BloomBoxL10n.isEnglish ? "Preparing IPA for SideStore…" : "Preparando IPA para SideStore…")
-                            }.font(.subheadline)
+                        } label: {
+                            Label("Instalar con SideStore", systemImage: "square.and.arrow.down")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 9)
                         }
-                        if let handoffError = sideStoreHandoffError {
-                            Label((BloomBoxL10n.isEnglish ? "Could not prepare the IPA: " : "No se pudo preparar la IPA: ") + handoffError, systemImage: "exclamationmark.triangle")
-                                .font(.caption)
-                                .foregroundStyle(.red)
-                            Button(BloomBoxL10n.isEnglish ? "Retry" : "Reintentar") {
-                                sideStoreHandoffError = nil
-                                Task { await prepareSideStoreShare() }
-                            }
+                        .buttonStyle(.bordered)
+                        .disabled(!hasSideStore)
+                    } else if sideStoreHandoffError == nil {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text(BloomBoxL10n.isEnglish ? "Preparing IPA for SideStore…" : "Preparando IPA para SideStore…")
+                        }.font(.subheadline)
+                    }
+                    if let handoffError = sideStoreHandoffError {
+                        Label((BloomBoxL10n.isEnglish ? "Could not prepare the IPA: " : "No se pudo preparar la IPA: ") + handoffError, systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                        Button(BloomBoxL10n.isEnglish ? "Retry" : "Reintentar") {
+                            sideStoreHandoffError = nil
+                            Task { await prepareSideStoreShare() }
                         }
-                        Text(BloomBoxL10n.isEnglish ? "In the Share sheet, choose SideStore. BloomBox shares the actual IPA file, not just a link." : "En Compartir, elige SideStore. BloomBox entrega la IPA como archivo, no solo un enlace.")
+                    }
+                    if !hasSideStore {
+                        Text(BloomBoxL10n.isEnglish ? "SideStore is not available in this BloomBox installation." : "SideStore no está disponible en esta instalación de BloomBox.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
-                        Button("Abrir SideStore para importar el archivo", action: openSideStore)
-                            .buttonStyle(.bordered)
+                        Text(BloomBoxL10n.isEnglish
+                             ? "Opens SideStore directly with this IPA, without the iOS Share sheet."
+                             : "Abre SideStore directamente con esta IPA, sin pasar por el menú Compartir.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                     Divider()
                     Label("SideStore: espacios libres sin verificar", systemImage: "info.circle")
@@ -757,6 +761,17 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                         errorInfo = "SideStore no está disponible en esta instalación."
                         errorShow = true
                     }
+                },
+                installWithSideStore: { installURL in
+                    guard UserDefaults.sideStoreExist() else {
+                        errorInfo = "SideStore no está disponible en esta instalación."
+                        errorShow = true
+                        return
+                    }
+                    receivedIPA = nil
+                    // Use the existing built-in SideStore guest (same IPA / sandbox),
+                    // not an external app, Share sheet, or a file:// web download.
+                    LCUtils.openSideStore(delegate: self, urlStr: installURL.absoluteString)
                 },
                 dismiss: { receivedIPA = nil },
                 isAPK: isAPK, hasHusk: husk != nil
