@@ -33,6 +33,7 @@ struct BloomBoxHomeScreen: View {
     @State private var tweakStorePresented = false
     @State private var appStorePresented = false
     @State private var portStorePresented = false
+    @State private var androidFilesPresented = false
     @State private var queuedPortAPK: URL?
     @State private var modulesPresented = false
     @State private var themesPresented = false
@@ -202,6 +203,7 @@ struct BloomBoxHomeScreen: View {
     private static let tweakStoreKey = "manzana:tweakstore"
     private static let appStoreKey = "manzana:appstore"
     private static let portStoreKey = "manzana:portstore"
+    private static let androidFilesKey = "manzana:androidfiles"
     private static let modulesKey = "manzana:modules"
     // Permanent shortcut ID for future theme export and import.
     private static let themesKey = "manzana:themes"
@@ -286,7 +288,7 @@ struct BloomBoxHomeScreen: View {
 
     private var appKeys: [String] {
         LiveContainerHomeAdapter.visibleKeys(apps) + huskGames.map(\.key)
-            + [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey, Self.appStoreKey, Self.portStoreKey, Self.modulesKey, Self.themesKey]
+            + [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey, Self.appStoreKey, Self.portStoreKey, Self.modulesKey, Self.themesKey, Self.androidFilesKey]
     }
     private var appMap: [String: LCAppModel] {
         LiveContainerHomeAdapter.modelsByKey(apps)
@@ -965,6 +967,7 @@ struct BloomBoxHomeScreen: View {
         .sheet(isPresented: $newsFilesPresented) {
             BloomBoxFilesView()
         }
+        .sheet(isPresented: $androidFilesPresented) { BloomBoxAndroidFilesView() }
         .sheet(isPresented: $newsRAMPresented, onDismiss: {
             if newsOpenSideStoreAfterRAMDismiss {
                 newsOpenSideStoreAfterRAMDismiss = false
@@ -1187,7 +1190,8 @@ struct BloomBoxHomeScreen: View {
         let appsByKey = appMap
         let builtIns = Set([
             Self.sideStoreKey, Self.installKey, Self.tweakStoreKey,
-            Self.appStoreKey, Self.portStoreKey, Self.modulesKey, Self.themesKey
+            Self.appStoreKey, Self.portStoreKey, Self.modulesKey, Self.themesKey,
+            Self.androidFilesKey
         ])
         return appKeys.map { key in
             BloomBoxAppLibraryPolicy.Entry(
@@ -1640,6 +1644,7 @@ struct BloomBoxHomeScreen: View {
         else if key == Self.tweakStoreKey { storeFocusedApp = nil; tweakStorePresented = true }
         else if key == Self.appStoreKey { appStorePresented = true }
         else if key == Self.portStoreKey { portStorePresented = true }
+        else if key == Self.androidFilesKey { androidFilesPresented = true }
         else if key == Self.modulesKey { modulesPresented = true }
         else if key == Self.themesKey { themesPresented = true }
         else if let game = huskGames.first(where: { $0.key == key }) {
@@ -1830,6 +1835,8 @@ struct BloomBoxHomeScreen: View {
                 .frame(width: size, height: size)
                 .background(Color(red: 0.42, green: 0.30, blue: 0.78),
                             in: RoundedRectangle(cornerRadius: size * 0.23))
+        } else if key == Self.androidFilesKey {
+            BloomBoxAndroidFolderIcon(size: size)
         } else if key == Self.tweakStoreKey {
             Image(systemName: "puzzlepiece.extension.fill")
                 .font(.system(size: size * 0.46, weight: .semibold))
@@ -2233,7 +2240,7 @@ struct BloomBoxHomeScreen: View {
 
         let builtinIcons: Set<String> = [
             Self.sideStoreKey, Self.installKey, Self.tweakStoreKey,
-            Self.appStoreKey, Self.portStoreKey, Self.modulesKey, Self.themesKey
+            Self.appStoreKey, Self.portStoreKey, Self.modulesKey, Self.themesKey, Self.androidFilesKey
         ]
         // The top three rows remain visible even if TabView does not send geometry.
         // Never choose an icon hidden beneath a media/widget tile.
@@ -2477,7 +2484,7 @@ struct BloomBoxHomeScreen: View {
         case "widget:settings": openTab(.settings)
         case "widget:sources": openTab(.sources)
         case Self.sideStoreKey, Self.installKey, Self.tweakStoreKey,
-             Self.appStoreKey, Self.portStoreKey, Self.modulesKey, Self.themesKey:
+             Self.appStoreKey, Self.portStoreKey, Self.modulesKey, Self.themesKey, Self.androidFilesKey:
             launchLibraryKey(target)
         default:
             guard let app = appMap[target] else {
@@ -2525,6 +2532,10 @@ struct BloomBoxHomeScreen: View {
                 }
                 Button("ApkStore", systemImage: "gamecontroller.fill") {
                     updateWidget(widget.id) { $0.tapActionKey = Self.portStoreKey }
+                }
+                Button(englishUI ? "Android Files" : "Archivos Android",
+                       systemImage: "folder.badge.gearshape") {
+                    updateWidget(widget.id) { $0.tapActionKey = Self.androidFilesKey }
                 }
                 Button("Módulos", systemImage: "square.stack.3d.up.fill") {
                     updateWidget(widget.id) { $0.tapActionKey = Self.modulesKey }
@@ -2767,7 +2778,7 @@ struct BloomBoxHomeScreen: View {
         Group {
             if let folder = layout.folders.first(where: { $0.id == key }) {
                 folderIcon(folder, showLabel: showLabel)
-            } else if [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey, Self.appStoreKey, Self.portStoreKey, Self.modulesKey, Self.themesKey].contains(key) {
+            } else if [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey, Self.appStoreKey, Self.portStoreKey, Self.modulesKey, Self.themesKey, Self.androidFilesKey].contains(key) {
                 shortcutIcon(key, showLabel: showLabel)
             } else if let game = huskGames.first(where: { $0.key == key }) {
                 Button { if !editing { launchLibraryKey(key) } } label: {
@@ -2821,6 +2832,7 @@ struct BloomBoxHomeScreen: View {
         let isTweakStore = key == Self.tweakStoreKey
         let isAppStore = key == Self.appStoreKey
         let isPortStore = key == Self.portStoreKey
+        let isAndroidFiles = key == Self.androidFilesKey
         let isModules = key == Self.modulesKey
         let isThemes = key == Self.themesKey
         return Button {
@@ -2829,6 +2841,7 @@ struct BloomBoxHomeScreen: View {
             else if isTweakStore { tweakStorePresented = true }
             else if isAppStore { appStorePresented = true }
             else if isPortStore { portStorePresented = true }
+            else if isAndroidFiles { androidFilesPresented = true }
             else if isModules { modulesPresented = true }
             else if isThemes { themesPresented = true }
             else { openInstall() }
@@ -2839,6 +2852,8 @@ struct BloomBoxHomeScreen: View {
                         BloomBoxModulesIcon(size: size)
                     } else if isThemes {
                         BloomBoxThemesIcon(size: size)
+                    } else if isAndroidFiles {
+                        BloomBoxAndroidFolderIcon(size: size)
                     } else {
                         RoundedRectangle(cornerRadius: size * 0.23, style: .continuous)
                             .fill(isSideStore ? Color(red: 0.14, green: 0.26, blue: 0.69)
@@ -2862,7 +2877,7 @@ struct BloomBoxHomeScreen: View {
                 .modifier(LiveBoardEditWobble(active: editing && !reduceMotion,
                          phase: isSideStore ? 0.7 : 2.1))
                 if showLabel {
-                    Text(BloomBoxL10n.t(isSideStore ? "SideStore" : isTweakStore ? "Tweak Store" : isAppStore ? "App Store" : isModules ? "Módulos" : isThemes ? "Temas" : "Instalar app"))
+                    Text(BloomBoxL10n.t(title(key)))
                         .font(.system(size: 12))
                         .lineLimit(1)
                         .foregroundStyle(.white)
@@ -3114,7 +3129,7 @@ struct BloomBoxHomeScreen: View {
                                 } else if huskGames.contains(where: { $0.key == key }) {
                                     miniatureIcon(key, size: 16)
                                 } else if [Self.modulesKey, Self.tweakStoreKey, Self.appStoreKey, Self.portStoreKey,
-                                           Self.installKey, Self.sideStoreKey, Self.themesKey].contains(key) {
+                                           Self.installKey, Self.sideStoreKey, Self.themesKey, Self.androidFilesKey].contains(key) {
                                     ZStack {
                                         RoundedRectangle(cornerRadius: 4)
                                             .fill(key == Self.themesKey ? Color(red: 0.56, green: 0.30, blue: 0.84) :
@@ -3567,7 +3582,7 @@ struct BloomBoxHomeScreen: View {
         let hadSavedLayout = layout.initialized
         let knownKeys = Set(layout.pages.flatMap { $0.compactMap { $0 } }
             + layout.dock + layout.folders.flatMap { $0.apps } + layout.hidden)
-        let needsShortcuts = [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey, Self.appStoreKey, Self.portStoreKey, Self.modulesKey, Self.themesKey]
+        let needsShortcuts = [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey, Self.appStoreKey, Self.portStoreKey, Self.modulesKey, Self.themesKey, Self.androidFilesKey]
             .filter { !knownKeys.contains($0) }
         // Only installed guest apps not seen before, never icons the user hid.
         let huskKeys = Set(huskGames.map(\.key))
@@ -3581,7 +3596,7 @@ struct BloomBoxHomeScreen: View {
         if !builtInFolderMigrated {
             layout.groupBuiltInShortcuts([
                 Self.modulesKey, Self.tweakStoreKey, Self.appStoreKey, Self.portStoreKey,
-                Self.installKey, Self.sideStoreKey
+                Self.installKey, Self.sideStoreKey, Self.androidFilesKey
             ])
             builtInFolderMigrated = true
         }
@@ -3617,6 +3632,7 @@ struct BloomBoxHomeScreen: View {
         if key == Self.tweakStoreKey { return "Tweak Store" }
         if key == Self.appStoreKey { return "App Store" }
         if key == Self.portStoreKey { return "ApkStore" }
+        if key == Self.androidFilesKey { return englishUI ? "Android Files" : "Archivos Android" }
         if key == Self.modulesKey { return "Módulos" }
         if key == Self.themesKey { return "Temas" }
         if let folder = layout.folders.first(where: { $0.id == key }) { return folder.name }
@@ -3660,7 +3676,7 @@ struct BloomBoxHomeScreen: View {
                     guard appMap[key] != nil || huskGames.contains(where: { $0.key == key }) ||
                           layout.folders.contains(where: { $0.id == key }) ||
                           [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey,
-                           Self.appStoreKey, Self.portStoreKey, Self.modulesKey, Self.themesKey].contains(key) else { return }
+                           Self.appStoreKey, Self.portStoreKey, Self.modulesKey, Self.themesKey, Self.androidFilesKey].contains(key) else { return }
                     withAnimation(reduceMotion ? nil : .spring(response: 0.25,
                                                               dampingFraction: 0.85)) {
                         layout.place(key, on: pageIndex, slot: slot)
@@ -3684,7 +3700,7 @@ struct BloomBoxHomeScreen: View {
                 } else if appMap[key] != nil || huskGames.contains(where: { $0.key == key }) ||
                           layout.folders.contains(where: { $0.id == key }) ||
                           [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey,
-                           Self.appStoreKey, Self.portStoreKey, Self.modulesKey, Self.themesKey].contains(key) {
+                           Self.appStoreKey, Self.portStoreKey, Self.modulesKey, Self.themesKey, Self.androidFilesKey].contains(key) {
                     layout.place(key, on: pageIndex)
                     page = pageIndex + 1
                     reconcile()
@@ -3700,7 +3716,7 @@ struct BloomBoxHomeScreen: View {
             guard let key = value as? String else { return }
             DispatchQueue.main.async {
                 guard appMap[key] != nil || huskGames.contains(where: { $0.key == key }) ||
-                      key == Self.sideStoreKey || key == Self.installKey || key == Self.tweakStoreKey || key == Self.appStoreKey || key == Self.portStoreKey || key == Self.modulesKey || key == Self.themesKey ||
+                      key == Self.sideStoreKey || key == Self.installKey || key == Self.tweakStoreKey || key == Self.appStoreKey || key == Self.portStoreKey || key == Self.modulesKey || key == Self.themesKey || key == Self.androidFilesKey ||
                       layout.folders.contains(where: { $0.id == key }) else { return }
                 apply(key)
             }
@@ -3715,3 +3731,63 @@ struct BloomBoxHomeScreen: View {
 // Source-compatible entry point for LiveContainer's existing host navigation.
 // New launcher logic and UI are implemented in BloomBoxHomeScreen.
 typealias LiveBoardHomeScreen = BloomBoxHomeScreen
+
+// Android robot and folder: flat scalable artwork, without gradients or highlights.
+private struct BloomBoxAndroidFolderIcon: View {
+    let size: CGFloat
+    private let green = Color(red: 0.05, green: 0.68, blue: 0.34)
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: size * 0.23, style: .continuous).fill(green)
+            HStack(spacing: size * 0.025) {
+                ZStack {
+                    BloomBoxAndroidRobotShape().fill(.white)
+                    HStack(spacing: size * 0.047) {
+                        Circle().fill(green).frame(width: size * 0.029, height: size * 0.029)
+                        Circle().fill(green).frame(width: size * 0.029, height: size * 0.029)
+                    }
+                    .offset(y: -size * 0.087)
+                }
+                .frame(width: size * 0.38, height: size * 0.56)
+                Image(systemName: "folder.fill")
+                    .font(.system(size: size * 0.31, weight: .medium))
+                    .foregroundStyle(.white)
+                    .offset(y: size * 0.065)
+            }
+            .frame(width: size, height: size)
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct BloomBoxAndroidRobotShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let w = rect.width, h = rect.height
+        var p = Path()
+        p.move(to: CGPoint(x: w * 0.24, y: h * 0.06))
+        p.addLine(to: CGPoint(x: w * 0.29, y: h * 0.045))
+        p.addLine(to: CGPoint(x: w * 0.40, y: h * 0.23))
+        p.addLine(to: CGPoint(x: w * 0.35, y: h * 0.25))
+        p.closeSubpath()
+        p.move(to: CGPoint(x: w * 0.76, y: h * 0.06))
+        p.addLine(to: CGPoint(x: w * 0.71, y: h * 0.045))
+        p.addLine(to: CGPoint(x: w * 0.60, y: h * 0.23))
+        p.addLine(to: CGPoint(x: w * 0.65, y: h * 0.25))
+        p.closeSubpath()
+        p.addRoundedRect(in: CGRect(x: w * 0.18, y: h * 0.20, width: w * 0.64, height: h * 0.27),
+                         cornerSize: CGSize(width: w * 0.17, height: h * 0.17))
+        p.addRoundedRect(in: CGRect(x: w * 0.18, y: h * 0.51, width: w * 0.64, height: h * 0.30),
+                         cornerSize: CGSize(width: w * 0.06, height: h * 0.06))
+        p.addRoundedRect(in: CGRect(x: w * 0.02, y: h * 0.52, width: w * 0.12, height: h * 0.26),
+                         cornerSize: CGSize(width: w * 0.06, height: h * 0.06))
+        p.addRoundedRect(in: CGRect(x: w * 0.86, y: h * 0.52, width: w * 0.12, height: h * 0.26),
+                         cornerSize: CGSize(width: w * 0.06, height: h * 0.06))
+        p.addRoundedRect(in: CGRect(x: w * 0.29, y: h * 0.78, width: w * 0.13, height: h * 0.18),
+                         cornerSize: CGSize(width: w * 0.06, height: h * 0.06))
+        p.addRoundedRect(in: CGRect(x: w * 0.58, y: h * 0.78, width: w * 0.13, height: h * 0.18),
+                         cornerSize: CGSize(width: w * 0.06, height: h * 0.06))
+        return p
+    }
+}
