@@ -10,7 +10,7 @@
 //
 // Implementation is kept in LCBootstrap's guest process, not in SideStore,
 // not in the primary BloomBox host, and not inside the guest IPA on disk.
-// No MPVolumeView, volume resets, private volume notifications, or key-window
+// No replacement of native volume controls, private notifications, or key-window
 // takeover. First version targets YouTube Music and YouTube; may be expanded
 // when MediaBloom exports a broader 'currently playing' guest identity.
 
