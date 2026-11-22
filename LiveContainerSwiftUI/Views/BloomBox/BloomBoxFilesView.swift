@@ -1061,6 +1061,8 @@ struct BloomBoxFilesHubView: View {
                             : "Solo se pueden administrar archivos accesibles para BloomBox.")
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background { BloomBoxProfileThemeBackdrop().ignoresSafeArea() }
             .navigationTitle(en ? "Files" : "Archivos")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
