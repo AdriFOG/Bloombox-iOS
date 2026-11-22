@@ -37,6 +37,7 @@ bool sideStoreExist = false;
 // Audio mix experiment stays inside the current guest process and does not
 // alter the SideStore host, system volume, or unrelated guests.
 #include "BloomBoxAudioMix.inc"
+#include "BloomBoxMediaVolumeHUD.inc"
 
 @implementation NSUserDefaults(LiveContainer)
 + (instancetype)lcUserDefaults {
@@ -282,6 +283,7 @@ NSString *LCRunGuestExtension(NSDictionary *request, int argc, char *argv[], cha
 
     lcGuestAppId = bundle.bundleIdentifier;
     BBAudioMixInstallForGuestIfEnabled();
+    BBHUDInstallForGuestIfEnabled();
     NSString *originalHome = NSHomeDirectory();
     setenv("LP_HOME_PATH", originalHome.fileSystemRepresentation, 1);
     setenv("LC_HOME_PATH", lcHomePath.fileSystemRepresentation, 1);
@@ -475,6 +477,7 @@ static NSString* invokeAppMain(NSString *selectedApp, NSString *selectedContaine
     // Guest-specific opt-in must be installed BEFORE the game's initializer
     // and its audio engine choose a non-mixable AVAudioSession category.
     BBAudioMixInstallForGuestIfEnabled();
+    BBHUDInstallForGuestIfEnabled();
 
     // Overwrite home and tmp path
     NSString *newHomePath = nil;
