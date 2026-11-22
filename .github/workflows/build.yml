@@ -65,6 +65,11 @@ jobs:
           swiftc LiveContainerSwiftUI/Views/BloomBox/BloomBoxMediaTags.swift Tests/media-labels/main.swift -o "$RUNNER_TEMP/bloombox-media-label-tests"
           "$RUNNER_TEMP/bloombox-media-label-tests"
           python3 Tests/media-labels/test_contract.py
+      - name: Validate simultaneous-audio opt-in, guest isolation and session hooks
+        run: |
+          swiftc LiveContainerSwiftUI/Views/BloomBox/BloomBoxAudioMixStore.swift Tests/audio-mix/main.swift -o "$RUNNER_TEMP/bloombox-audio-mix-tests"
+          "$RUNNER_TEMP/bloombox-audio-mix-tests"
+          python3 Tests/audio-mix/test_contract.py
       - name: Test BloomBox guest language discovery and per-app JIT routing
         run: |
           swiftc -parse-as-library LiveContainerSwiftUI/Models/BloomBoxGuestLanguageCatalog.swift Tests/guest-language/main.swift -o "$RUNNER_TEMP/bloombox-language-tests"
