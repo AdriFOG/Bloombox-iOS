@@ -208,4 +208,25 @@ let emptyDestinations = BloomBoxHuskRuntimeScanner.destinations(
 precondition(emptyDestinations.count == 1 && emptyDestinations[0].kind == "game",
              "an app without data should offer only its real root")
 
+
+// Unknown future engines still work when Husk creates their own -data folder.
+let futureGame = sandbox.appendingPathComponent(
+    "Husk/Documents/TranslationLayer/future-engine", isDirectory: true)
+let futureRuntime = futureGame.appendingPathComponent("something-new-data", isDirectory: true)
+let irrelevant = futureGame.appendingPathComponent("sdcard", isDirectory: true)
+try fm.createDirectory(at: futureRuntime, withIntermediateDirectories: true)
+try fm.createDirectory(at: irrelevant, withIntermediateDirectories: true)
+let futureCandidates = BloomBoxHuskRuntimeScanner.runtimeFolders(in: futureGame)
+precondition(futureCandidates.count == 1 &&
+    actualPath(futureCandidates[0]) == actualPath(futureRuntime),
+    "discover the only actual -data folder, not a known-engine allowlist")
+precondition(BloomBoxHuskRuntimeScanner.preferredRuntime(in: futureGame)
+    .map(actualPath) == actualPath(futureRuntime))
+
+// If two -data roots exist without evidence, do not silently pick one.
+try fm.createDirectory(at: futureGame.appendingPathComponent(
+    "other-data", isDirectory: true), withIntermediateDirectories: true)
+precondition(BloomBoxHuskRuntimeScanner.preferredRuntime(in: futureGame) == nil,
+    "ambiguous engines must fall back to manual APK container browsing")
+
 print("PASS: engine-scan Husk relative-root destinations, raw OBB/data copy, new directories, alias and escape protection")
