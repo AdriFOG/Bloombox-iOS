@@ -162,6 +162,7 @@ struct BloomBoxHomeScreen: View {
     @State private var pendingHuskUninstall: HuskGame?
     @State private var pendingTweakApp: LCAppModel?
     @State private var mediaTagsVersion = 0
+    @State private var simultaneousAudioVersion = 0
     @State private var choosingAppTweak = false
     @State private var appTweakError: String?
     @State private var networkNoticeText: String?
@@ -2997,6 +2998,7 @@ struct BloomBoxHomeScreen: View {
         let guest = LiveContainerHomeAdapter.snapshot(app, displayName: title(key))
         // Touching a label refreshes the current context menu selection.
         _ = mediaTagsVersion
+        _ = simultaneousAudioVersion
         let menuState = BloomBoxHomeContextMenu.State(
             isRunning: guest.isRunning,
             isSigning: guest.isSigning,
@@ -3007,6 +3009,9 @@ struct BloomBoxHomeScreen: View {
             dockHasSpace: layout.dock.count < BloomBoxHomeLayout.dockCapacity,
             isInFolder: layout.folders.contains { $0.apps.contains(key) },
             networkBlocked: guest.isNetworkBlocked,
+            simultaneousAudioEnabled: BloomBoxAudioMixStore.isEnabled(
+                for: app.bundleIdentifier,
+                defaults: LiveContainerPreferencesAdapter.defaults),
             pageIndices: Array(layout.pages.indices),
             folders: layout.folders.map { .init(id: $0.id, name: $0.name) },
             categories: BloomBoxHomeAppPolicy.categoryNames(from: homeCategories),
@@ -3041,6 +3046,18 @@ struct BloomBoxHomeScreen: View {
                 BloomBoxMediaTagStore.set(tag, for: app.bundleIdentifier,
                                            defaults: LiveContainerPreferencesAdapter.defaults)
                 mediaTagsVersion &+= 1
+            },
+            toggleSimultaneousAudio: {
+                let previous = BloomBoxAudioMixStore.isEnabled(
+                    for: app.bundleIdentifier,
+                    defaults: LiveContainerPreferencesAdapter.defaults)
+                BloomBoxAudioMixStore.setEnabled(!previous,
+                    for: app.bundleIdentifier,
+                    defaults: LiveContainerPreferencesAdapter.defaults)
+                simultaneousAudioVersion &+= 1
+                showNetworkNotice(englishUI
+                    ? "Audio mixing \(!previous ? "enabled" : "disabled") for «\(guest.displayName)». Reopen the app to apply."
+                    : "Audio simultáneo \(!previous ? "activado" : "desactivado") para «\(guest.displayName)». Vuelve a abrir la app.")
             },
             toggleNetwork: {
                 let blocked = LiveContainerHomeAdapter.toggleNetwork(app)
