@@ -48,7 +48,7 @@ private struct BloomBoxReceivedIPA: Identifiable {
 private enum BloomBoxSideStoreHandoff {
     static func prepareFile(_ original: URL) async throws -> URL {
         try await Task.detached(priority: .userInitiated) {
-            guard original.isFileURL && original.pathExtension.lowercased() == "ipa" else {
+            guard original.isFileURL && ["ipa", "tipa"].contains(original.pathExtension.lowercased()) else {
                 throw CocoaError(.fileReadUnsupportedScheme)
             }
             let fm = FileManager.default
@@ -76,7 +76,7 @@ private enum BloomBoxSideStoreHandoff {
 private struct BloomBoxIPAOpenSheet: View {
     let fileURL: URL
     let hasSideStore: Bool
-    let installInBloomBox: () -> Void
+    let installInBloomBox: (URL) -> Void
     let openSideStore: () -> Void
     let installWithSideStore: (URL) -> Void
     let dismiss: () -> Void
@@ -108,7 +108,7 @@ private struct BloomBoxIPAOpenSheet: View {
                     if isAPK {
                         Label("Husk · Leviidev", systemImage: "gamecontroller.fill")
                         if hasHusk {
-                            Button(action: installInBloomBox) {
+                            Button { installInBloomBox(fileURL) } label: {
                                 Label(BloomBoxL10n.isEnglish ? "Install APK" : "Instalar APK", systemImage: "square.stack.3d.up.fill")
                                     .frame(maxWidth: .infinity).padding(.vertical, 9)
                             }.buttonStyle(.borderedProminent)
@@ -119,13 +119,17 @@ private struct BloomBoxIPAOpenSheet: View {
                     } else {
                     Text("¿Dónde quieres instalar esta aplicación?")
                         .font(.headline)
-                    Button(action: installInBloomBox) {
+                    Button {
+                        if let stagedIPA = sideStoreIPA { installInBloomBox(stagedIPA) }
+                    } label: {
                         Label("Instalar dentro de BloomBox", systemImage: "square.stack.3d.up.fill")
                             .font(.headline)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 9)
                     }
                     .buttonStyle(.borderedProminent)
+                    // Files access may expire when the chooser closes. Use the staged local copy.
+                    .disabled(sideStoreIPA == nil)
 
                     if let sideStoreIPA {
                         Button {
@@ -750,10 +754,15 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             BloomBoxIPAOpenSheet(
                 fileURL: request.url,
                 hasSideStore: UserDefaults.sideStoreExist(),
-                installInBloomBox: {
+                installInBloomBox: { preparedURL in
                     receivedIPA = nil
                     if isAPK, let husk { Task { await importAPK(request.url, host: husk) } }
-                    else if !isAPK { Task { await installFromUrl(urlStr: request.url.absoluteString) } }
+                    else if !isAPK {
+                        Task {
+                            await installFromUrl(urlStr: preparedURL.absoluteString)
+                            try? FileManager.default.removeItem(at: preparedURL)
+                        }
+                    }
                 },
                 openSideStore: {
                     receivedIPA = nil
@@ -1545,8 +1554,11 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         defer { Task { await finishInstallationCelebration() } }
         do {
             self.installprogressVisible = true
-            try await installIpaFile(fileUrl)
-            try FileManager.default.removeItem(at: fileUrl)
+            // Never install directly from an expiring iCloud/File Provider URL.
+            // Copy while access is valid and do not delete the user's original.
+            let stagedIPA = try await BloomBoxSideStoreHandoff.prepareFile(fileUrl)
+            defer { try? FileManager.default.removeItem(at: stagedIPA) }
+            try await installIpaFile(stagedIPA)
         } catch {
             errorInfo = error.localizedDescription
             errorShow = true
@@ -1730,7 +1742,9 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         finalNewApp.installationDate = Date.now
         installationActuallySucceeded = true
 
-        DispatchQueue.main.async {
+        // Complete in-memory registration before installation returns.
+        // Delayed dispatch could leave Home showing an old snapshot until restart.
+        await MainActor.run {
             if let appToReplace {
                 let newAppModel = LCAppModel(appInfo: finalNewApp, delegate: self)
                 
