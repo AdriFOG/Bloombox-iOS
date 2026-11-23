@@ -538,6 +538,9 @@ struct BloomBoxHomeScreen: View {
             .onReceive(NotificationCenter.default.publisher(for:
                 Notification.Name("BloomBoxNewInstallGiftCreated"))) { notification in
                 refreshNewInstallGift(notification)
+                // The install event can precede SwiftUI's next render. Reconcile on
+                // the following main-queue turn once the live guest list is updated.
+                DispatchQueue.main.async { reconcile() }
             }
             .onReceive(NotificationCenter.default.publisher(for: Notification.Name("BloomBoxHuskLibraryChanged"))) { _ in refreshHuskGames() }
             // Husk can also install an APK inside its own guest process.
@@ -568,6 +571,11 @@ struct BloomBoxHomeScreen: View {
                 Button("OK") { huskError = nil }
             } message: { Text(huskError ?? "") }
             .onChange(of: appKeys) { _ in reconcile() }
+            // Observe the installed guest registry itself, not only the parent
+            // View's app array, which can stay stale while an install sheet closes.
+            .onChange(of: sharedModel.apps.map { LiveContainerHomeAdapter.key($0) }) { _ in
+                reconcile()
+            }
             .onChange(of: layout) {
                 savedLayout = $0.encoded
                 page = min(page, libraryPageIndex)
