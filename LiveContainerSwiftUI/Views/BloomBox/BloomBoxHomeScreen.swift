@@ -289,15 +289,20 @@ struct BloomBoxHomeScreen: View {
         }.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
     }
 
+    // Read the live registry directly: the immutable parent snapshot may remain
+    // unchanged while an installer or embedded SideStore returns to Home.
+    private var currentGuests: [LCAppModel] {
+        sharedModel.apps + apps.filter { LiveContainerHomeAdapter.isEmbeddedSigner($0) }
+    }
     private var appKeys: [String] {
-        LiveContainerHomeAdapter.visibleKeys(apps) + huskGames.map(\.key)
+        LiveContainerHomeAdapter.visibleKeys(currentGuests) + huskGames.map(\.key)
             + [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey, Self.appStoreKey, Self.portStoreKey, Self.modulesKey, Self.themesKey, Self.androidFilesKey]
     }
     private var appMap: [String: LCAppModel] {
-        LiveContainerHomeAdapter.modelsByKey(apps)
+        LiveContainerHomeAdapter.modelsByKey(currentGuests)
     }
     private var hostActions: LiveContainerHomeActions {
-        LiveContainerHomeActions(guests: apps, open: launch, openJIT: launchWithJIT,
+        LiveContainerHomeActions(guests: currentGuests, open: launch, openJIT: launchWithJIT,
                                  manage: manage, uninstall: uninstall)
     }
     private func performGuest(_ command: BloomBoxHomeGuestCommand,
@@ -322,7 +327,7 @@ struct BloomBoxHomeScreen: View {
 
     private var newsGameNames: [String: String] {
         var result: [String: String] = [:]
-        for app in apps {
+        for app in currentGuests {
             let key = LiveContainerHomeAdapter.key(app)
             result[key] = title(key)
         }
@@ -982,10 +987,10 @@ struct BloomBoxHomeScreen: View {
         }
         .sheet(isPresented: $jitSetup) { LiveBoardJITSetup() }
         .sheet(isPresented: $tweakStorePresented, onDismiss: { storeFocusedApp = nil }) {
-            BloomBoxTweakStore(apps: apps, focusedApp: storeFocusedApp)
+            BloomBoxTweakStore(apps: currentGuests, focusedApp: storeFocusedApp)
         }
         .sheet(isPresented: $appStorePresented) {
-            BloomBoxAppStore(apps: apps, openSources: {
+            BloomBoxAppStore(apps: currentGuests, openSources: {
                 appStorePresented = false
                 openTab(.sources)
             })
@@ -1028,7 +1033,7 @@ struct BloomBoxHomeScreen: View {
             .navigationViewStyle(.stack)
         }
         .sheet(isPresented: $modulesPresented, onDismiss: performModuleAction) {
-            BloomBoxModulesPanel(apps: LiveContainerHomeAdapter.moduleGuests(apps, sharedModel: sharedModel)) { destination in
+            BloomBoxModulesPanel(apps: LiveContainerHomeAdapter.moduleGuests(currentGuests, sharedModel: sharedModel)) { destination in
                 pendingModuleDestination = destination
                 modulesPresented = false
             }
@@ -3458,7 +3463,7 @@ struct BloomBoxHomeScreen: View {
 
     private var searchResults: [LCAppModel] {
         BloomBoxHomeAppPolicy.matching(
-            apps, query: query,
+            currentGuests, query: query,
             title: { title(LiveContainerHomeAdapter.key($0)) },
             bundleID: { LiveContainerHomeAdapter.snapshot($0, displayName: "").bundleIdentifier }
         )
@@ -3475,7 +3480,7 @@ struct BloomBoxHomeScreen: View {
     private func searchOverlay(height: CGFloat) -> some View {
         // The search view sees stable keys and names only. LiveContainer models
         // are used exclusively by this temporary adapter for icons and launch.
-        let guests = LiveContainerHomeAdapter.searchModelsByKey(apps)
+        let guests = LiveContainerHomeAdapter.searchModelsByKey(currentGuests)
         var used = Set<String>()
         let entries = searchResults.compactMap { app -> BloomBoxHomeSearchEntry? in
             let key = LiveContainerHomeAdapter.key(app)
