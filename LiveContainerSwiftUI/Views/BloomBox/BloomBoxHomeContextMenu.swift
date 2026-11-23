@@ -18,9 +18,11 @@ struct BloomBoxHomeContextMenu: View {
         let dockHasSpace: Bool
         let isInFolder: Bool
         let networkBlocked: Bool
+        let simultaneousAudioEnabled: Bool
         let pageIndices: [Int]
         let folders: [Folder]
         let categories: [String]
+        let mediaTag: BloomBoxMediaTag
     }
 
     struct Actions {
@@ -39,7 +41,9 @@ struct BloomBoxHomeContextMenu: View {
         let removeFromFolder: () -> Void
         let setCategory: (String?) -> Void
         let newCategory: () -> Void
+        let setMediaTag: (BloomBoxMediaTag) -> Void
         let toggleNetwork: () -> Void
+        let toggleSimultaneousAudio: () -> Void
         let addTweak: () -> Void
         let settings: () -> Void
         let uninstall: () -> Void
@@ -95,6 +99,21 @@ struct BloomBoxHomeContextMenu: View {
                 Button(state.englishUI ? "Move out of Folder" : "Sacar de carpeta", action: actions.removeFromFolder)
             }
         }
+        Menu(state.englishUI ? "Labels" : "Etiquetas", systemImage: "tag.fill") {
+            ForEach(BloomBoxMediaTag.allCases) { tag in
+                Button {
+                    actions.setMediaTag(tag)
+                } label: {
+                    Label(
+                        tag == .automatic ? (state.englishUI ? "Automatic" : "Automático")
+                        : tag == .music ? (state.englishUI ? "Music" : "Música")
+                        : tag == .video ? "Video"
+                        : (state.englishUI ? "Not media" : "No es multimedia"),
+                        systemImage: state.mediaTag == tag ? "checkmark.circle.fill" : "circle"
+                    )
+                }
+            }
+        }
         Menu(state.englishUI ? "Category" : "Categoría", systemImage: "tag") {
             ForEach(state.categories, id: \.self) { name in
                 Button(name) { actions.setCategory(name) }
@@ -105,6 +124,12 @@ struct BloomBoxHomeContextMenu: View {
     }
 
     @ViewBuilder private var guestActions: some View {
+        Button(state.simultaneousAudioEnabled
+               ? (state.englishUI ? "Disable simultaneous audio" : "Desactivar audio simultáneo")
+               : (state.englishUI ? "Allow simultaneous audio" : "Permitir audio simultáneo"),
+               systemImage: state.simultaneousAudioEnabled ? "speaker.wave.2.fill" : "speaker.wave.2",
+               action: actions.toggleSimultaneousAudio)
+            .disabled(state.isRunning || state.isSigning)
         Button(state.networkBlocked ? (state.englishUI ? "Allow Internet" : "Permitir Internet") : (state.englishUI ? "Block Internet (experimental)" : "Bloquear Internet (experimental)"),
                systemImage: state.networkBlocked ? "wifi" : "wifi.slash",
                action: actions.toggleNetwork)

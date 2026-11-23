@@ -111,6 +111,26 @@ struct LCAppSettingsView: View {
             }
             
             Section {
+                BloomBoxMediaLabelPicker(bundleID: model.bundleIdentifier, isShared: model.uiIsShared)
+            } header: {
+                Text(BloomBoxL10n.isEnglish ? "Labels" : "Etiquetas")
+            } footer: {
+                Text(BloomBoxL10n.isEnglish
+                    ? "Mark Music or Video to list this shared app in MediaBloom, even if it is not in the catalog. Private apps must be converted to Shared App before appearing."
+                    : "Marca Música o Video para que una app compartida aparezca en MediaBloom, aunque no esté en el catálogo. Las apps privadas deben convertirse en compartidas primero.")
+            }
+
+            Section {
+                BloomBoxSimultaneousAudioToggle(bundleID: model.bundleIdentifier)
+            } header: {
+                Text(BloomBoxL10n.isEnglish ? "Audio" : "Audio")
+            } footer: {
+                Text(BloomBoxL10n.isEnglish
+                     ? "Allow the game's sound to mix with music playing in MediaBloom or another app. Restart this game to apply. Experimental: some audio engines or voice chats may not support it."
+                     : "Permite que el sonido del juego se mezcle con música de MediaBloom u otra app. Vuelve a abrir el juego para aplicarlo. Experimental: algunos motores o chats de voz podrían no ser compatibles.")
+            }
+
+            Section {
                 NavigationLink {
                     BloomBoxBackupView(model: model)
                 } label: {
@@ -957,5 +977,69 @@ extension LCAppSettingsView : LCSelectContainerViewDelegate {
         }
         appInfo.containers = model.uiContainers;
 
+    }
+}
+
+
+// A host-side label picker. Writing to LC's shared App Group lets a second,
+// separately installed MediaBloom instance read the preference by bundle ID.
+private struct BloomBoxMediaLabelPicker: View {
+    let isShared: Bool
+
+    @AppStorage private var selection: String
+
+    init(bundleID: String, isShared: Bool) {
+        self.isShared = isShared
+        _selection = AppStorage(
+            wrappedValue: BloomBoxMediaTag.automatic.rawValue,
+            BloomBoxMediaTagStore.key(for: bundleID),
+            store: LCUtils.appGroupUserDefault
+        )
+    }
+
+    var body: some View {
+        Picker(BloomBoxL10n.isEnglish ? "MediaBloom label" : "Etiqueta de MediaBloom",
+               selection: $selection) {
+            Text(BloomBoxL10n.isEnglish ? "Automatic" : "Automático")
+                .tag(BloomBoxMediaTag.automatic.rawValue)
+            Text(BloomBoxL10n.isEnglish ? "Music" : "Música")
+                .tag(BloomBoxMediaTag.music.rawValue)
+            Text(BloomBoxL10n.isEnglish ? "Video" : "Video")
+                .tag(BloomBoxMediaTag.video.rawValue)
+            Text(BloomBoxL10n.isEnglish ? "Not media" : "No es multimedia")
+                .tag(BloomBoxMediaTag.excluded.rawValue)
+        }
+        if !isShared {
+            Label(BloomBoxL10n.isEnglish
+                  ? "This app must be shared before MediaBloom can open it."
+                  : "Comparte esta app antes de abrirla desde MediaBloom.",
+                  systemImage: "square.on.square")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+
+// The flag is applied in BloomBox's native guest bootstrap, not by setting
+// AVAudioSession on the host UI. It never modifies game installations.
+private struct BloomBoxSimultaneousAudioToggle: View {
+    @AppStorage private var enabled: Bool
+
+    init(bundleID: String) {
+        _enabled = AppStorage(
+            wrappedValue: false,
+            BloomBoxAudioMixStore.key(for: bundleID),
+            store: LCUtils.appGroupUserDefault
+        )
+    }
+
+    var body: some View {
+        Toggle(isOn: $enabled) {
+            Label(BloomBoxL10n.isEnglish
+                  ? "Allow simultaneous audio"
+                  : "Permitir audio simultáneo", systemImage: "waveform")
+        }
+        .tint(.purple)
     }
 }

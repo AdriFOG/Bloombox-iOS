@@ -161,6 +161,8 @@ struct BloomBoxHomeScreen: View {
     @State private var pendingUninstall: LCAppModel?
     @State private var pendingHuskUninstall: HuskGame?
     @State private var pendingTweakApp: LCAppModel?
+    @State private var mediaTagsVersion = 0
+    @State private var simultaneousAudioVersion = 0
     @State private var choosingAppTweak = false
     @State private var appTweakError: String?
     @State private var networkNoticeText: String?
@@ -538,6 +540,11 @@ struct BloomBoxHomeScreen: View {
                 refreshNewInstallGift(notification)
             }
             .onReceive(NotificationCenter.default.publisher(for: Notification.Name("BloomBoxHuskLibraryChanged"))) { _ in refreshHuskGames() }
+            // Husk can also install an APK inside its own guest process.
+            // Refresh Home as soon as that guest exits, without relaunching BloomBox.
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("BloomBoxGuestSceneDidExit"))) { _ in
+                refreshHuskGames()
+            }
             .onChange(of: sharedModel.isHiddenAppUnlocked) { _ in refreshHuskGames() }
             .onChange(of: themeActiveID) { _ in refreshHuskGames() }
             .onChange(of: husk?.appInfo.relativeBundlePath) { _ in refreshHuskGames() }
@@ -2842,14 +2849,21 @@ struct BloomBoxHomeScreen: View {
             } else if [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey, Self.appStoreKey, Self.portStoreKey, Self.modulesKey, Self.themesKey, Self.androidFilesKey].contains(key) {
                 shortcutIcon(key, showLabel: showLabel)
             } else if let game = huskGames.first(where: { $0.key == key }) {
-                Button { if !editing { launchLibraryKey(key) } } label: {
-                    VStack(spacing: 4) {
-                        miniatureIcon(key, size: largeIcons ? 76 : 64)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
-                        if showLabel { Text(game.title).font(.caption).lineLimit(1).foregroundStyle(.white) }
+                if unopenedGiftKeys.contains(key) && !editing {
+                    BloomBoxHomeGiftIcon(name: game.title, size: largeIcons ? 76 : 64,
+                                         showLabel: showLabel, reduceMotion: reduceMotion) {
+                        revealGift(key)
                     }
-                }.buttonStyle(LiveBoardHomePressStyle(reduceMotion: reduceMotion))
-                .contextMenu { huskMenu(game) }
+                } else {
+                    Button { if !editing { launchLibraryKey(key) } } label: {
+                        VStack(spacing: 4) {
+                            miniatureIcon(key, size: largeIcons ? 76 : 64)
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                            if showLabel { Text(game.title).font(.caption).lineLimit(1).foregroundStyle(.white) }
+                        }
+                    }.buttonStyle(LiveBoardHomePressStyle(reduceMotion: reduceMotion))
+                    .contextMenu { huskMenu(game) }
+                }
             } else if let app = appMap[key] {
                 if unopenedGiftKeys.contains(key) && !editing {
                     BloomBoxHomeGiftIcon(name: title(key), size: largeIcons ? 76 : 64,
@@ -2994,6 +3008,9 @@ struct BloomBoxHomeScreen: View {
         // The presentation reads only stable menu state. Host-specific calls
         // remain here until a LiveContainer adapter replaces this bridge.
         let guest = LiveContainerHomeAdapter.snapshot(app, displayName: title(key))
+        // Touching a label refreshes the current context menu selection.
+        _ = mediaTagsVersion
+        _ = simultaneousAudioVersion
         let menuState = BloomBoxHomeContextMenu.State(
             isRunning: guest.isRunning,
             isSigning: guest.isSigning,
@@ -3004,9 +3021,15 @@ struct BloomBoxHomeScreen: View {
             dockHasSpace: layout.dock.count < BloomBoxHomeLayout.dockCapacity,
             isInFolder: layout.folders.contains { $0.apps.contains(key) },
             networkBlocked: guest.isNetworkBlocked,
+            simultaneousAudioEnabled: BloomBoxAudioMixStore.isEnabled(
+                for: app.bundleIdentifier,
+                defaults: LiveContainerPreferencesAdapter.defaults),
             pageIndices: Array(layout.pages.indices),
             folders: layout.folders.map { .init(id: $0.id, name: $0.name) },
-            categories: BloomBoxHomeAppPolicy.categoryNames(from: homeCategories)
+            categories: BloomBoxHomeAppPolicy.categoryNames(from: homeCategories),
+            mediaTag: BloomBoxMediaTagStore.selection(
+                for: app.bundleIdentifier,
+                defaults: LiveContainerPreferencesAdapter.defaults)
         )
         let actions = BloomBoxHomeContextMenu.Actions(
             launch: { requestLaunch(app) },
@@ -3031,6 +3054,11 @@ struct BloomBoxHomeScreen: View {
             removeFromFolder: { layout.place(key, on: max(0, page - 1)); reconcile() },
             setCategory: { value in setCategory(value, key: key) },
             newCategory: { categoryApp = key; categoryName = ""; addingCategory = true },
+            setMediaTag: { tag in
+                BloomBoxMediaTagStore.set(tag, for: app.bundleIdentifier,
+                                           defaults: LiveContainerPreferencesAdapter.defaults)
+                mediaTagsVersion &+= 1
+            },
             toggleNetwork: {
                 let blocked = LiveContainerHomeAdapter.toggleNetwork(app)
                 let name = guest.displayName
@@ -3039,6 +3067,18 @@ struct BloomBoxHomeScreen: View {
                         ? (englishUI ? "Internet disabled for «\(name)»." : "«\(name)» ya no contará con acceso a Internet.")
                         : (englishUI ? "Internet restored for «\(name)»." : "«\(name)» volverá a tener acceso a Internet."))
                 }
+            },
+            toggleSimultaneousAudio: {
+                let previous = BloomBoxAudioMixStore.isEnabled(
+                    for: app.bundleIdentifier,
+                    defaults: LiveContainerPreferencesAdapter.defaults)
+                BloomBoxAudioMixStore.setEnabled(!previous,
+                    for: app.bundleIdentifier,
+                    defaults: LiveContainerPreferencesAdapter.defaults)
+                simultaneousAudioVersion &+= 1
+                showNetworkNotice(englishUI
+                    ? "Audio mixing \(!previous ? "enabled" : "disabled") for «\(guest.displayName)». Reopen the app to apply."
+                    : "Audio simultáneo \(!previous ? "activado" : "desactivado") para «\(guest.displayName)». Vuelve a abrir la app.")
             },
             addTweak: {
                 pendingTweakApp = app

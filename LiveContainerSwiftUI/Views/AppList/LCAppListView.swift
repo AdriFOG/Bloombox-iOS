@@ -332,7 +332,9 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     }
     
     var launcherApps: [LCAppModel] {
-        sortedApps + (builtInSideStore.map { [$0] } ?? [])
+        // Home keeps its own icon order. Use the live source of truth rather
+        // than the native list's sorted snapshot, which can lag after installs.
+        sharedModel.apps + (builtInSideStore.map { [$0] } ?? [])
     }
 
     var filteredLauncherApps: [LCAppModel] {
@@ -2268,7 +2270,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 throw "No se encontró el contenedor de Husk."
             }
             let home = container.containerURL
-            try await Task.detached(priority: .userInitiated) {
+            let (installedID, freshAPK) = try await Task.detached(priority: .userInitiated) {
                 let fm = FileManager.default
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
@@ -2307,11 +2309,28 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 }
                 let id = hash.finalize().map { String(format: "%02x", $0) }.joined()
                 let installed = root.appendingPathComponent(id)
+                let previouslyInstalled = fm.fileExists(atPath: installed.appendingPathComponent("base.apk").path)
                 try url.deletingPathExtension().lastPathComponent.write(to: staging.appendingPathComponent("label.txt"), atomically: true, encoding: .utf8)
                 do { try fm.moveItem(at: staging, to: installed) }
                 catch { if !fm.fileExists(atPath: installed.appendingPathComponent("base.apk").path) { throw error } }
+                return (id, !previouslyInstalled)
             }.value
+            // Refresh visible Android apps immediately, just like iOS guests.
             NotificationCenter.default.post(name: Notification.Name("BloomBoxHuskLibraryChanged"), object: nil)
+            if freshAPK {
+                let key = "husk/" + container.folderName + "/" + installedID
+                let defaults = LCUtils.appGroupUserDefault
+                let stored = defaults.string(forKey: "BloomBoxPendingGiftKeysV1") ?? "[]"
+                var keys = (try? JSONDecoder().decode([String].self,
+                    from: Data(stored.utf8))) ?? []
+                if !keys.contains(key) { keys.append(key) }
+                if let encoded = try? JSONEncoder().encode(Array(keys.suffix(60))),
+                   let json = String(data: encoded, encoding: .utf8) {
+                    defaults.set(json, forKey: "BloomBoxPendingGiftKeysV1")
+                    NotificationCenter.default.post(
+                        name: Notification.Name("BloomBoxNewInstallGiftCreated"), object: key)
+                }
+            }
             installProgressPercentage = 1
             installationActuallySucceeded = true
             await finishInstallationCelebration()
