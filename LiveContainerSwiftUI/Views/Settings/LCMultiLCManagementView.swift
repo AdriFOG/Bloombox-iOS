@@ -84,6 +84,8 @@ struct LCMultiLCManagementView : View, InstallAnotherLCButtonDelegate {
             Section {
                 InstallAnotherLCButton(lcName: "LiveContainer2", delegate: self)
                 InstallAnotherLCButton(lcName: "LiveContainer3", delegate: self)
+                // Media is a separate, entertainment-only LC2-derived IPA.
+                InstallAnotherLCButton(lcName: "BloomBoxMedia", delegate: self)
             } header: {
                 Text("lc.settings.multiLCInstall".loc)
             }
@@ -198,12 +200,21 @@ struct LCMultiLCManagementView : View, InstallAnotherLCButtonDelegate {
         
         do {
             var extraInfo: [String : Any] = [:]
-            if useGameCategory {
-                extraInfo["LSApplicationCategoryType"] = "public.app-category.games"
-            }
-            if allowGameMode {
-                extraInfo["GCSupportsGameMode"] = true
-                extraInfo["LSSupportsGameMode"] = true
+            if name == "BloomBoxMedia" {
+                extraInfo["BloomBoxMediaEdition"] = true
+                extraInfo["LSApplicationCategoryType"] = "public.app-category.entertainment"
+                // Remove game capabilities regardless of the other LC
+                // instances' optional Game Mode settings.
+                extraInfo["GCSupportsGameMode"] = false
+                extraInfo["LSSupportsGameMode"] = false
+            } else {
+                if useGameCategory {
+                    extraInfo["LSApplicationCategoryType"] = "public.app-category.games"
+                }
+                if allowGameMode {
+                    extraInfo["GCSupportsGameMode"] = true
+                    extraInfo["LSSupportsGameMode"] = true
+                }
             }
             let packedIpaUrl = try LCUtils.archiveIPA(withBundleName: name, includingExtraInfoDict: extraInfo)
             

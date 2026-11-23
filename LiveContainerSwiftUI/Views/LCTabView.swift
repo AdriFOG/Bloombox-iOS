@@ -23,7 +23,15 @@ struct LCTabView: View {
     let pub = NotificationCenter.default.publisher(for: UIScene.didDisconnectNotification)
     
     var body: some View {
-        LiveBoardRootView()
+        Group {
+            if BloomBoxMediaBuild.isEnabled {
+                // A dedicated second LiveContainer instance, not another
+                // GameBox mode in the primary BloomBox installation.
+                LCAppListView()
+            } else {
+                LiveBoardRootView()
+            }
+        }
         .downloadAlert(helper: downloadHelper)
         .environmentObject(downloadHelper)
         .alert("lc.common.error".loc, isPresented: $errorShow){

@@ -255,6 +255,11 @@ class LCAppModel: ObservableObject, Hashable {
     }
 
     func runApp(multitask: Bool? = nil, containerFolderName : String? = nil, bundleIdOverride : String? = nil, urlStr : String? = nil, forceJIT: Bool? = nil) async throws{
+        // Do not allow guest games, app stores, or unshared apps to run inside
+        // the dedicated media instance, including via non-UI launch paths.
+        if BloomBoxMediaBuild.isEnabled && BloomBoxMediaCatalog.kind(for: self) == nil {
+            throw "BloomBox Media only launches recognized shared media apps."
+        }
         if isDataBackupInProgress {
             throw "Espera a que termine la copia de datos antes de abrir esta app."
         }
