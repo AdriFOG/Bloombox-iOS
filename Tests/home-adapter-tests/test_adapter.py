@@ -32,9 +32,9 @@ assert "LCUtils.appGroupUserDefault" in PREFS
 assert "static var defaults: UserDefaults" in PREFS
 
 for term in (
-    "LiveContainerHomeAdapter.visibleKeys(apps)",
-    "LiveContainerHomeAdapter.modelsByKey(apps)",
-    "LiveContainerHomeAdapter.searchModelsByKey(apps)",
+    "LiveContainerHomeAdapter.visibleKeys(currentGuests)",
+    "LiveContainerHomeAdapter.modelsByKey(currentGuests)",
+    "LiveContainerHomeAdapter.searchModelsByKey(currentGuests)",
     "LiveContainerHomeAdapter.snapshot(app, displayName: title(key))",
     "LiveContainerHomeAdapter.toggleNetwork(app)",
     "LiveContainerHomeAdapter.builtInSignerIcon(dark: darkIcons)",
@@ -61,6 +61,10 @@ for interface in (
 # Guests are selected by their legacy key while the host preserves the exact
 # selected model when duplicate installation IDs exist.
 assert "enum BloomBoxHomeGuestCommand" in CONTRACTS
+# Installed guest apps must come from the current shared registry; only the
+# embedded SideStore shortcut is kept from the parent's cached snapshot.
+assert "private var currentGuests: [LCAppModel]" in HOME
+assert "sharedModel.apps + apps.filter { LiveContainerHomeAdapter.isEmbeddedSigner($0) }" in HOME
 assert "private var hostActions: LiveContainerHomeActions" in HOME
 assert "hostActions.perform(command, selected: selected)" in HOME
 assert "selected: LCAppModel?" in HOME
@@ -71,7 +75,7 @@ for case in ("case let .open(key, jit):", "case let .manage(key):", "case let .u
 for token in ("launch(app)", "launchWithJIT(app)", "manage(app)", "uninstall(app)",
               "LCParseMachO(", "LCPatchAddRPath(", "LCPath.tweakPath"):
     assert token not in HOME, f"Host action leaked back into BloomBox Home: {token}"
-assert "LiveContainerHomeAdapter.moduleGuests(apps, sharedModel: sharedModel)" in HOME
+assert "LiveContainerHomeAdapter.moduleGuests(currentGuests, sharedModel: sharedModel)" in HOME
 assert 'static func moduleGuests(' in GUEST
 assert "LiveContainerHomeAdapter.installTweakFiles(" in HOME
 assert "static func installTweakFiles(" in GUEST
