@@ -45,6 +45,7 @@ assert 'if freshAPK {' in host
 assert 'let key = "husk/" + folder + "/" + installedID' in host
 assert 'Notification.Name("BloomBoxHuskLibraryChanged")' in host
 assert home.count('if unopenedGiftKeys.contains(key) && !editing') >= 2
+assert 'Notification.Name("BloomBoxGuestSceneDidExit")' in home
 # The wizard's per-profile favorite color drives the full progress bar.
 assert 'accentColor: profileAccent' in home
 assert 'let accentColor: Color' in visuals
