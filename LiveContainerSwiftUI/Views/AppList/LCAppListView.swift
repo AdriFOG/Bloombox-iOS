@@ -2318,7 +2318,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             // Refresh visible Android apps immediately, just like iOS guests.
             NotificationCenter.default.post(name: Notification.Name("BloomBoxHuskLibraryChanged"), object: nil)
             if freshAPK {
-                let key = "husk/" + folder + "/" + installedID
+                let key = "husk/" + container.folderName + "/" + installedID
                 let defaults = LCUtils.appGroupUserDefault
                 let stored = defaults.string(forKey: "BloomBoxPendingGiftKeysV1") ?? "[]"
                 var keys = (try? JSONDecoder().decode([String].self,
