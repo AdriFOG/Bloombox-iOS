@@ -42,7 +42,8 @@ assert 'sharedModel.apps + (builtInSideStore.map { [$0] } ?? [])' in host
 # The APK installer now uses the same persistent gift reveal and immediate refresh.
 assert 'let (installedID, freshAPK) = try await Task.detached' in host
 assert 'if freshAPK {' in host
-assert 'let key = "husk/" + folder + "/" + installedID' in host
+assert 'let key = "husk/" + container.folderName + "/" + installedID' in host
+assert 'HuskGame(key: "husk/" + container.folderName + "/" + id' in home
 assert 'Notification.Name("BloomBoxHuskLibraryChanged")' in host
 assert home.count('if unopenedGiftKeys.contains(key) && !editing') >= 2
 assert 'Notification.Name("BloomBoxGuestSceneDidExit")' in home
