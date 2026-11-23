@@ -538,6 +538,11 @@ struct BloomBoxHomeScreen: View {
                 refreshNewInstallGift(notification)
             }
             .onReceive(NotificationCenter.default.publisher(for: Notification.Name("BloomBoxHuskLibraryChanged"))) { _ in refreshHuskGames() }
+            // Husk can also install an APK inside its own guest process.
+            // Refresh Home as soon as that guest exits, without relaunching BloomBox.
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("BloomBoxGuestSceneDidExit"))) { _ in
+                refreshHuskGames()
+            }
             .onChange(of: sharedModel.isHiddenAppUnlocked) { _ in refreshHuskGames() }
             .onChange(of: themeActiveID) { _ in refreshHuskGames() }
             .onChange(of: husk?.appInfo.relativeBundlePath) { _ in refreshHuskGames() }
