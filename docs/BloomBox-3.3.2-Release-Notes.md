@@ -1,23 +1,25 @@
 # BloomBox 3.3.2 — Media Tags & Gifts Hotfix
 
-## Cambios / What's new
+## What's New
 
-- **Regalitos 3DS / Animated gifts:** recupera la presentación de caja de regalo animada para nuevas apps IPA y APK importadas directamente en BloomBox.
-- **Apps visibles al instalar / Instant Home updates:** el escritorio lee la lista activa de apps iOS, sin necesitar reiniciar BloomBox para ver la nueva instalación; las apps Android de Husk se actualizan al importar y al volver de una sesión.
-- **Etiquetas compartidas / Shared media labels:** Música, Video, Automático y No es multimedia; se comparten con MediaBloom mediante preferencias del App Group compatible.
-- **Audio simultáneo / Audio mixing:** añade una opción apagada por defecto para intentar que una app no interrumpa el audio de otra. El resultado depende de las apps y de iOS; no garantiza mezcla de audio en todos los casos.
-- **Sin HUD de volumen externo:** el experimento de HUD externo no se incluye; iOS mantiene sus controles físicos y de volumen general.
+- **3DS-style animated gifts:** Restores the animated gift-box reveal for newly installed iOS apps (IPA/TIPA) and Android APKs imported directly through BloomBox. Gift boxes shake periodically and reveal the app when tapped.
+- **Instant Home screen updates:** Newly installed iOS apps appear without restarting BloomBox. Husk's Android app library also refreshes after direct APK imports or when returning from a guest session.
+- **Shared media tags:** Mark apps as **Music**, **Video**, **Automatic**, or **Not Media**. Tags are stored in shared preferences for compatible MediaBloom installations.
+- **Simultaneous audio option:** Adds an opt-in setting, **off by default**, that attempts to keep one app's audio playing while another app is running. Actual behavior depends on iOS and individual apps; simultaneous playback is not guaranteed.
+- **No external volume HUD:** The experimental external volume overlay is intentionally excluded. System volume buttons and controls are unchanged.
 
-## Alcance / Scope
+## Scope
 
-Incluye el PR de etiquetas y audio y el arreglo de regalos/actualización de Home. **No** integra el segundo LiveContainer experimental del PR #22 ni convierte BloomBox en un reproductor multimedia. MediaBloom sigue separado.
+This hotfix combines the shared media tags/audio settings work with the Home screen and animated-gift fixes. It does **not** include the experimental second LiveContainer instance from PR #22. MediaBloom remains a separate app.
 
-## Verificación / Validation
+## Validation
 
-Las pruebas de GitHub Actions y la compilación de la versión combinada deben completarse antes de publicar. La prueba final de interacción de regalos, etiquetas y audio debe realizarse en un iPhone.
+The combined changes passed GitHub Actions checks, the Xcode archive, and packaged IPA checks for SideStore integration, JIT/LiveProcess extensions, RAM+ entitlements, and branding. Final interaction testing of gifts, labels, and audio on a physical iPhone is still recommended.
 
-## Instalación / Install
+## Installation
 
-Descarga **BloomBox-SideStore-unsigned.ipa** desde los archivos de esta versión y fírmala con SideStore o un método compatible. Actualiza sobre la instalación existente utilizando el mismo identificador de app y equipo de firma. **No desinstales BloomBox**, para conservar tus apps, datos y configuraciones. Comprueba que LiveProcess, SideStore y JIT Helper siguen incluidos.
+Download **BloomBox-SideStore-unsigned.ipa** from the Assets section below and sign it with SideStore or another compatible signing method. Install it **over your existing BloomBox installation**, using the same bundle identifier, signing team, and signing configuration. **Do not uninstall BloomBox first** if you want to preserve your installed apps, data, and settings.
 
-**Versión:** BloomBox y widget **3.3.2 (33002)**.
+The IPA includes SideStore, LiveProcess, and JIT Helper components. Available RAM+ and JIT permissions may depend on your final signing configuration.
+
+**Version:** BloomBox and widget **3.3.2 (33002)**.

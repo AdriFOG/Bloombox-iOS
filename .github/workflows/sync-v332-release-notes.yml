@@ -1,0 +1,27 @@
+name: Sync BloomBox 3.3.2 release notes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/BloomBox-3.3.2-Release-Notes.md'
+
+jobs:
+  update-release-notes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out updated release notes
+        uses: actions/checkout@v4
+      - name: Update published v3.3.2 release description
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release view v3.3.2 --repo "$GITHUB_REPOSITORY" >/dev/null
+          gh release edit v3.3.2 \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "BloomBox 3.3.2 — Media Tags & Gifts Hotfix" \
+            --notes-file docs/BloomBox-3.3.2-Release-Notes.md
+          echo "Updated v3.3.2 release notes without touching its IPA assets."
