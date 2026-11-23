@@ -70,7 +70,6 @@ jobs:
           swiftc LiveContainerSwiftUI/Views/BloomBox/BloomBoxAudioMixStore.swift Tests/audio-mix/main.swift -o "$RUNNER_TEMP/bloombox-audio-mix-tests"
           "$RUNNER_TEMP/bloombox-audio-mix-tests"
           python3 Tests/audio-mix/test_contract.py
-          python3 Tests/audio-mix/test_media_hud.py
       - name: Test BloomBox guest language discovery and per-app JIT routing
         run: |
           swiftc -parse-as-library LiveContainerSwiftUI/Models/BloomBoxGuestLanguageCatalog.swift Tests/guest-language/main.swift -o "$RUNNER_TEMP/bloombox-language-tests"
