@@ -320,6 +320,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     
     @EnvironmentObject private var sharedModel : SharedModel
     @EnvironmentObject private var sharedAppSortManager : LCAppSortManager
+    @Environment(\.scenePhase) private var scenePhase
     
     @AppStorage("LCMultitaskMode", store: LCUtils.appGroupUserDefault) var multitaskMode: MultitaskMode = .virtualWindow
     @AppStorage("darkModeIcon", store: LCUtils.appGroupUserDefault) private var darkModeIcon = false
@@ -959,6 +960,19 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 }
                 isViewAppeared = true
             }
+            refreshInstalledGuestsFromDisk()
+        }
+        // An embedded guest may finish installing after Home's original
+        // startup scan, so refresh as soon as the host becomes active.
+        .onChange(of: scenePhase) { phase in
+            if phase == .active { refreshInstalledGuestsFromDisk() }
+        }
+        // Also cover installs that never trigger a scene transition (for
+        // example an installer presented from BloomBox News).
+        // Directory listings are cheap; LCAppInfo is read only for new folders.
+        .onReceive(Timer.publish(every: 1.5, on: .main, in: .common).autoconnect()) { _ in
+            guard scenePhase == .active, !manageLibrary, liveBoardMode == "ios" else { return }
+            refreshInstalledGuestsFromDisk()
         }
         .task {
             // Always nonblocking; launches use the previously validated cache.
@@ -987,6 +1001,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
                 .flatMap { $0.windows }.first { $0.isKeyWindow }
             LiveBoardOrientation.endGuest(appKey: appKey, window: window)
+            refreshInstalledGuestsFromDisk()
             // Hybrid's temporary GameBox screen goes away once its game closes.
             if hybridRunningGuestKey == appKey {
                 hybridRunningGuestKey = nil
@@ -1305,7 +1320,76 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         throw "LiveExec32 installation did not finish. Open Apps to check the runtime before retrying. JIT is still required for 32-bit apps."
     }
 
+    // The startup scan runs only when BloomBox launches. Installations made by
+    // SideStore or other guest processes can modify Applications/ while Home is
+    // already mounted, leaving the in-memory registry stale until a restart.
+    // Reconcile only missing folders: never rebuild an existing LCAppModel or
+    // overwrite its running state, profile settings, data, or icon placement.
+    @MainActor private func refreshInstalledGuestsFromDisk() {
+        guard !installprogressVisible else { return }
+        let fm = FileManager.default
+        var knownFolders = Set((sharedModel.apps + sharedModel.hiddenApps).compactMap { model -> String? in
+            guard let folder = model.appInfo.relativeBundlePath, folder.hasSuffix(".app") else { return nil }
+            return (model.uiIsShared ? "shared/" : "private/") + folder
+        })
+        var newGuests: [LCAppModel] = []
+        let locations: [(URL, Bool)] = [
+            (LCPath.bundlePath, false),
+            (LCPath.lcGroupBundlePath, true)
+        ]
+        for (root, shared) in locations {
+            if shared && LCPath.lcGroupDocPath == LCPath.docPath { continue }
+            guard let entries = try? fm.contentsOfDirectory(
+                at: root, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+                options: [.skipsHiddenFiles]
+            ) else { continue }
+            for entry in entries where entry.pathExtension.lowercased() == "app" {
+                let folder = entry.lastPathComponent
+                let key = (shared ? "shared/" : "private/") + folder
+                guard !knownFolders.contains(key),
+                      let values = try? entry.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
+                      values.isDirectory == true, values.isSymbolicLink != true,
+                      let info = LCAppInfo(bundlePath: entry.path) else { continue }
+                info.relativeBundlePath = folder
+                info.isShared = shared
+                let model = LCAppModel(appInfo: info, delegate: self)
+                knownFolders.insert(key)
+                if info.isHidden {
+                    sharedModel.hiddenApps.append(model)
+                } else {
+                    sharedModel.apps.append(model)
+                    newGuests.append(model)
+                    if let schemes = info.urlSchemes() as? [String], !schemes.isEmpty {
+                        UserDefaults.lcShared().mutableArrayValue(forKey: "LCGuestURLSchemes")
+                            .addObjects(from: schemes)
+                    }
+                }
+            }
+        }
+        guard !newGuests.isEmpty else { return }
+        let defaults = LCUtils.appGroupUserDefault
+        let stored = defaults.string(forKey: "BloomBoxPendingGiftKeysV1") ?? "[]"
+        var giftKeys = (try? JSONDecoder().decode([String].self, from: Data(stored.utf8))) ?? []
+        for model in newGuests {
+            let key = LiveContainerHomeAdapter.key(model)
+            if !giftKeys.contains(key) { giftKeys.append(key) }
+        }
+        if let data = try? JSONEncoder().encode(Array(giftKeys.suffix(60))),
+           let json = String(data: data, encoding: .utf8) {
+            defaults.set(json, forKey: "BloomBoxPendingGiftKeysV1")
+        }
+        // Home reads live registry and explicitly reconciles its persisted
+        // icon layout on this signal. The new icons appear without relaunching.
+        for model in newGuests {
+            NotificationCenter.default.post(
+                name: Notification.Name("BloomBoxNewInstallGiftCreated"),
+                object: LiveContainerHomeAdapter.key(model)
+            )
+        }
+    }
+
     func onAppear() {
+        refreshInstalledGuestsFromDisk()
         for app in sharedModel.apps {
             app.delegate = self
         }
