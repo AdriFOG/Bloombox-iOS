@@ -2842,14 +2842,21 @@ struct BloomBoxHomeScreen: View {
             } else if [Self.sideStoreKey, Self.installKey, Self.tweakStoreKey, Self.appStoreKey, Self.portStoreKey, Self.modulesKey, Self.themesKey, Self.androidFilesKey].contains(key) {
                 shortcutIcon(key, showLabel: showLabel)
             } else if let game = huskGames.first(where: { $0.key == key }) {
-                Button { if !editing { launchLibraryKey(key) } } label: {
-                    VStack(spacing: 4) {
-                        miniatureIcon(key, size: largeIcons ? 76 : 64)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
-                        if showLabel { Text(game.title).font(.caption).lineLimit(1).foregroundStyle(.white) }
+                if unopenedGiftKeys.contains(key) && !editing {
+                    BloomBoxHomeGiftIcon(name: game.title, size: largeIcons ? 76 : 64,
+                                         showLabel: showLabel, reduceMotion: reduceMotion) {
+                        revealGift(key)
                     }
-                }.buttonStyle(LiveBoardHomePressStyle(reduceMotion: reduceMotion))
-                .contextMenu { huskMenu(game) }
+                } else {
+                    Button { if !editing { launchLibraryKey(key) } } label: {
+                        VStack(spacing: 4) {
+                            miniatureIcon(key, size: largeIcons ? 76 : 64)
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                            if showLabel { Text(game.title).font(.caption).lineLimit(1).foregroundStyle(.white) }
+                        }
+                    }.buttonStyle(LiveBoardHomePressStyle(reduceMotion: reduceMotion))
+                    .contextMenu { huskMenu(game) }
+                }
             } else if let app = appMap[key] {
                 if unopenedGiftKeys.contains(key) && !editing {
                     BloomBoxHomeGiftIcon(name: title(key), size: largeIcons ? 76 : 64,
