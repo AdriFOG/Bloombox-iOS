@@ -37,7 +37,27 @@ assert 'NotificationCenter.default.post(' in host
 assert 'NotificationCenter.default.publisher(for:' in home
 assert 'refreshNewInstallGift(notification)' in home
 assert 'if giftKeysJSON != current { giftKeysJSON = current }' in home
+# The installer must finish registering apps on the main actor, not dispatch
+# the registration later after its success screen completes.
+assert 'await MainActor.run {\n            if let appToReplace {' in host
+assert '.onChange(of: sharedModel.apps.map { LiveContainerHomeAdapter.key($0) })' in home
+assert 'DispatchQueue.main.async { reconcile() }' in home
 # Home must use the live guest list; the native sorting snapshot can lag.
+# External/embedded SideStore installations are written to Applications/
+# outside the installer's current SwiftUI state. Scan both roots without
+# restarting or recreating existing guest models.
+assert 'private func refreshInstalledGuestsFromDisk()' in host
+assert '(LCPath.bundlePath, false)' in host
+assert '(LCPath.lcGroupBundlePath, true)' in host
+assert 'guard !knownFolders.contains(key)' in host
+assert 'sharedModel.apps.append(model)' in host
+assert 'refreshInstalledGuestsFromDisk()' in host
+assert 'Timer.publish(every: 1.5, on: .main, in: .common)' in host
+assert 'if phase == .active { refreshInstalledGuestsFromDisk() }' in host
+assert 'private var currentGuests: [LCAppModel]' in home
+assert 'sharedModel.apps + apps.filter { LiveContainerHomeAdapter.isEmbeddedSigner($0) }' in home
+assert 'LiveContainerHomeAdapter.visibleKeys(currentGuests)' in home
+assert 'LiveContainerHomeAdapter.modelsByKey(currentGuests)' in home
 assert 'sharedModel.apps + (builtInSideStore.map { [$0] } ?? [])' in host
 # The APK installer now uses the same persistent gift reveal and immediate refresh.
 assert 'let (installedID, freshAPK) = try await Task.detached' in host

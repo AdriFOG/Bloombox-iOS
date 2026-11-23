@@ -52,7 +52,16 @@ assert "NSFileCoordinator().coordinate(readingItemAt: original" in app_list
 assert "guard size > 0" in app_list
 assert "sideStoreHandoffError" in app_list
 assert "ShareLink(item: fileURL)" not in app_list
-assert "await installFromUrl(urlStr: request.url.absoluteString)" in app_list
+assert "await installFromUrl(urlStr: preparedURL.absoluteString)" in app_list
+# Files/open-in and the news button must install from a private staged copy.
+assert 'let installInBloomBox: (URL) -> Void' in app_list
+assert 'if let stagedIPA = sideStoreIPA { installInBloomBox(stagedIPA) }' in app_list
+assert '.disabled(sideStoreIPA == nil)' in app_list
+assert '["ipa", "tipa"].contains(original.pathExtension.lowercased())' in app_list
+assert 'let stagedIPA = try await BloomBoxSideStoreHandoff.prepareFile(fileUrl)' in app_list
+assert 'try await installIpaFile(stagedIPA)' in app_list
+assert 'try FileManager.default.removeItem(at: fileUrl)' not in app_list
+assert 'try? FileManager.default.removeItem(at: preparedURL)' in app_list
 assert "LCUtils.openSideStore(delegate: self)" in app_list
 assert '"Instalar dentro de BloomBox" = "Install in BloomBox";' in en
 assert '"Instalar con SideStore" = "Install with SideStore";' in en
