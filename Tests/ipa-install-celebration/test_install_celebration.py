@@ -37,6 +37,15 @@ assert 'NotificationCenter.default.post(' in host
 assert 'NotificationCenter.default.publisher(for:' in home
 assert 'refreshNewInstallGift(notification)' in home
 assert 'if giftKeysJSON != current { giftKeysJSON = current }' in home
+# Home must use the live guest list; the native sorting snapshot can lag.
+assert 'sharedModel.apps + (builtInSideStore.map { [$0] } ?? [])' in host
+# The APK installer now uses the same persistent gift reveal and immediate refresh.
+assert 'let (installedID, freshAPK) = try await Task.detached' in host
+assert 'if freshAPK {' in host
+assert 'let key = "husk/" + folder + "/" + installedID' in host
+assert 'Notification.Name("BloomBoxHuskLibraryChanged")' in host
+assert home.count('if unopenedGiftKeys.contains(key) && !editing') >= 2
+assert 'Notification.Name("BloomBoxGuestSceneDidExit")' in home
 # The wizard's per-profile favorite color drives the full progress bar.
 assert 'accentColor: profileAccent' in home
 assert 'let accentColor: Color' in visuals
