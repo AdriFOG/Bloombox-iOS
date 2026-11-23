@@ -37,6 +37,11 @@ assert 'NotificationCenter.default.post(' in host
 assert 'NotificationCenter.default.publisher(for:' in home
 assert 'refreshNewInstallGift(notification)' in home
 assert 'if giftKeysJSON != current { giftKeysJSON = current }' in home
+# The installer must finish registering apps on the main actor, not dispatch
+# the registration later after its success screen completes.
+assert 'await MainActor.run {\n            if let appToReplace {' in host
+assert '.onChange(of: sharedModel.apps.map { LiveContainerHomeAdapter.key($0) })' in home
+assert 'DispatchQueue.main.async { reconcile() }' in home
 # Home must use the live guest list; the native sorting snapshot can lag.
 assert 'sharedModel.apps + (builtInSideStore.map { [$0] } ?? [])' in host
 # The APK installer now uses the same persistent gift reveal and immediate refresh.
