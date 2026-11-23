@@ -20,7 +20,7 @@ enum BloomBoxLaunchPreferences {
     static let pendingKey = "BloomBoxGamePendingEntry"
     static let pendingAppKey = "BloomBoxGamePendingApp"
 
-    static let validModes: Set<String> = ["ios", "gamebox", "hybrid"]
+    static let validModes: Set<String> = ["ios", "gamebox", "hybrid", "nova"]
 
     static func savedModes(defaults: UserDefaults) -> [String: String] {
         guard let result = defaults.dictionary(forKey: profileModesKey) as? [String: String]
@@ -35,6 +35,7 @@ enum BloomBoxLaunchPreferences {
     }
 
     static func runtimeMode(for preference: String) -> String {
+        // Nova shares the iOS guest/installer runtime, not the iOS Home presentation.
         preference == "gamebox" ? "gamebox" : "ios"
     }
 

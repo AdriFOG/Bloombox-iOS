@@ -4,6 +4,9 @@ import PhotosUI
 import UniformTypeIdentifiers
 
 struct BloomBoxHomeScreen: View {
+    @AppStorage(BloomBoxLaunchPreferences.primaryKey, store: LiveContainerPreferencesAdapter.defaults)
+    private var launcherPreference = "ios"
+    private var isNova: Bool { launcherPreference == "nova" }
     let apps: [LCAppModel]
     let launch: (LCAppModel) -> Void
     let manage: (LCAppModel) -> Void
@@ -375,6 +378,38 @@ struct BloomBoxHomeScreen: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .top) {
+                if isNova {
+                    BloomBoxNovaV2View(profileID: themeActiveID,
+                        keys: appKeys, name: { BloomBoxL10n.t(title($0)) },
+                        icon: { key, size in AnyView(novaIcon(key, size: size)) },
+                        isGuest: { key in
+                            if let app = appMap[key] { return !LiveContainerHomeAdapter.isEmbeddedSigner(app) }
+                            return huskGames.contains { $0.key == key }
+                        },
+                        hasGift: { unopenedGiftKeys.contains($0) },
+                        canJIT: { key in
+                            launchWithJIT != nil && (appMap[key].map { !LiveContainerHomeAdapter.isEmbeddedSigner($0) } ?? false)
+                        },
+                        isAndroid: { key in huskGames.contains { $0.key == key } },
+                        launch: launchLibraryKey,
+                        launchJIT: { key in if let app = appMap[key] { requestLaunch(app, jit: true) } },
+                        manage: { key in if let app = appMap[key] { performGuest(.manage(key: key), selected: app) } },
+                        uninstall: { key in
+                            if let game = huskGames.first(where: { $0.key == key }) { pendingHuskUninstall = game }
+                            else if let app = appMap[key], !LiveContainerHomeAdapter.isEmbeddedSigner(app) { pendingUninstall = app }
+                        },
+                        orientation: { key, mode in
+                            if let game = huskGames.first(where: { $0.key == key }) {
+                                UserDefaults.standard.set(mode, forKey: orientationKey(game))
+                            }
+                        },
+                        openInstall: openInstall, openInterface: openInterface,
+                        openManagement: openManagement, openGameBox: openGameBox,
+                        openSettings: { openTab(.settings) })
+                        .id(themeActiveID)
+                        .allowsHitTesting(!installInProgress && huskStartingGame == nil)
+                        .accessibilityHidden(installInProgress || huskStartingGame != nil)
+                } else {
                 background
                     .blur(radius: openFolder != nil ? 24 : ((searching || page == libraryPageIndex) ? 14 : 0))
                     .animation(reduceMotion ? nil : .easeInOut(duration: 0.38), value: page == libraryPageIndex)
@@ -426,13 +461,31 @@ struct BloomBoxHomeScreen: View {
                 .blur(radius: searching ? 14 : 0)
                 .allowsHitTesting(!searching && !installInProgress && huskStartingGame == nil)
                 .accessibilityHidden(searching || installInProgress || huskStartingGame != nil)
+                }
                 if installInProgress {
-                    BloomBoxHomeInstallationNotice(progress: installProgress,
-                                                       completed: installCompleted,
-                                                       reduceMotion: reduceMotion,
-                                                       accentColor: profileAccent)
-                        .transition(.opacity)
-                        .zIndex(30)
+                    Group {
+                        if isNova {
+                            ZStack {
+                                Color(red: 0.07, green: 0.09, blue: 0.11).ignoresSafeArea()
+                                VStack(spacing: 18) {
+                                    Image(systemName: installCompleted ? "checkmark.circle.fill" : "square.and.arrow.down")
+                                        .font(.system(size: 52)).foregroundStyle(profileAccent)
+                                    Text(installCompleted
+                                         ? (englishUI ? "App installed" : "App instalada")
+                                         : (englishUI ? "Installing app" : "Instalando app"))
+                                        .font(.title2.bold())
+                                    if !installCompleted { ProgressView().tint(profileAccent) }
+                                }.padding(24)
+                            }
+                        } else {
+                            BloomBoxHomeInstallationNotice(progress: installProgress,
+                                                            completed: installCompleted,
+                                                            reduceMotion: reduceMotion,
+                                                            accentColor: profileAccent)
+                        }
+                    }
+                    .transition(.opacity)
+                    .zIndex(30)
                 }
                 if let game = huskStartingGame {
                     ZStack {
@@ -454,16 +507,19 @@ struct BloomBoxHomeScreen: View {
                             }
                         }
                         .padding(28).frame(maxWidth: 310)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 30))
+                        .background {
+                            if isNova { RoundedRectangle(cornerRadius: 16).fill(Color(red: 0.11, green: 0.13, blue: 0.15)) }
+                            else { RoundedRectangle(cornerRadius: 30).fill(.ultraThinMaterial) }
+                        }
                     }
                     .zIndex(40)
                     .transition(.opacity)
                 }
-                if aliveEnabled && aliveBooting && aliveStartupPage == page && !reduceMotion {
+                if !isNova && aliveEnabled && aliveBooting && aliveStartupPage == page && !reduceMotion {
                     BloomBoxHomeWelcome(message: aliveSplashLine, visible: aliveIntroVisible)
                         .zIndex(20)
                 }
-                if editing && !searching {
+                if !isNova && editing && !searching {
                     BloomBoxHomeEditorToolbar(
                         exportURL: $themeExportURL,
                         addWidget: { showWidgetGallery = true },
@@ -487,11 +543,11 @@ struct BloomBoxHomeScreen: View {
                         Button("Aceptar", role: .cancel) { themeExportError = nil }
                     } message: { Text(exportError) }
                 }
-                if searching { searchOverlay(height: geometry.size.height) }
-                if let id = openFolder, let folder = layout.folders.first(where: { $0.id == id }) {
+                if !isNova && searching { searchOverlay(height: geometry.size.height) }
+                if !isNova, let id = openFolder, let folder = layout.folders.first(where: { $0.id == id }) {
                     folderOverlay(folder, width: geometry.size.width)
                 }
-                if showGameBoxShortcut && !editing && !searching &&
+                if !isNova && showGameBoxShortcut && !editing && !searching &&
                     !pageManager && !customizing && !desktopSettings &&
                     openFolder == nil && page > 0 && page < libraryPageIndex {
                     gameBoxShortcut(width: geometry.size.width, height: geometry.size.height)
@@ -516,7 +572,7 @@ struct BloomBoxHomeScreen: View {
             }
             .simultaneousGesture(DragGesture(minimumDistance: 35).onEnded { value in
                 stopAlivePlayfulness()
-                if !searching && !editing && openFolder == nil && page > 0 && page < libraryPageIndex &&
+                if !isNova && !searching && !editing && openFolder == nil && page > 0 && page < libraryPageIndex &&
                     value.translation.height > 65 && abs(value.translation.height) > abs(value.translation.width) * 1.4 {
                     beginSearch()
                 }
@@ -526,6 +582,17 @@ struct BloomBoxHomeScreen: View {
                 if phase == .active { ramPlus.refresh(); refreshHuskGames() }
                 if phase == .active, #available(iOS 16.2, *) {
                     Task { await ManzanaExpiryReminderCenter.shared.synchronize() }
+                }
+            }
+            .onChange(of: isNova) { active in
+                if active {
+                    stopAlivePlayfulness()
+                    aliveBooting = false
+                    aliveIntroVisible = false
+                    aliveRevealed = true
+                    editing = false
+                    searching = false
+                    openFolder = nil
                 }
             }
             .onChange(of: page) { _ in stopAlivePlayfulness() }
@@ -653,7 +720,7 @@ struct BloomBoxHomeScreen: View {
                     do {
                         try await Task.sleep(nanoseconds: UInt64.random(in: 9...16) * 1_000_000_000)
                     } catch { break }
-                    guard scenePhase == .active, aliveEnabled, aliveIdleEnabled,
+                    guard !isNova, scenePhase == .active, aliveEnabled, aliveIdleEnabled,
                           Date().timeIntervalSince(aliveLastInteraction) >= 5,
                           !reduceMotion, !aliveBooting, !editing, !searching,
                           openFolder == nil, !pageManager, !customizing,
@@ -679,7 +746,10 @@ struct BloomBoxHomeScreen: View {
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.orange)
                         .padding(14)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+                        .background {
+                            if isNova { RoundedRectangle(cornerRadius: 12).fill(Color(red: 0.11, green: 0.13, blue: 0.15)) }
+                            else { RoundedRectangle(cornerRadius: 18).fill(.regularMaterial) }
+                        }
                 }
                 .padding(.horizontal, 18)
                 .padding(.bottom, 100)
@@ -710,8 +780,11 @@ struct BloomBoxHomeScreen: View {
                 }
                 .foregroundStyle(.white)
                 .padding(14)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
-                .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(.white.opacity(0.25)))
+                .background {
+                    if isNova { RoundedRectangle(cornerRadius: 12).fill(Color(red: 0.11, green: 0.13, blue: 0.15)) }
+                    else { RoundedRectangle(cornerRadius: 20).fill(.ultraThinMaterial) }
+                }
+                .overlay(RoundedRectangle(cornerRadius: isNova ? 12 : 20).strokeBorder(.white.opacity(0.25)))
                 .padding(.horizontal, 18)
                 .padding(.top, 8)
                 .transition(.move(edge: .top).combined(with: .opacity))
@@ -1389,6 +1462,40 @@ struct BloomBoxHomeScreen: View {
                 .frame(width: size, height: size)
         } else {
             Color.clear.frame(width: size, height: size)
+        }
+    }
+
+    @ViewBuilder private func novaIcon(_ key: String, size: CGFloat) -> some View {
+        if let game = huskGames.first(where: { $0.key == key }) {
+            if let image = UIImage(contentsOfFile: game.directory.appendingPathComponent("icon.png").path) {
+                Image(uiImage: image).resizable().scaledToFill().frame(width: size, height: size).clipped()
+            } else {
+                Image(systemName: "gamecontroller.fill").frame(width: size, height: size).background(Color.indigo)
+            }
+        } else if let app = appMap[key] {
+            LiveBoardIconImage(app: app, dark: darkIcons).frame(width: size, height: size)
+        } else if key == Self.sideStoreKey,
+                  let image = LiveContainerHomeAdapter.builtInSignerIcon(dark: darkIcons) {
+            Image(uiImage: image).resizable().scaledToFill().frame(width: size, height: size).clipped()
+        } else {
+            let symbol: String = {
+                switch key {
+                case Self.installKey: return "square.and.arrow.down"
+                case Self.androidFilesKey: return "folder.fill"
+                case Self.appStoreKey: return "bag.fill"
+                case Self.portStoreKey: return "gamecontroller.fill"
+                case Self.modulesKey: return "square.stack.3d.up.fill"
+                case Self.themesKey: return "paintpalette.fill"
+                case Self.tweakStoreKey: return "puzzlepiece.extension.fill"
+                default: return "app.fill"
+                }
+            }()
+            Image(systemName: symbol)
+                .font(.system(size: size * 0.44, weight: .semibold))
+                .foregroundStyle(Color.white)
+                .frame(width: size, height: size)
+                .background(key == Self.androidFilesKey ? Color(red: 0.16, green: 0.52, blue: 0.34)
+                            : Color(red: 0.23, green: 0.33, blue: 0.44))
         }
     }
 
@@ -2354,7 +2461,7 @@ struct BloomBoxHomeScreen: View {
     }
 
     private func startBloomBoxAlive() {
-        guard !aliveStartupPlayed else { return }
+        guard !isNova, !aliveStartupPlayed else { return }
         aliveStartupPlayed = true
         guard aliveEnabled, !reduceMotion,
               page > 0, page < libraryPageIndex else { return }

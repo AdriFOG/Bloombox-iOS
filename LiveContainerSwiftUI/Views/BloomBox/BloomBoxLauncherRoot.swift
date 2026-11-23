@@ -95,6 +95,9 @@ struct BloomBoxLauncherRootView: View {
                             icon: "square.on.square", value: "hybrid")
                         launcherOption(title: "iOS Home", detail: BloomBoxL10n.t("Escritorio, apps y widgets."),
                                        icon: "square.grid.3x3.fill", value: "ios")
+                        launcherOption(title: "Nova Launcher",
+                                       detail: BloomBoxL10n.isEnglish ? "Android-style Home and app drawer with opaque surfaces." : "Escritorio Android y cajón de apps con superficies sólidas.",
+                                       icon: "circle.grid.3x3.fill", value: "nova")
                         if #available(iOS 16.0, *) {
                             launcherOption(title: "GameBox v2", detail: BloomBoxL10n.t("Interfaz de consola con carátulas, fondos y cristal."),
                                            icon: "gamecontroller.fill", value: "gamebox")
@@ -216,6 +219,7 @@ struct BloomBoxLauncherRootView: View {
             let id = (note.object as? String) ?? BloomBoxProfileStore.active.id
             let selection = BloomBoxLaunchPreferences.preferredMode(
                 defaults: LCUtils.appGroupUserDefault, profileID: id)
+            LCUtils.appGroupUserDefault.set(selection, forKey: BloomBoxLaunchPreferences.primaryKey)
             mode = BloomBoxLaunchPreferences.runtimeMode(for: selection)
             showProfileIntro(force: true)
         }
