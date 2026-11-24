@@ -72,8 +72,7 @@ def brand(ipa: pathlib.Path, assets: pathlib.Path):
                     data = translated_name(data)
                 elif name.startswith(ROOT) and name.endswith(".lproj/InfoPlist.strings"):
                     data = translated_name(data)
-                elif name in new_icons:
-                    data = new_icons[name]
+                # Preserve Xcode's own rendered primary icon fallbacks.
                 elif name == english_target:
                     data = english_table
                 elif name == gif_target:
@@ -95,9 +94,14 @@ def brand(ipa: pathlib.Path, assets: pathlib.Path):
                 raise ValueError("Missing packaged BloomBox Kirby animated installer GIF")
             if not info.get("NSSupportsLiveActivities"):
                 raise ValueError("ActivityKit disabled in final host Info.plist")
-            for name, data in new_icons.items():
-                if name in check.namelist() and check.read(name) != data:
-                    raise ValueError("BloomBox RGB icon missing in final app")
+            primary = info.get("CFBundleIcons", {}).get("CFBundlePrimaryIcon", {})
+            if primary.get("CFBundleIconName") != "AppIcon":
+                raise ValueError("Native BloomBox primary icon declaration is missing")
+            if ROOT + "Assets.car" not in check.namelist() or not check.read(ROOT + "Assets.car"):
+                raise ValueError("Compiled BloomBox asset catalog is missing")
+            for name in new_icons:
+                if name in check.namelist() and not check.read(name).startswith(b"\x89PNG\r\n\x1a\n"):
+                    raise ValueError("Invalid Xcode-rendered BloomBox fallback icon")
         os.replace(tmp, ipa)
         print("Verified BloomBox display name, localized names, RGB icon, live activities and original compiled app.")
     finally:
