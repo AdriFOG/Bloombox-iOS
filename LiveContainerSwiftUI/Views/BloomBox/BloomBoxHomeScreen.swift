@@ -376,6 +376,25 @@ struct BloomBoxHomeScreen: View {
                             "Abrir GameBox, arrastra para mover")
     }
 
+    private var sharedNewsPage: some View {
+        BloomBoxNewsPage(openSettings: { desktopSettings = true },
+                                     openGameBox: openGameBox,
+                                     openInstall: openInstall,
+                                     gameNames: newsGameNames,
+                                     openShortcut: { shortcut in
+                                         switch shortcut {
+                                         case .apkStore: portStorePresented = true
+                                         case .appStore: appStorePresented = true
+                                         case .themes: themesPresented = true
+                                         case .modules: modulesPresented = true
+                                         case .sideStore: openSideStore()
+                                         case .files: newsFilesPresented = true
+                                         case .ramPlus: newsRAMPresented = true
+                                         case .settings: openTab(.settings)
+                                         }
+                                     })
+    }
+
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .top) {
@@ -465,7 +484,8 @@ struct BloomBoxHomeScreen: View {
                         },
                         openInstall: openInstall, openInterface: openInterface,
                         openManagement: openManagement, openGameBox: openGameBox,
-                        openSettings: { openTab(.settings) })
+                        openSettings: { openTab(.settings) },
+                        newsPage: { AnyView(sharedNewsPage) })
                         .id(themeActiveID)
                         .allowsHitTesting(!installInProgress && huskStartingGame == nil)
                         .accessibilityHidden(installInProgress || huskStartingGame != nil)
@@ -476,22 +496,7 @@ struct BloomBoxHomeScreen: View {
                 // Dock belongs to each Home page, not a floating overlay.
                 // Swiping to News or App Library moves the Dock away with Home.
                 TabView(selection: $page) {
-                    BloomBoxNewsPage(openSettings: { desktopSettings = true },
-                                     openGameBox: openGameBox,
-                                     openInstall: openInstall,
-                                     gameNames: newsGameNames,
-                                     openShortcut: { shortcut in
-                                         switch shortcut {
-                                         case .apkStore: portStorePresented = true
-                                         case .appStore: appStorePresented = true
-                                         case .themes: themesPresented = true
-                                         case .modules: modulesPresented = true
-                                         case .sideStore: openSideStore()
-                                         case .files: newsFilesPresented = true
-                                         case .ramPlus: newsRAMPresented = true
-                                         case .settings: openTab(.settings)
-                                         }
-                                     })
+                    sharedNewsPage
                         .tag(0)
                     ForEach(visiblePageIndices, id: \.self) { index in
                         ZStack(alignment: .bottom) {
@@ -636,7 +641,7 @@ struct BloomBoxHomeScreen: View {
                     value.translation.height > 65 && abs(value.translation.height) > abs(value.translation.width) * 1.4 {
                     beginSearch()
                 }
-            })
+            }, including: isNova ? .none : .all)
             .onChange(of: scenePhase) { phase in
                 stopAlivePlayfulness()
                 if phase == .active { ramPlus.refresh(); refreshHuskGames() }
