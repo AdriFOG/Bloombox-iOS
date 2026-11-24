@@ -8,7 +8,7 @@
 
 A personal home for your apps, widgets and files — with room to experiment.
 
-[**Download BloomBox 3.3.3**](https://github.com/AdriFOG/Bloombox-iOS/releases/tag/v3.3.3) · [Builds](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml) · [Report an issue](https://github.com/AdriFOG/Bloombox-iOS/issues)
+[**Download BloomBox 3.4.0**](https://github.com/AdriFOG/Bloombox-iOS/releases/latest) · [Builds](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml) · [Report an issue](https://github.com/AdriFOG/Bloombox-iOS/issues)
 
 [![Build](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-purple.svg)](LICENSE) · [Original-work attribution](LICENSE-ADDITIONAL-TERMS.md)
@@ -21,9 +21,10 @@ Its home screen lives **inside the app**; it does not replace the iOS Home Scree
 
 ## What's new
 
-**Latest public release: [BloomBox 3.3.3](https://github.com/AdriFOG/Bloombox-iOS/releases/tag/v3.3.3)** — IPA installation and instant Home refresh hotfix.
+**BloomBox 3.4.0 — Nova Launcher & Bloom:** an optional Android-inspired launcher with its own desktop, customizable drawer and search bar, transparent widgets, profile-scoped layout and the familiar News page. Meet Bloom, the new mascot with native default, dark and tinted icon appearances.
 
-**In development on main:** the new BloomBox mascot and native iOS icon appearances (default, dark and tinted), plus Nova, an alternative customizable launcher with a desktop, app drawer, widgets and news page. These development changes are not yet part of the public release.
+[Read the 3.4.0 release notes](docs/BloomBox-3.4.0-Release-Notes.md). Download published builds from [Releases](https://github.com/AdriFOG/Bloombox-iOS/releases); development builds remain available in Actions.
+
 
 ## BloomBox 3.2.3 — iOS & Android Files, App Icons, Transparent Profiles
 

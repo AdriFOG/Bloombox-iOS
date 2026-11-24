@@ -29,3 +29,7 @@ These six new screenshots were supplied by the BloomBox maintainer on November 1
 | jit-per-app-2026-11.jpg | IMG_7468.png | JIT controls and per-app toggles |
 
 The screenshots document the maintainer's setup; no screenshots are evidence of universal compatibility or performance guarantees. Third-party content and characters belong to their respective owners.
+
+### Nova launcher (November 2026)
+
+- `nova-home-2026-11.jpg` and `nova-drawer-2026-11.jpg`: real maintainer-supplied screenshots from a Nova development build, resized for documentation. Personal wallpapers and third-party app icons are shown for demonstration and are not bundled.
