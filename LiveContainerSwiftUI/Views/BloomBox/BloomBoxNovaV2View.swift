@@ -504,16 +504,23 @@ struct BloomBoxNovaV2View: View {
                 state = .tracking(opening ? min(travel, max(0, delta)) : max(-travel, min(0, delta)))
             }
             .onEnded { value in
-                guard !drawerGestureBlocked, drawer != opening,
-                      case .tracking = drawerSwipe else { return }
+                guard !drawerGestureBlocked, drawer != opening else { return }
+                // GestureState can already have reset when onEnded arrives.
+                // Validate the final direction rather than requiring tracking.
+                if case .rejected = drawerSwipe { return }
                 let direction: CGFloat = opening ? -1 : 1
-                let distance = max(0, direction * value.translation.height)
-                let projected = max(0, direction * value.predictedEndTranslation.height)
-                // A slow pull settles after crossing 36% of the screen.
-                // A short, fast flick also completes if its projected momentum
-                // is large enough. Pulling back and releasing cancels the move.
-                let farEnough = distance >= travel * 0.36
-                let fastFlick = distance >= 20 && projected - distance >= 85
+                let vertical = direction * value.translation.height
+                guard vertical > 0, vertical > abs(value.translation.width) * 1.35 else { return }
+                let distance = vertical
+                let projected = direction * value.predictedEndTranslation.height
+                // The search bar travels from height - 28 to 32, so add
+                // those 60 points to measure a quarter of the actual viewport.
+                // A quick upward flick may open it even before that threshold.
+                let threshold = opening ? (travel + 60) * 0.25 : travel * 0.36
+                let farEnough = distance >= threshold
+                let fastFlick = opening
+                    ? distance >= 12 && projected - distance >= 45
+                    : distance >= 20 && projected - distance >= 85
                 guard farEnough || fastFlick else { return }
                 settleDrawer(open: opening)
             }
