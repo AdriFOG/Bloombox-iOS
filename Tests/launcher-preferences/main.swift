@@ -44,3 +44,16 @@ precondition(BloomBoxLaunchPreferences.recentGames(profileID: firstProfile, defa
 precondition(BloomBoxLaunchPreferences.recentGames(profileID: gamesProfile, defaults: defaults).isEmpty)
 precondition(defaults.string(forKey: "LiveBoardHomeLayout") == "keep-home-layout")
 print("PASS: Hybrid/GameBox/iOS persist independently for each profile; no stale game sessions.")
+
+
+// Nova is a separate saved experience, sharing the existing Home guest runtime.
+let novaProfile = "nova-" + UUID().uuidString
+BloomBoxLaunchPreferences.setPreferredMode("nova", profileID: novaProfile, defaults: defaults)
+precondition(BloomBoxLaunchPreferences.preferredMode(defaults: defaults, profileID: novaProfile) == "nova")
+precondition(BloomBoxLaunchPreferences.resetForNewProcess(defaults: defaults, profileID: novaProfile) == "ios")
+precondition(defaults.string(forKey: BloomBoxLaunchPreferences.primaryKey) == "nova")
+precondition(defaults.string(forKey: BloomBoxLaunchPreferences.sessionKey) == "ios")
+precondition(BloomBoxLaunchPreferences.preferredMode(defaults: defaults, profileID: firstProfile) == "hybrid")
+precondition(BloomBoxLaunchPreferences.preferredMode(defaults: defaults, profileID: gamesProfile) == "gamebox")
+precondition(defaults.string(forKey: "LiveBoardHomeLayout") == "keep-home-layout")
+print("PASS: Nova persists per profile and preserves the existing iOS guest runtime.")
