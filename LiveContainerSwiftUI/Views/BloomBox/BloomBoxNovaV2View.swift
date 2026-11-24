@@ -11,16 +11,40 @@ struct BloomBoxNovaWorkspace: Codable, Equatable {
         var apps: [String]
     }
 
+    struct SearchBar: Codable, Equatable {
+        // All colors are RGB only: the bar always has an opaque fill.
+        var fillRGB: UInt32 = 0x003B60
+        var iconRGB: UInt32 = 0xFFFFFF
+        var automaticInk = false
+        var shape = 0
+        var compact = false
+        var leadingIcon = 0
+        var trailingApp: String?
+        var trailingSymbol = 0
+        var useAppArtwork = true
+
+        mutating func normalize() {
+            fillRGB &= 0xFFFFFF
+            iconRGB &= 0xFFFFFF
+            shape = min(2, max(0, shape))
+            leadingIcon = min(2, max(0, leadingIcon))
+            trailingSymbol = min(3, max(0, trailingSymbol))
+        }
+    }
+
     static let capacity = 20
+    static let dockCapacity = 5
     static func emptyPage() -> [String?] { Array(repeating: nil, count: capacity) }
     var pages: [[String?]] = [Self.emptyPage()]
-    var dock: [String?] = Array(repeating: nil, count: 4)
+    var dock: [String?] = Array(repeating: nil, count: Self.dockCapacity)
     var known: [String] = []
     var folders: [String: Folder] = [:]
     var columns = 4
     var labels = true
     var iconShape = 0
     var wallpaper = 0
+    // Optional for compatibility with workspaces saved before the search bar.
+    var searchBar: SearchBar?
 
     mutating func reconcile(_ installed: [String]) {
         let valid = Set(installed)
@@ -38,7 +62,11 @@ struct BloomBoxNovaWorkspace: Codable, Equatable {
             return result.map { key in key.flatMap { allowed.contains($0) ? $0 : nil } }
         }
         if pages.isEmpty { pages = [Self.emptyPage()] }
-        dock = Array(dock.prefix(4)) + Array(repeating: nil, count: max(0, 4 - dock.count))
+        let overflow = dock.dropFirst(Self.dockCapacity).compactMap { $0 }
+        dock = Array(dock.prefix(Self.dockCapacity))
+        dock += Array(repeating: nil, count: Self.dockCapacity - dock.count)
+        for key in overflow where allowed.contains(key) && !contains(key) { add(key, preferred: 0) }
+        searchBar?.normalize()
         dock = dock.map { key in key.flatMap { allowed.contains($0) ? $0 : nil } }
         // Deduplicate damaged or old workspace state without deleting guest data.
         var seen = Set<String>()
@@ -185,6 +213,10 @@ struct BloomBoxNovaV2View: View {
     @State private var drawer = false
     @State private var editing = false
     @State private var settings = false
+    @State private var searchSettings = false
+    @State private var shortcutPicker = false
+    @State private var shortcutQuery = ""
+    @State private var focusDrawerOnAppear = false
     @State private var query = ""
     @State private var selected: String?
     @State private var folder: String?
@@ -239,6 +271,8 @@ struct BloomBoxNovaV2View: View {
             if let folder { folderView(folder).zIndex(4) }
             if let selected { contextPanel(selected).zIndex(5) }
             if let folderSource { folderPicker(folderSource).zIndex(6) }
+            if searchSettings { searchSettingsView.zIndex(7) }
+            if shortcutPicker { shortcutPickerView.zIndex(8) }
         }
         .foregroundStyle(Color.white)
         .background(panel.ignoresSafeArea())
@@ -339,7 +373,7 @@ struct BloomBoxNovaV2View: View {
             .tabViewStyle(.page(indexDisplayMode: .never))
             pageControl
             Button {
-                animate { drawer = true; query = ""; editing = false }
+                openDrawer(focus: false)
             } label: {
                 Image(systemName: "chevron.up").font(.headline)
                     .frame(maxWidth: .infinity, minHeight: 34)
@@ -347,11 +381,13 @@ struct BloomBoxNovaV2View: View {
             .buttonStyle(.plain)
             .accessibilityLabel(t("Open app drawer", "Abrir cajón de apps"))
             dockView
+            searchBarView(preview: false)
+                .padding(.bottom, 6)
         }
         .simultaneousGesture(DragGesture(minimumDistance: 50).onEnded { value in
             guard !editing, abs(value.translation.height) > abs(value.translation.width) * 1.5,
                   value.translation.height < -70 else { return }
-            animate { drawer = true; query = "" }
+            openDrawer(focus: false)
         })
     }
 
@@ -385,18 +421,211 @@ struct BloomBoxNovaV2View: View {
         }.fixedSize(horizontal: workspace.pages.count < 10, vertical: true)
     }
 
+    // Five user-controlled app slots, without an extra drawer button or backing
+    // panel. The wallpaper shows directly between icons, as on Android.
     private var dockView: some View {
-        HStack(spacing: 8) {
-            ForEach(workspace.dock.indices, id: \.self) { index in
-                slotView(workspace.dock[index], size: 45, dockSlot: index, pageIndex: page, slot: index)
+        GeometryReader { geometry in
+            let size = min(56, max(32, (geometry.size.width - 32) / CGFloat(BloomBoxNovaWorkspace.dockCapacity) - 8))
+            HStack(spacing: 8) {
+                ForEach(workspace.dock.indices, id: \.self) { index in
+                    slotView(workspace.dock[index], size: size, dockSlot: index,
+                             pageIndex: page, slot: index, hideLabel: true)
+                }
             }
-            Button { animate { drawer = true; query = ""; editing = false } } label: {
-                Image(systemName: "circle.grid.3x3.fill")
-                    .font(.system(size: 26)).foregroundStyle(accent)
-                    .frame(width: 46, height: 46)
-            }.buttonStyle(.plain).accessibilityLabel(t("All apps", "Todas las apps"))
-        }.padding(12).background(panel, in: RoundedRectangle(cornerRadius: 18))
-            .padding(.horizontal, 12).padding(.bottom, 8)
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(height: 66)
+        .accessibilityIdentifier("bloombox.nova.dock")
+    }
+
+    private var bar: BloomBoxNovaWorkspace.SearchBar {
+        workspace.searchBar ?? BloomBoxNovaWorkspace.SearchBar()
+    }
+
+    private func updateBar(_ change: (inout BloomBoxNovaWorkspace.SearchBar) -> Void) {
+        var value = bar
+        change(&value)
+        value.normalize()
+        workspace.searchBar = value
+    }
+
+    private func rgbColor(_ value: UInt32) -> Color {
+        Color(red: Double((value >> 16) & 255) / 255,
+              green: Double((value >> 8) & 255) / 255,
+              blue: Double(value & 255) / 255)
+    }
+
+    private func rgbValue(_ color: Color) -> UInt32? {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 1
+        guard UIColor(color).getRed(&r, green: &g, blue: &b, alpha: &a) else { return nil }
+        func byte(_ channel: CGFloat) -> UInt32 {
+            UInt32((max(0, min(1, channel)) * 255).rounded())
+        }
+        return (byte(r) << 16) | (byte(g) << 8) | byte(b)
+    }
+
+    private var barInk: Color {
+        guard bar.automaticInk else { return rgbColor(bar.iconRGB) }
+        let rgb = bar.fillRGB
+        func linear(_ byte: UInt32) -> Double {
+            let v = Double(byte) / 255
+            return v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+        }
+        let luminance = 0.2126 * linear((rgb >> 16) & 255)
+            + 0.7152 * linear((rgb >> 8) & 255) + 0.0722 * linear(rgb & 255)
+        return luminance > 0.179 ? .black : .white
+    }
+
+    private var leadingSymbol: String {
+        ["circle.grid.3x3.fill", "magnifyingglass", "square.grid.3x3.fill"][bar.leadingIcon]
+    }
+
+    private var trailingSymbol: String {
+        ["sparkles", "bolt.fill", "star.fill", "gearshape.fill"][bar.trailingSymbol]
+    }
+
+    private var shortcutApp: String? {
+        guard let key = bar.trailingApp, distinctKeys.contains(key) else { return nil }
+        return key
+    }
+
+    private func openDrawer(focus: Bool) {
+        focusDrawerOnAppear = focus
+        animate { drawer = true; query = ""; editing = false }
+        if !focus { searching = false }
+    }
+
+    private func searchBarView(preview: Bool) -> some View {
+        let height: CGFloat = 44
+        let radius: CGFloat = bar.shape == 0 ? height / 2 : (bar.shape == 1 ? 12 : 3)
+        return HStack(spacing: 0) {
+            Button {
+                if !preview { openDrawer(focus: true) }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: leadingSymbol).font(.system(size: 19, weight: .semibold))
+                    if bar.leadingIcon != 1 {
+                        Image(systemName: "magnifyingglass").font(.system(size: 12, weight: .semibold))
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, 14)
+                .frame(maxWidth: .infinity, minHeight: height)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(t("Search installed apps", "Buscar apps instaladas"))
+            .accessibilityIdentifier("bloombox.nova.searchBar.search")
+            Button {
+                guard !preview else { return }
+                if let key = shortcutApp { activate(key) }
+                else { shortcutQuery = ""; shortcutPicker = true }
+            } label: {
+                Group {
+                    if let key = shortcutApp, bar.useAppArtwork {
+                        icon(key, 27).frame(width: 27, height: 27)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                    } else {
+                        Image(systemName: trailingSymbol).font(.system(size: 20, weight: .semibold))
+                    }
+                }
+                .frame(width: 52, height: height)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(shortcutApp.map { name($0) } ?? t("Choose shortcut app", "Elegir app de acceso rápido"))
+            .accessibilityIdentifier("bloombox.nova.searchBar.shortcut")
+        }
+        .foregroundStyle(barInk)
+        .background(rgbColor(bar.fillRGB), in: RoundedRectangle(cornerRadius: radius))
+        .frame(maxWidth: bar.compact ? 268 : .infinity)
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity)
+        .disabled(preview)
+        .accessibilityHidden(preview)
+    }
+
+    private var searchSettingsView: some View {
+        modal(t("Search bar", "Barra de búsqueda"), close: { searchSettings = false }) {
+            searchBarView(preview: true).padding(.vertical, 8)
+            Text(t("Appearance", "Apariencia")).font(.headline).foregroundStyle(accent)
+            actionRow(t("Shape", "Forma") + ": " +
+                      [t("Pill", "Cápsula"), t("Rounded", "Redondeada"), t("Square", "Rectangular")][bar.shape], "rectangle") {
+                updateBar { $0.shape = ($0.shape + 1) % 3 }
+            }
+            actionRow(t("Width", "Ancho") + ": " + (bar.compact ? t("Compact", "Compacta") : t("Full", "Completa")), "arrow.left.and.right") {
+                updateBar { $0.compact.toggle() }
+            }
+            ColorPicker(t("Bar color", "Color de la barra"), selection: Binding(
+                get: { rgbColor(bar.fillRGB) },
+                set: { color in if let rgb = rgbValue(color) { updateBar { $0.fillRGB = rgb } } }
+            ), supportsOpacity: false)
+                .padding(12).background(raised, in: RoundedRectangle(cornerRadius: 8))
+            actionRow(t("Automatic icon color", "Color automático de iconos"),
+                      bar.automaticInk ? "checkmark.square" : "square") {
+                updateBar { $0.automaticInk.toggle() }
+            }
+            if !bar.automaticInk {
+                ColorPicker(t("Icon color", "Color de iconos"), selection: Binding(
+                    get: { rgbColor(bar.iconRGB) },
+                    set: { color in if let rgb = rgbValue(color) { updateBar { $0.iconRGB = rgb } } }
+                ), supportsOpacity: false)
+                    .padding(12).background(raised, in: RoundedRectangle(cornerRadius: 8))
+            }
+            actionRow(t("Search icon", "Icono de búsqueda"), leadingSymbol) {
+                updateBar { $0.leadingIcon = ($0.leadingIcon + 1) % 3 }
+            }
+            Text(t("App shortcut", "Acceso rápido a una app")).font(.headline).foregroundStyle(accent).padding(.top, 8)
+            actionRow(shortcutApp.map { name($0) } ?? t("Choose app", "Elegir app"), "app.badge") {
+                shortcutQuery = ""; shortcutPicker = true
+            }
+            if bar.trailingApp != nil {
+                actionRow(t("Remove shortcut", "Quitar acceso"), "minus.circle") {
+                    updateBar { $0.trailingApp = nil }
+                }
+            }
+            actionRow(t("Use app artwork", "Usar icono de la app"),
+                      bar.useAppArtwork ? "checkmark.square" : "square") {
+                updateBar { $0.useAppArtwork.toggle() }
+            }
+            actionRow(t("Shortcut symbol", "Símbolo del acceso"), trailingSymbol) {
+                updateBar { $0.trailingSymbol = ($0.trailingSymbol + 1) % 4 }
+            }
+            actionRow(t("Restore defaults", "Restablecer diseño"), "arrow.counterclockwise") {
+                workspace.searchBar = BloomBoxNovaWorkspace.SearchBar()
+            }
+        }
+        .accessibilityIdentifier("bloombox.nova.searchBar.settings")
+    }
+
+    private var shortcutPickerView: some View {
+        modal(t("Choose shortcut app", "Elegir app de acceso rápido"), close: { shortcutPicker = false }) {
+            TextField(t("Search apps", "Buscar aplicaciones"), text: $shortcutQuery)
+                .textFieldStyle(.plain).autocorrectionDisabled(true)
+                .padding(12).background(raised, in: RoundedRectangle(cornerRadius: 8))
+            let matches = distinctKeys.filter {
+                shortcutQuery.isEmpty || name($0).localizedCaseInsensitiveContains(shortcutQuery)
+            }.sorted { name($0).localizedStandardCompare(name($1)) == .orderedAscending }
+            if matches.isEmpty {
+                Text(t("No matching apps", "No hay aplicaciones")).foregroundStyle(Color.gray).padding(12)
+            }
+            ForEach(matches, id: \.self) { key in
+                Button {
+                    updateBar { $0.trailingApp = key }
+                    shortcutPicker = false
+                } label: {
+                    HStack(spacing: 12) {
+                        icon(key, 36).frame(width: 36, height: 36)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        Text(name(key)).lineLimit(1)
+                        Spacer(minLength: 4)
+                        if shortcutApp == key { Image(systemName: "checkmark").foregroundStyle(accent) }
+                    }
+                    .padding(10).background(raised, in: RoundedRectangle(cornerRadius: 8))
+                }.buttonStyle(.plain)
+            }
+        }
     }
 
     private var drawerView: some View {
@@ -430,17 +659,22 @@ struct BloomBoxNovaV2View: View {
             Spacer(minLength: 0)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(panel.ignoresSafeArea())
+            .onAppear {
+                guard focusDrawerOnAppear else { return }
+                focusDrawerOnAppear = false
+                DispatchQueue.main.async { if drawer { searching = true } }
+            }
     }
 
-    @ViewBuilder private func slotView(_ key: String?, size: CGFloat, dockSlot: Int?, pageIndex: Int, slot: Int) -> some View {
+    @ViewBuilder private func slotView(_ key: String?, size: CGFloat, dockSlot: Int?, pageIndex: Int, slot: Int, hideLabel: Bool = false) -> some View {
         let content = Group {
             if let key, valid(key) {
-                tile(key, size: size, alwaysLabel: false)
+                tile(key, size: size, alwaysLabel: false, hideLabel: hideLabel)
             } else {
                 RoundedRectangle(cornerRadius: 10)
                     .strokeBorder(editing ? Color.gray : Color.clear, style: StrokeStyle(lineWidth: 1, dash: [4]))
                     .frame(width: size, height: size)
-                    .frame(maxWidth: .infinity, minHeight: size + 20)
+                    .frame(maxWidth: .infinity, minHeight: hideLabel ? size + 4 : size + 20)
             }
         }
         if editing {
@@ -464,15 +698,15 @@ struct BloomBoxNovaV2View: View {
         return true
     }
 
-    @ViewBuilder private func tile(_ key: String, size: CGFloat, alwaysLabel: Bool) -> some View {
+    @ViewBuilder private func tile(_ key: String, size: CGFloat, alwaysLabel: Bool, hideLabel: Bool = false) -> some View {
         let content = VStack(spacing: 4) {
             tileImage(key, size: size)
-            if workspace.labels || alwaysLabel {
+            if !hideLabel && (workspace.labels || alwaysLabel) {
                 Text(displayName(key)).font(.system(size: 11, weight: .medium))
                     .lineLimit(1).truncationMode(.tail)
             }
         }
-        .frame(maxWidth: .infinity, minHeight: size + 20)
+        .frame(maxWidth: .infinity, minHeight: hideLabel ? size + 4 : size + 20)
         .contentShape(Rectangle())
         .gesture(LongPressGesture(minimumDuration: 0.38).exclusively(before: TapGesture()).onEnded { result in
             switch result {
@@ -548,7 +782,7 @@ struct BloomBoxNovaV2View: View {
             .background(panel, in: RoundedRectangle(cornerRadius: 20))
             .padding(18)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.black.opacity(0.75).ignoresSafeArea().onTapGesture(perform: close))
+            .background(Color(red: 0.07, green: 0.09, blue: 0.11).ignoresSafeArea().onTapGesture(perform: close))
     }
 
     private func contextPanel(_ key: String) -> some View {
@@ -578,7 +812,7 @@ struct BloomBoxNovaV2View: View {
                 }
             }
             actionRow(t("Pin to dock", "Fijar en dock"), "rectangle.bottomthird.inset.filled") {
-                workspace.placeInDock(key, slot: workspace.dock.firstIndex(of: nil) ?? 3, page: page)
+                workspace.placeInDock(key, slot: workspace.dock.firstIndex(of: nil) ?? (BloomBoxNovaWorkspace.dockCapacity - 1), page: page)
                 selected = nil; drawer = false
             }
             if workspace.contains(key) {
@@ -625,6 +859,10 @@ struct BloomBoxNovaV2View: View {
             actionRow(t("Icon shape", "Forma del icono") + ": " +
                       [t("Rounded", "Redondeado"), t("Circle", "Círculo"), t("Square", "Cuadrado")][workspace.iconShape], "app") {
                 workspace.iconShape = (workspace.iconShape + 1) % 3
+            }
+            Text(t("Search bar", "Barra de búsqueda")).font(.headline).foregroundStyle(accent).padding(.top, 8)
+            actionRow(t("Customize search bar", "Personalizar barra de búsqueda"), "magnifyingglass") {
+                searchSettings = true
             }
             Text(t("Wallpaper", "Fondo de pantalla")).font(.headline).foregroundStyle(accent).padding(.top, 8)
             actionRow(t("Solid color", "Color sólido"), "paintpalette") { workspace.wallpaper = (workspace.wallpaper + 1) % 3 }
