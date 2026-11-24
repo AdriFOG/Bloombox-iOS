@@ -347,9 +347,9 @@ private struct BloomBoxNovaDragOverlay: View {
     }
 }
 
-// UIKit keeps one continuous touch in window coordinates. A stationary
-// finger can never be mistaken for a drag starting at (0, 0). The short
-// hold arms movement; a separate deadline opens the menu while still held.
+// Independent native recognizers: a stationary press owns its own three
+// second clock; the earlier drag recognizer must not cancel or restart it.
+// Nothing changes in SwiftUI until the finger actually moves or opens a menu.
 private struct BloomBoxNovaTouchSurface: UIViewRepresentable {
     var permitsDrag = true
     let tap: () -> Void
@@ -364,74 +364,99 @@ private struct BloomBoxNovaTouchSurface: UIViewRepresentable {
         let view = UIView()
         view.backgroundColor = .clear
         view.isAccessibilityElement = false
-        let press = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.press(_:)))
-        press.minimumPressDuration = permitsDrag ? 0.30 : 3.0
-        press.allowableMovement = 10
-        press.cancelsTouchesInView = true
-        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapped(_:)))
-        tap.require(toFail: press)
-        view.addGestureRecognizer(press)
+        let coordinator = context.coordinator
+        let menu = UILongPressGestureRecognizer(target: coordinator, action: #selector(Coordinator.menuPressed(_:)))
+        menu.minimumPressDuration = 3.0
+        menu.allowableMovement = 10
+        menu.delegate = coordinator
+        menu.cancelsTouchesInView = true
+        let drag = UILongPressGestureRecognizer(target: coordinator, action: #selector(Coordinator.dragPressed(_:)))
+        drag.minimumPressDuration = 0.30
+        drag.allowableMovement = 10
+        drag.delegate = coordinator
+        drag.cancelsTouchesInView = true
+        drag.isEnabled = permitsDrag
+        coordinator.dragRecognizer = drag
+        coordinator.menuRecognizer = menu
+        let tap = UITapGestureRecognizer(target: coordinator, action: #selector(Coordinator.tapped(_:)))
+        tap.require(toFail: menu)
+        tap.require(toFail: drag)
+        view.addGestureRecognizer(menu)
+        view.addGestureRecognizer(drag)
         view.addGestureRecognizer(tap)
         return view
     }
-    func updateUIView(_ uiView: UIView, context: Context) { context.coordinator.parent = self }
 
-    final class Coordinator: NSObject {
+    func updateUIView(_ uiView: UIView, context: Context) {
+        let coordinator = context.coordinator
+        coordinator.parent = self
+        // A retained tile may leave edit mode. Refresh recognizer state
+        // rather than keeping the first mode for the lifetime of its view.
+        if let drag = coordinator.dragRecognizer, drag.isEnabled != permitsDrag {
+            drag.isEnabled = permitsDrag
+        }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         var parent: BloomBoxNovaTouchSurface
+        weak var dragRecognizer: UILongPressGestureRecognizer?
+        weak var menuRecognizer: UILongPressGestureRecognizer?
         private var start: CGPoint?
-        private var anchor = CGRect.zero
         private var moving = false
         private var menuOpened = false
-        private var deadline: DispatchWorkItem?
         init(_ parent: BloomBoxNovaTouchSurface) { self.parent = parent }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+            // The stationary menu must remain possible when the 0.30-second
+            // drag recognizer begins. Other gestures keep their normal rules.
+            (gestureRecognizer === dragRecognizer && other === menuRecognizer) ||
+            (gestureRecognizer === menuRecognizer && other === dragRecognizer)
+        }
+
         @objc func tapped(_ recognizer: UITapGestureRecognizer) {
             if recognizer.state == .ended { parent.tap() }
         }
-        @objc func press(_ recognizer: UILongPressGestureRecognizer) {
+
+        @objc func menuPressed(_ recognizer: UILongPressGestureRecognizer) {
+            guard recognizer.state == .began, !moving,
+                  let view = recognizer.view, let window = view.window else { return }
+            menuOpened = true
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            parent.hold(view.convert(view.bounds, to: window))
+        }
+
+        @objc func dragPressed(_ recognizer: UILongPressGestureRecognizer) {
             guard let view = recognizer.view, let window = view.window else { return }
             let point = recognizer.location(in: window)
             switch recognizer.state {
             case .began:
                 start = point
-                anchor = view.convert(view.bounds, to: window)
                 moving = false
                 menuOpened = false
-                parent.armed(true)
-                if parent.permitsDrag {
-                    let work = DispatchWorkItem { [weak self] in
-                        guard let self, self.start != nil, !self.moving, !self.menuOpened else { return }
-                        self.openMenu()
-                    }
-                    deadline = work
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.70, execute: work)
-                } else { openMenu() }
+                // Do not update any SwiftUI state for a stationary finger.
             case .changed:
                 guard let start, !menuOpened, parent.permitsDrag else { return }
                 let delta = CGSize(width: point.x - start.x, height: point.y - start.y)
-                if !moving && hypot(delta.width, delta.height) >= 10 {
+                if !moving {
+                    guard hypot(delta.width, delta.height) >= 10 else { return }
                     moving = true
-                    deadline?.cancel()
+                    parent.armed(true)
                 }
-                if moving { parent.move(point, delta) }
+                parent.move(point, delta)
             case .ended, .cancelled, .failed:
-                deadline?.cancel()
-                deadline = nil
-                if recognizer.state == .ended, moving, !menuOpened, let start {
-                    let delta = CGSize(width: point.x - start.x, height: point.y - start.y)
-                    parent.finish(point, delta)
-                } else { parent.cancel() }
+                let wasMoving = moving
+                if recognizer.state == .ended, wasMoving, !menuOpened, let start {
+                    parent.finish(point, CGSize(width: point.x - start.x, height: point.y - start.y))
+                } else if wasMoving { parent.cancel() }
                 start = nil
                 moving = false
                 menuOpened = false
-                // Do not let the same touch settle the parent drawer.
-                DispatchQueue.main.async { [weak self] in self?.parent.armed(false) }
+                if wasMoving {
+                    DispatchQueue.main.async { [weak self] in self?.parent.armed(false) }
+                }
             default: break
             }
-        }
-        private func openMenu() {
-            menuOpened = true
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
-            parent.hold(anchor)
         }
     }
 }
@@ -645,10 +670,13 @@ struct BloomBoxNovaV2View: View {
                     // Move the Home icons out of the way, leaving only the
                     // wallpaper behind the customizable drawer background.
                     stableHome(travel: travel)
-                        .scaleEffect(editing ? 0.83 : 1, anchor: .top)
+                        .frame(width: geometry.size.width,
+                               height: editing ? max(120, height - collapsedWidgetPanelHeight(height) - 150) : height,
+                               alignment: .top)
+                        .scaleEffect(editing ? 0.94 : 1, anchor: .top)
                         .offset(y: -progress * (height + geometry.safeAreaInsets.bottom))
-                        .allowsHitTesting(!drawer)
-                        .accessibilityHidden(drawer)
+                        .allowsHitTesting(!drawer && !(editing && widgetsExpanded))
+                        .accessibilityHidden(drawer || (editing && widgetsExpanded))
                     // Separate, full-bleed background outside the safe-area
                     // content frame. The search and app grid stay inset.
                     rgbColor(drawerStyle.backgroundRGB)
@@ -853,19 +881,23 @@ struct BloomBoxNovaV2View: View {
             VStack(spacing: 3) {
                 ZStack {
                     pageControl
-                    HStack {
-                        Spacer()
-                        Button { openDrawer(focus: false) } label: {
-                            Image(systemName: "chevron.up").font(.caption.weight(.semibold))
-                                .frame(width: 32, height: 22)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(t("Open app drawer", "Abrir cajón de apps"))
-                    }.padding(.horizontal, 12)
+                    if !editing {
+                        HStack {
+                            Spacer()
+                            Button { openDrawer(focus: false) } label: {
+                                Image(systemName: "chevron.up").font(.caption.weight(.semibold))
+                                    .frame(width: 32, height: 22)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(t("Open app drawer", "Abrir cajón de apps"))
+                        }.padding(.horizontal, 12)
+                    }
                 }.frame(height: 22)
-                dockView.opacity(editing ? 0 : 1).allowsHitTesting(!editing)
-                // Reserve the same bottom position as the shared search bar.
-                Color.clear.frame(height: 50).allowsHitTesting(false)
+                if !editing {
+                    dockView
+                    // Reserve the same bottom position as the shared search bar.
+                    Color.clear.frame(height: 50).allowsHitTesting(false)
+                }
             }
             .contentShape(Rectangle())
         }
@@ -1818,20 +1850,38 @@ struct BloomBoxNovaV2View: View {
         .accessibilityAction { addNovaWidget(kind, style: style) }
     }
 
+    private func collapsedWidgetPanelHeight(_ height: CGFloat) -> CGFloat {
+        min(180, height * 0.30)
+    }
+
+    private func editorAction(_ symbol: String, _ label: String, primary: Bool = false,
+                              action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 5) {
+                Image(systemName: symbol)
+                    .font(.system(size: primary ? 42 : 35, weight: .medium))
+                    .frame(height: 46)
+                Text(label)
+                    .font(.system(size: primary ? 16 : 14, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .frame(minWidth: 70, minHeight: 76)
+            .contentShape(Rectangle())
+        }.buttonStyle(.plain)
+    }
+
     private func editPanel(height: CGFloat) -> some View {
         VStack(spacing: 12) {
             if !widgetsExpanded {
-                HStack(spacing: 24) {
-                    Button { importWallpaper = true } label: {
-                        VStack { Image(systemName: "photo.on.rectangle").font(.title2); Text(t("Wallpapers", "Fondos")).font(.caption) }
-                    }
-                    Button { settings = true } label: {
-                        VStack { Image(systemName: "gearshape").font(.title2); Text(t("Settings", "Ajustes")).font(.caption) }
-                    }
-                    Button { animate { editing = false } } label: {
-                        VStack { Image(systemName: "checkmark.circle").font(.title2); Text(t("Done", "Listo")).font(.caption) }
-                    }
-                }.buttonStyle(.plain).padding(8)
+                HStack(spacing: 0) {
+                    editorAction("photo.on.rectangle", t("Wallpapers", "Fondos")) { importWallpaper = true }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    editorAction("checkmark.circle.fill", t("Done", "Listo"), primary: true) {
+                        animate { editing = false }
+                    }.frame(maxWidth: .infinity, alignment: .center)
+                    editorAction("gearshape", t("Settings", "Ajustes")) { settings = true }
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }.padding(.horizontal, 22).frame(height: 78)
                 editorBar
             }
             VStack(alignment: .leading, spacing: 12) {
@@ -1878,7 +1928,7 @@ struct BloomBoxNovaV2View: View {
                 }
             }
             .padding(16)
-            .frame(height: widgetsExpanded ? max(180, height - 20) : min(180, height * 0.30))
+            .frame(height: widgetsExpanded ? max(180, height - 20) : collapsedWidgetPanelHeight(height))
             .background(panel, in: RoundedRectangle(cornerRadius: 24))
             .gesture(DragGesture(minimumDistance: 20).onEnded { value in
                 if value.translation.height < -30 { animate { widgetsExpanded = true } }
