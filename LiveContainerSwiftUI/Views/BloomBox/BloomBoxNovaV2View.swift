@@ -352,6 +352,8 @@ private struct BloomBoxNovaDragOverlay: View {
 private final class BloomBoxNovaContact: UIGestureRecognizer {
     enum Event { case none, tap, hold, drag, finish, cancel }
     var permitsDrag = true
+    var dragAfterHold = false
+    var holdDuration: TimeInterval = 3
     private(set) var event: Event = .none
     private(set) var point = CGPoint.zero
     private(set) var delta = CGSize.zero
@@ -375,31 +377,37 @@ private final class BloomBoxNovaContact: UIGestureRecognizer {
             guard let self, self.state == .possible, self.finger != nil,
                   !self.dragging, !self.held else { return }
             self.held = true
+            if self.dragAfterHold {
+                self.first = self.point
+                self.delta = .zero
+            }
             self.event = .hold
             self.state = .began
         }
         timer = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + holdDuration, execute: work)
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
-        guard let finger, touches.contains(finger), let window = view?.window, !held else { return }
+        guard let finger, touches.contains(finger), let window = view?.window,
+              !held || (dragAfterHold && permitsDrag) else { return }
         point = finger.location(in: window)
         delta = CGSize(width: point.x - first.x, height: point.y - first.y)
-        if !dragging {
-            guard hypot(delta.width, delta.height) >= 10 else { return }
-            timer?.cancel()
-            guard permitsDrag, finger.timestamp - started >= 0.30 else {
-                state = .failed
-                return
-            }
-            dragging = true
-            self.event = .drag
-            state = .began
-        } else {
+        if dragging {
             self.event = .drag
             state = .changed
+            return
         }
+        guard hypot(delta.width, delta.height) >= 10 else { return }
+        timer?.cancel()
+        let canStartDrag = dragAfterHold ? held : finger.timestamp - started >= 0.30
+        guard permitsDrag, canStartDrag else {
+            state = .failed
+            return
+        }
+        dragging = true
+        self.event = .drag
+        state = held ? .changed : .began
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
@@ -450,6 +458,8 @@ private final class BloomBoxNovaContact: UIGestureRecognizer {
 
 private struct BloomBoxNovaTouchSurface: UIViewRepresentable {
     var permitsDrag = true
+    var dragAfterHold = false
+    var holdDuration: TimeInterval = 3
     let tap: () -> Void
     let hold: (CGRect) -> Void
     let armed: (Bool) -> Void
@@ -464,13 +474,19 @@ private struct BloomBoxNovaTouchSurface: UIViewRepresentable {
         view.isAccessibilityElement = false
         let contact = BloomBoxNovaContact(target: context.coordinator, action: #selector(Coordinator.contact(_:)))
         contact.permitsDrag = permitsDrag
+        contact.dragAfterHold = dragAfterHold
+        contact.holdDuration = holdDuration
         contact.cancelsTouchesInView = true
         view.addGestureRecognizer(contact)
         return view
     }
     func updateUIView(_ uiView: UIView, context: Context) {
         context.coordinator.parent = self
-        (uiView.gestureRecognizers?.first as? BloomBoxNovaContact)?.permitsDrag = permitsDrag
+        if let contact = uiView.gestureRecognizers?.first as? BloomBoxNovaContact {
+            contact.permitsDrag = permitsDrag
+            contact.dragAfterHold = dragAfterHold
+            contact.holdDuration = holdDuration
+        }
     }
     static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
         if let contact = uiView.gestureRecognizers?.first as? BloomBoxNovaContact {
@@ -663,6 +679,7 @@ struct BloomBoxNovaV2View: View {
         let language: String
         let travel: CGFloat
         let drawer: Bool
+        let showHomeSearchBar: Bool
     }
 
     private struct DrawerSignature: Equatable {
@@ -679,12 +696,12 @@ struct BloomBoxNovaV2View: View {
 
     private var giftKeys: Set<String> { Set(keys.filter(hasGift)) }
 
-    private func stableHome(travel: CGFloat) -> some View {
+    private func stableHome(travel: CGFloat, showHomeSearchBar: Bool) -> some View {
         BloomBoxNovaStableContent(signature: HomeSignature(
             workspace: workspace, names: names, iconRevision: iconRevision,
             gifts: giftKeys, page: page, editing: editing, drag: homeDrag, widgetDrag: widgetDrag,
-            language: language, travel: travel, drawer: drawer
-        )) { homeView(travel: travel) }.equatable()
+            language: language, travel: travel, drawer: drawer, showHomeSearchBar: showHomeSearchBar
+        )) { homeView(travel: travel, showHomeSearchBar: showHomeSearchBar) }.equatable()
     }
 
     private var stableDrawer: some View {
@@ -722,10 +739,11 @@ struct BloomBoxNovaV2View: View {
                 let travel = max(1, closedBarY - openBarY)
                 let progress = drawerProgress(travel: travel)
                 let barY = closedBarY - progress * travel
+                let showMovingSearchBar = drawer || progress > 0
                 ZStack(alignment: .top) {
                     // Move the Home icons out of the way, leaving only the
                     // wallpaper behind the customizable drawer background.
-                    stableHome(travel: travel)
+                    stableHome(travel: travel, showHomeSearchBar: !showMovingSearchBar)
                         .id(interactionEpoch)
                         .frame(width: geometry.size.width,
                                height: editing ? max(120, height - collapsedWidgetPanelHeight(height) - 150) : height,
@@ -751,14 +769,15 @@ struct BloomBoxNovaV2View: View {
                         .allowsHitTesting(drawer && page >= 0)
                         .accessibilityHidden(!drawer || page < 0)
                         .zIndex(1)
-                    // One persistent search bar, not a separate copy in each
-                    // screen. It travels from the Dock to the drawer header.
+                    // During a vertical transition the search bar travels
+                    // between the desktop footer and the drawer header.
                     searchBarView(preview: false, inDrawer: drawer, showHint: progress > 0.08)
                         .frame(width: geometry.size.width, height: 44)
                         .position(x: geometry.size.width / 2, y: barY)
                         .simultaneousGesture(drawerGesture(travel: travel, opening: !drawer))
-                        .opacity(editing || page < 0 ? 0 : 1)
-                        .allowsHitTesting(!editing && page >= 0)
+                        .opacity(showMovingSearchBar && !editing && page >= 0 ? 1 : 0)
+                        .allowsHitTesting(drawer && page >= 0)
+                        .accessibilityHidden(!drawer || page < 0)
                         .zIndex(2)
                     if editing {
                         editPanel(height: height).zIndex(2.2)
@@ -953,84 +972,95 @@ struct BloomBoxNovaV2View: View {
         }.ignoresSafeArea()
     }
 
-    private func homeView(travel: CGFloat) -> some View {
-        VStack(spacing: 4) {
-            // No permanent title or edit/settings buttons on the desktop.
-            TabView(selection: $page) {
-                newsPage().tag(-1)
-                ForEach(workspace.pages.indices, id: \.self) { index in
-                    GeometryReader { geo in
-                        let columns = workspace.columns
-                        let rows = (BloomBoxNovaWorkspace.capacity + columns - 1) / columns
-                        let rowHeight = max(1, (geo.size.height - 6) / CGFloat(rows))
-                        let cellWidth = max(1, (geo.size.width - 20) / CGFloat(columns))
-                        let labelSpace: CGFloat = workspace.labels ? 18 : 4
-                        let size = min(58, max(16, min(cellWidth - 12, rowHeight - labelSpace - 4)))
-                        // Fit every slot on the actual page, from top to bottom.
-                        // No vertical ScrollView clipping the last row.
-                        ZStack(alignment: .topLeading) {
-                            ForEach(workspace.widgets?[index] ?? []) { widget in
-                                let w = max(1, CGFloat(widget.columns) * cellWidth - 8)
-                                let h = max(1, CGFloat(widget.rows) * rowHeight - 8)
-                                novaWidget(widget, pageIndex: index, width: w, height: h, cellWidth: cellWidth, rowHeight: rowHeight)
-                                    .position(x: 10 + CGFloat(widget.slot % columns) * cellWidth + CGFloat(widget.columns) * cellWidth / 2,
-                                              y: 3 + CGFloat(widget.slot / columns) * rowHeight + CGFloat(widget.rows) * rowHeight / 2)
-                            }
-                            let occupied = workspace.occupiedByWidgets(index)
-                            VStack(spacing: 0) {
-                                ForEach(0..<rows, id: \.self) { row in
-                                    HStack(spacing: 0) {
-                                        ForEach(0..<columns, id: \.self) { column in
-                                            let slot = row * columns + column
-                                            if workspace.pages[index].indices.contains(slot) {
-                                                let key = workspace.pages[index][slot]
-                                                slotView(key, size: size, dockSlot: nil, pageIndex: index,
-                                                         slot: slot, overWidget: occupied.contains(slot))
-                                                    .frame(width: cellWidth, height: rowHeight)
-                                            } else {
-                                                Color.clear.frame(width: cellWidth, height: rowHeight)
-                                                    .allowsHitTesting(false)
-                                            }
-                                        }
-                                    }
+    private func homeView(travel: CGFloat, showHomeSearchBar: Bool) -> some View {
+        TabView(selection: $page) {
+            VStack(spacing: 4) {
+                newsPage()
+                pageControl(currentPage: -1).frame(height: 22)
+            }
+            .tag(-1)
+
+            ForEach(workspace.pages.indices, id: \.self) { index in
+                VStack(spacing: 4) {
+                    desktopGrid(index)
+                    desktopFooter(index, showSearchBar: showHomeSearchBar)
+                }
+                .tag(index)
+            }
+        }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+        .simultaneousGesture(drawerGesture(travel: travel, opening: true))
+    }
+
+    private func desktopGrid(_ index: Int) -> some View {
+        GeometryReader { geo in
+            let columns = workspace.columns
+            let rows = (BloomBoxNovaWorkspace.capacity + columns - 1) / columns
+            let rowHeight = max(1, (geo.size.height - 6) / CGFloat(rows))
+            let cellWidth = max(1, (geo.size.width - 20) / CGFloat(columns))
+            let labelSpace: CGFloat = workspace.labels ? 18 : 4
+            let size = min(58, max(16, min(cellWidth - 12, rowHeight - labelSpace - 4)))
+            // Fit every slot on the actual page, from top to bottom.
+            // No vertical ScrollView clipping the last row.
+            ZStack(alignment: .topLeading) {
+                ForEach(workspace.widgets?[index] ?? []) { widget in
+                    let w = max(1, CGFloat(widget.columns) * cellWidth - 8)
+                    let h = max(1, CGFloat(widget.rows) * rowHeight - 8)
+                    novaWidget(widget, pageIndex: index, width: w, height: h, cellWidth: cellWidth, rowHeight: rowHeight)
+                        .position(x: 10 + CGFloat(widget.slot % columns) * cellWidth + CGFloat(widget.columns) * cellWidth / 2,
+                                  y: 3 + CGFloat(widget.slot / columns) * rowHeight + CGFloat(widget.rows) * rowHeight / 2)
+                }
+                let occupied = workspace.occupiedByWidgets(index)
+                VStack(spacing: 0) {
+                    ForEach(0..<rows, id: \.self) { row in
+                        HStack(spacing: 0) {
+                            ForEach(0..<columns, id: \.self) { column in
+                                let slot = row * columns + column
+                                if workspace.pages[index].indices.contains(slot) {
+                                    let key = workspace.pages[index][slot]
+                                    slotView(key, size: size, dockSlot: nil, pageIndex: index,
+                                             slot: slot, overWidget: occupied.contains(slot))
+                                        .frame(width: cellWidth, height: rowHeight)
+                                } else {
+                                    Color.clear.frame(width: cellWidth, height: rowHeight)
+                                        .allowsHitTesting(false)
                                 }
                             }
-                            .padding(.horizontal, 10)
-                            .padding(.top, 3)
-                            .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
                         }
-                    }.tag(index)
-                }
-            }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            VStack(spacing: 3) {
-                ZStack {
-                    pageControl
-                    if !editing && page >= 0 {
-                        HStack {
-                            Spacer()
-                            Button { openDrawer(focus: false) } label: {
-                                Image(systemName: "chevron.up").font(.caption.weight(.semibold))
-                                    .frame(width: 32, height: 22)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(t("Open app drawer", "Abrir cajón de apps"))
-                        }.padding(.horizontal, 12)
                     }
-                }.frame(height: 22)
-                if !editing && page >= 0 {
-                    dockView
-                    // Reserve the same bottom position as the shared search bar.
-                    Color.clear.frame(height: 50).allowsHitTesting(false)
                 }
+                .padding(.horizontal, 10)
+                .padding(.top, 3)
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
             }
-            .contentShape(Rectangle())
         }
-        // Same recognizer covers Home and the Dock, so it also works when
-        // starting on an icon or in the gap between icons. Horizontal swipes
-        // are rejected; in edit mode icon drag/drop takes precedence.
-        .simultaneousGesture(drawerGesture(travel: travel, opening: true),
-                             including: page < 0 || editing ? .none : .all)
+    }
+
+    private func desktopFooter(_ index: Int, showSearchBar: Bool) -> some View {
+        VStack(spacing: 3) {
+            ZStack {
+                pageControl(currentPage: index)
+                if !editing {
+                    HStack {
+                        Spacer()
+                        Button { openDrawer(focus: false) } label: {
+                            Image(systemName: "chevron.up").font(.caption.weight(.semibold))
+                                .frame(width: 32, height: 22)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(t("Open app drawer", "Abrir cajón de apps"))
+                    }.padding(.horizontal, 12)
+                }
+            }.frame(height: 22)
+            if !editing {
+                dockView(pageIndex: index)
+                searchBarView(preview: false)
+                    .frame(height: 50, alignment: .top)
+                    .opacity(showSearchBar ? 1 : 0)
+                    .accessibilityHidden(!showSearchBar)
+            }
+        }
+        .contentShape(Rectangle())
     }
 
     private func drawerProgress(travel: CGFloat) -> CGFloat {
@@ -1119,19 +1149,19 @@ struct BloomBoxNovaV2View: View {
             .padding(12).background(raised).padding(.horizontal, 12)
     }
 
-    private var pageControl: some View {
+    private func pageControl(currentPage: Int) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 Button { animate { page = -1 } } label: {
                     Image(systemName: "newspaper.fill")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(page == -1 ? accent : Color.gray)
+                        .foregroundStyle(currentPage == -1 ? accent : Color.gray)
                         .frame(minWidth: 22, minHeight: 22)
                 }.buttonStyle(.plain).accessibilityLabel(t("News", "Noticias"))
                 ForEach(workspace.pages.indices, id: \.self) { index in
                     Button { animate { page = index } } label: {
-                        Capsule().fill(page == index ? accent : Color.gray)
-                            .frame(width: page == index ? 18 : 6, height: 6)
+                        Capsule().fill(currentPage == index ? accent : Color.gray)
+                            .frame(width: currentPage == index ? 18 : 6, height: 6)
                             .frame(minWidth: 22, minHeight: 22)
                     }.buttonStyle(.plain)
                         .accessibilityLabel(t("Page", "Página") + " \(index + 1)")
@@ -1142,13 +1172,13 @@ struct BloomBoxNovaV2View: View {
 
     // Five user-controlled app slots, without an extra drawer button or backing
     // panel. The wallpaper shows directly between icons, as on Android.
-    private var dockView: some View {
+    private func dockView(pageIndex: Int) -> some View {
         GeometryReader { geometry in
             let size = min(56, max(32, (geometry.size.width - 32) / CGFloat(BloomBoxNovaWorkspace.dockCapacity) - 8))
             HStack(spacing: 8) {
                 ForEach(workspace.dock.indices, id: \.self) { index in
                     slotView(workspace.dock[index], size: size, dockSlot: index,
-                             pageIndex: page, slot: index, hideLabel: true)
+                             pageIndex: pageIndex, slot: index, hideLabel: true)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
@@ -1541,7 +1571,7 @@ struct BloomBoxNovaV2View: View {
     private func target(at location: CGPoint) -> BloomBoxNovaDropTarget? {
         var best: BloomBoxNovaDropTarget?
         for (candidate, rect) in dropFrames where
-            (candidate.dock || candidate.page == page) && rect.contains(location) {
+            candidate.page == page && rect.contains(location) {
             if let current = best {
                 if candidate.dock == current.dock {
                     if candidate.slot < current.slot { best = candidate }
@@ -1577,13 +1607,17 @@ struct BloomBoxNovaV2View: View {
     }
 
     private func appTouch(_ key: String, size: CGFloat, permitsDrag: Bool) -> some View {
-        BloomBoxNovaTouchSurface(permitsDrag: permitsDrag,
+        BloomBoxNovaTouchSurface(permitsDrag: permitsDrag, dragAfterHold: true, holdDuration: 0.6,
             tap: { if !editing { activate(key) } else { selected = key } },
             hold: { showAppMenu(key, anchor: $0) },
             armed: { suppressDrawerForIcon = $0 },
             move: { point, _ in
-                guard permitsDrag, selected == nil else { return }
-                if homeDrag == nil { homeDrag = HomeDrag(key: key, size: size, moving: true) }
+                guard permitsDrag else { return }
+                if homeDrag == nil {
+                    selected = nil
+                    selectionAnchor = nil
+                    homeDrag = HomeDrag(key: key, size: size, moving: true)
+                }
                 pointer.move(to: point, highlight: nil)
             },
             finish: { point, _ in
@@ -1594,7 +1628,7 @@ struct BloomBoxNovaV2View: View {
     }
 
     private func slotView(_ key: String?, size: CGFloat, dockSlot: Int?, pageIndex: Int, slot: Int, hideLabel: Bool = false, overWidget: Bool = false) -> some View {
-        let destination = BloomBoxNovaDropTarget(page: dockSlot == nil ? pageIndex : -1,
+        let destination = BloomBoxNovaDropTarget(page: pageIndex,
                                                  slot: dockSlot ?? slot, dock: dockSlot != nil)
         return ZStack {
             if let key, valid(key) {
@@ -1731,7 +1765,7 @@ struct BloomBoxNovaV2View: View {
 
     private func contextPanel(_ key: String, width: CGFloat, height: CGFloat, origin: CGPoint) -> some View {
         let stored = selectionAnchor ?? dropFrames.first { destination, _ in
-            if destination.dock { return workspace.dock.indices.contains(destination.slot) && workspace.dock[destination.slot] == key }
+            if destination.dock { return destination.page == page && workspace.dock.indices.contains(destination.slot) && workspace.dock[destination.slot] == key }
             return destination.page == page && workspace.pages.indices.contains(page) &&
                 workspace.pages[page].indices.contains(destination.slot) && workspace.pages[page][destination.slot] == key
         }?.value
