@@ -210,6 +210,20 @@ struct BloomBoxNovaV2View: View {
     @State private var workspace = BloomBoxNovaWorkspace()
     @State private var loaded = false
     @State private var page = 0
+    // The gesture state resets even if UIKit cancels the touch (app switch,
+    // system gesture, another recognizer). No half-open drawer can be stranded.
+    private enum DrawerSwipe: Equatable {
+        case idle
+        case rejected
+        case tracking(CGFloat)
+
+        var delta: CGFloat {
+            if case let .tracking(value) = self { return value }
+            return 0
+        }
+    }
+    @GestureState(resetTransaction: Transaction(animation: .spring(response: 0.34, dampingFraction: 0.88)))
+    private var drawerSwipe: DrawerSwipe = .idle
     @State private var drawer = false
     @State private var editing = false
     @State private var settings = false
@@ -262,10 +276,23 @@ struct BloomBoxNovaV2View: View {
     var body: some View {
         ZStack {
             wallpaperView
-            if drawer {
-                drawerView.transition(.move(edge: .bottom))
-            } else {
-                homeView
+            GeometryReader { geometry in
+                // Keep both views mounted throughout the swipe. Switching the
+                // hierarchy at a threshold would cancel the Dock recognizer.
+                let travel = max(1, geometry.size.height + geometry.safeAreaInsets.top + geometry.safeAreaInsets.bottom + 2)
+                let progress = drawerProgress(travel: travel)
+                ZStack {
+                    homeView(drawerLift: progress * travel, travel: travel)
+                        .allowsHitTesting(!drawer)
+                        .accessibilityHidden(drawer)
+                    drawerView(travel: travel)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .offset(y: (1 - progress) * travel)
+                        .allowsHitTesting(drawer)
+                        .accessibilityHidden(!drawer)
+                        .zIndex(1)
+                }
+                .frame(width: geometry.size.width, height: geometry.size.height)
             }
             if settings { settingsView.zIndex(3) }
             if let folder { folderView(folder).zIndex(4) }
@@ -295,6 +322,15 @@ struct BloomBoxNovaV2View: View {
             if let folder, workspace.folders[folder] == nil { self.folder = nil }
         }
         .onChange(of: workspace) { _ in if loaded { save() } }
+        .onChange(of: drawer) { opened in
+            if !opened {
+                searching = false
+                focusDrawerOnAppear = false
+            } else if focusDrawerOnAppear {
+                focusDrawerOnAppear = false
+                DispatchQueue.main.async { if drawer { searching = true } }
+            }
+        }
         .fileImporter(isPresented: $importWallpaper, allowedContentTypes: [.image]) { result in
             do {
                 let url = try result.get()
@@ -341,7 +377,7 @@ struct BloomBoxNovaV2View: View {
         }.ignoresSafeArea()
     }
 
-    private var homeView: some View {
+    private func homeView(drawerLift: CGFloat, travel: CGFloat) -> some View {
         VStack(spacing: 10) {
             HStack(spacing: 12) {
                 Text("Nova").font(.system(size: 22, weight: .bold))
@@ -371,24 +407,93 @@ struct BloomBoxNovaV2View: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            pageControl
-            Button {
-                openDrawer(focus: false)
-            } label: {
-                Image(systemName: "chevron.up").font(.headline)
-                    .frame(maxWidth: .infinity, minHeight: 34)
+            VStack(spacing: 10) {
+                pageControl
+                Button {
+                    openDrawer(focus: false)
+                } label: {
+                    Image(systemName: "chevron.up").font(.headline)
+                        .frame(maxWidth: .infinity, minHeight: 34)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(t("Open app drawer", "Abrir cajón de apps"))
+                dockView
+                searchBarView(preview: false)
+                    .padding(.bottom, 6)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(t("Open app drawer", "Abrir cajón de apps"))
-            dockView
-            searchBarView(preview: false)
-                .padding(.bottom, 6)
+            // The Dock/search row travels with the leading edge of the drawer.
+            // Offset, rather than changing layout, preserves the current page.
+            .contentShape(Rectangle())
+            .offset(y: -drawerLift)
         }
-        .simultaneousGesture(DragGesture(minimumDistance: 50).onEnded { value in
-            guard !editing, abs(value.translation.height) > abs(value.translation.width) * 1.5,
-                  value.translation.height < -70 else { return }
-            openDrawer(focus: false)
-        })
+        // Same recognizer covers Home and the Dock, so it also works when
+        // starting on an icon or in the gap between icons. Horizontal swipes
+        // are rejected; in edit mode icon drag/drop takes precedence.
+        .simultaneousGesture(drawerGesture(travel: travel, opening: true))
+    }
+
+    private func drawerProgress(travel: CGFloat) -> CGFloat {
+        let base: CGFloat = drawer ? 1 : 0
+        return min(1, max(0, base + drawerSwipe.delta / max(1, travel)))
+    }
+
+    private var drawerGestureBlocked: Bool {
+        editing || settings || searchSettings || shortcutPicker ||
+        selected != nil || folder != nil || folderSource != nil || searching
+    }
+
+    private func drawerGesture(travel: CGFloat, opening: Bool) -> some Gesture {
+        // Global coordinates prevent feedback when the dragged Dock/header
+        // itself moves underneath the finger.
+        DragGesture(minimumDistance: 12, coordinateSpace: .global)
+            .updating($drawerSwipe) { value, state, transaction in
+                transaction.animation = nil
+                guard !drawerGestureBlocked, drawer != opening else {
+                    state = .rejected
+                    return
+                }
+                let vertical = value.translation.height
+                let horizontal = value.translation.width
+                if case .idle = state {
+                    let directionIsValid = opening ? vertical < 0 : vertical > 0
+                    guard directionIsValid, abs(vertical) > abs(horizontal) * 1.35 else {
+                        state = .rejected
+                        return
+                    }
+                }
+                guard state != .rejected else { return }
+                // No threshold animation while held: one point of finger
+                // movement equals one point of drawer movement.
+                let delta = -vertical
+                state = .tracking(opening ? min(travel, max(0, delta)) : max(-travel, min(0, delta)))
+            }
+            .onEnded { value in
+                guard !drawerGestureBlocked, drawer != opening,
+                      case .tracking = drawerSwipe else { return }
+                let direction: CGFloat = opening ? -1 : 1
+                let distance = max(0, direction * value.translation.height)
+                let projected = max(0, direction * value.predictedEndTranslation.height)
+                // A slow pull settles after crossing 36% of the screen.
+                // A short, fast flick also completes if its projected momentum
+                // is large enough. Pulling back and releasing cancels the move.
+                let farEnough = distance >= travel * 0.36
+                let fastFlick = distance >= 20 && projected - distance >= 85
+                guard farEnough || fastFlick else { return }
+                settleDrawer(open: opening)
+            }
+    }
+
+    private func settleDrawer(open: Bool) {
+        withAnimation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.88)) {
+            if open {
+                query = ""
+                editing = false
+            } else {
+                searching = false
+                focusDrawerOnAppear = false
+            }
+            drawer = open
+        }
     }
 
     private var editorBar: some View {
@@ -492,8 +597,13 @@ struct BloomBoxNovaV2View: View {
 
     private func openDrawer(focus: Bool) {
         focusDrawerOnAppear = focus
-        animate { drawer = true; query = ""; editing = false }
         if !focus { searching = false }
+        if drawer && focus {
+            searching = true
+            focusDrawerOnAppear = false
+        } else {
+            settleDrawer(open: true)
+        }
     }
 
     private func searchBarView(preview: Bool) -> some View {
@@ -628,17 +738,21 @@ struct BloomBoxNovaV2View: View {
         }
     }
 
-    private var drawerView: some View {
+    private func drawerView(travel: CGFloat) -> some View {
         VStack(spacing: 12) {
             HStack {
                 control("chevron.down", t("Back to Home", "Volver al inicio")) {
-                    searching = false; animate { drawer = false }
+                    settleDrawer(open: false)
                 }
                 Text(t("All apps", "Todas las apps")).font(.title2.bold())
                 Spacer()
                 control("plus", t("Install app", "Instalar app"), action: openInstall)
                 control("gearshape", t("Settings", "Ajustes")) { animate { settings = true } }
             }.padding(.horizontal, 14).padding(.top, 10)
+                .contentShape(Rectangle())
+                // Drag the header down to close; the app grid's vertical
+                // scrolling remains independent and never closes by accident.
+                .simultaneousGesture(drawerGesture(travel: travel, opening: false))
             HStack {
                 Image(systemName: "magnifyingglass").foregroundStyle(accent)
                 TextField(t("Search apps", "Buscar aplicaciones"), text: $query)
@@ -659,11 +773,6 @@ struct BloomBoxNovaV2View: View {
             Spacer(minLength: 0)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(panel.ignoresSafeArea())
-            .onAppear {
-                guard focusDrawerOnAppear else { return }
-                focusDrawerOnAppear = false
-                DispatchQueue.main.async { if drawer { searching = true } }
-            }
     }
 
     @ViewBuilder private func slotView(_ key: String?, size: CGFloat, dockSlot: Int?, pageIndex: Int, slot: Int, hideLabel: Bool = false) -> some View {
@@ -748,7 +857,11 @@ struct BloomBoxNovaV2View: View {
         guard valid(key) else { return }
         if workspace.folders[key] != nil { animate { folder = key }; return }
         searching = false
-        if !hasGift(key) { animate { drawer = false; folder = nil; query = "" } }
+        if !hasGift(key) {
+            settleDrawer(open: false)
+            folder = nil
+            query = ""
+        }
         launch(key)
     }
 
@@ -796,7 +909,7 @@ struct BloomBoxNovaV2View: View {
                 actionRow(t("Open", "Abrir"), "play.fill") { selected = nil; activate(key) }
                 if canJIT(key) {
                     actionRow(t("Launch with JIT", "Abrir con JIT"), "bolt.fill") {
-                        selected = nil; drawer = false; folder = nil; launchJIT(key)
+                        selected = nil; settleDrawer(open: false); folder = nil; launchJIT(key)
                     }
                     actionRow(t("App settings", "Ajustes de app"), "gearshape") { selected = nil; manage(key) }
                 }
@@ -805,7 +918,7 @@ struct BloomBoxNovaV2View: View {
                     actionRow(t("Landscape", "Horizontal"), "iphone.landscape") { selected = nil; orientation(key, "landscape") }
                     actionRow(t("Ask every launch", "Preguntar al abrir"), "arrow.triangle.2.circlepath") { selected = nil; orientation(key, "hybrid") }
                 }
-                actionRow(t("Add to Home", "Añadir al inicio"), "house") { workspace.add(key, preferred: page); selected = nil; drawer = false }
+                actionRow(t("Add to Home", "Añadir al inicio"), "house") { workspace.add(key, preferred: page); selected = nil; settleDrawer(open: false) }
                 actionRow(t("Create folder", "Crear carpeta"), "folder.badge.plus") { selected = nil; folderSource = key }
                 if isGuest(key) {
                     actionRow(t("Uninstall", "Desinstalar"), "trash", destructive: true) { selected = nil; uninstall(key) }
@@ -813,7 +926,7 @@ struct BloomBoxNovaV2View: View {
             }
             actionRow(t("Pin to dock", "Fijar en dock"), "rectangle.bottomthird.inset.filled") {
                 workspace.placeInDock(key, slot: workspace.dock.firstIndex(of: nil) ?? (BloomBoxNovaWorkspace.dockCapacity - 1), page: page)
-                selected = nil; drawer = false
+                selected = nil; settleDrawer(open: false)
             }
             if workspace.contains(key) {
                 actionRow(t("Remove shortcut", "Quitar acceso"), "minus.circle") {
@@ -829,7 +942,7 @@ struct BloomBoxNovaV2View: View {
             ForEach(distinctKeys.filter { $0 != first }, id: \.self) { second in
                 actionRow(name(second), "plus") {
                     workspace.createFolder(first, second, name: t("Folder", "Carpeta"), page: page)
-                    folderSource = nil; folder = nil; drawer = false
+                    folderSource = nil; folder = nil; settleDrawer(open: false)
                 }
             }
         }
