@@ -65,6 +65,44 @@ struct BloomBoxNovaWorkspace: Codable, Equatable {
     var searchBar: SearchBar?
     var drawerAppearance: DrawerAppearance?
     var widgets: [Int: [BloomBoxPlacedWidget]]?
+    // Nova-only, optional for older workspaces. 0 = invisible background.
+    var widgetOpacity: [String: Double]?
+
+    func opacity(for id: String) -> Double {
+        let value = widgetOpacity?[id] ?? 1
+        return value.isFinite ? min(1, max(0, value)) : 1
+    }
+
+    mutating func setOpacity(_ value: Double, id: String) {
+        var values = widgetOpacity ?? [:]
+        values[id] = value.isFinite ? min(1, max(0, value)) : 1
+        widgetOpacity = values
+    }
+
+    func canPlaceWidget(_ widget: BloomBoxPlacedWidget, on page: Int) -> Bool {
+        guard pages.indices.contains(page), widget.columns > 0, widget.rows > 0,
+              widget.slot >= 0, widget.slot < Self.capacity,
+              widget.columns <= columns, widget.rows <= Self.capacity / columns else { return false }
+        let area = widgetCells(widget)
+        guard area.count == widget.columns * widget.rows,
+              area.allSatisfy({ pages[page][$0] == nil }) else { return false }
+        return (widgets?[page] ?? []).allSatisfy {
+            $0.id == widget.id || area.isDisjoint(with: widgetCells($0))
+        }
+    }
+
+    @discardableResult
+    mutating func changeWidget(_ id: String, page: Int, slot: Int? = nil,
+                               width: Int? = nil, height: Int? = nil) -> Bool {
+        guard let index = widgets?[page]?.firstIndex(where: { $0.id == id }),
+              var widget = widgets?[page]?[index] else { return false }
+        widget.slot = slot ?? widget.slot
+        widget.columns = width ?? widget.columns
+        widget.rows = height ?? widget.rows
+        guard canPlaceWidget(widget, on: page) else { return false }
+        widgets?[page]?[index] = widget
+        return true
+    }
 
     func widgetCells(_ widget: BloomBoxPlacedWidget) -> Set<Int> {
         let x = widget.slot % columns, y = widget.slot / columns
@@ -108,6 +146,7 @@ struct BloomBoxNovaWorkspace: Codable, Equatable {
 
     mutating func removeWidget(_ id: String, page: Int) {
         widgets?[page]?.removeAll { $0.id == id }
+        widgetOpacity?.removeValue(forKey: id)
     }
 
     mutating func updateWidgetMedia(_ id: String, name: String) {
@@ -295,15 +334,105 @@ struct BloomBoxNovaWorkspace: Codable, Equatable {
 private struct BloomBoxNovaDragOverlay: View {
     @ObservedObject var pointer: BloomBoxNovaPointer
     let image: AnyView
+    let origin: CGPoint
     var body: some View {
         ZStack(alignment: .topLeading) {
             if let position = pointer.position {
-                image.position(x: position.location.x, y: position.location.y - 12)
+                image.position(x: position.location.x - origin.x, y: position.location.y - origin.y)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+}
+
+// UIKit keeps one continuous touch in window coordinates. A stationary
+// finger can never be mistaken for a drag starting at (0, 0). The short
+// hold arms movement; a separate deadline opens the menu while still held.
+private struct BloomBoxNovaTouchSurface: UIViewRepresentable {
+    var permitsDrag = true
+    let tap: () -> Void
+    let hold: (CGRect) -> Void
+    let armed: (Bool) -> Void
+    let move: (CGPoint, CGSize) -> Void
+    let finish: (CGPoint, CGSize) -> Void
+    let cancel: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.backgroundColor = .clear
+        view.isAccessibilityElement = false
+        let press = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.press(_:)))
+        press.minimumPressDuration = permitsDrag ? 0.30 : 3.0
+        press.allowableMovement = 10
+        press.cancelsTouchesInView = true
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapped(_:)))
+        tap.require(toFail: press)
+        view.addGestureRecognizer(press)
+        view.addGestureRecognizer(tap)
+        return view
+    }
+    func updateUIView(_ uiView: UIView, context: Context) { context.coordinator.parent = self }
+
+    final class Coordinator: NSObject {
+        var parent: BloomBoxNovaTouchSurface
+        private var start: CGPoint?
+        private var anchor = CGRect.zero
+        private var moving = false
+        private var menuOpened = false
+        private var deadline: DispatchWorkItem?
+        init(_ parent: BloomBoxNovaTouchSurface) { self.parent = parent }
+        @objc func tapped(_ recognizer: UITapGestureRecognizer) {
+            if recognizer.state == .ended { parent.tap() }
+        }
+        @objc func press(_ recognizer: UILongPressGestureRecognizer) {
+            guard let view = recognizer.view, let window = view.window else { return }
+            let point = recognizer.location(in: window)
+            switch recognizer.state {
+            case .began:
+                start = point
+                anchor = view.convert(view.bounds, to: window)
+                moving = false
+                menuOpened = false
+                parent.armed(true)
+                if parent.permitsDrag {
+                    let work = DispatchWorkItem { [weak self] in
+                        guard let self, self.start != nil, !self.moving, !self.menuOpened else { return }
+                        self.openMenu()
+                    }
+                    deadline = work
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.70, execute: work)
+                } else { openMenu() }
+            case .changed:
+                guard let start, !menuOpened, parent.permitsDrag else { return }
+                let delta = CGSize(width: point.x - start.x, height: point.y - start.y)
+                if !moving && hypot(delta.width, delta.height) >= 10 {
+                    moving = true
+                    deadline?.cancel()
+                }
+                if moving { parent.move(point, delta) }
+            case .ended, .cancelled, .failed:
+                deadline?.cancel()
+                deadline = nil
+                if recognizer.state == .ended, moving, !menuOpened, let start {
+                    let delta = CGSize(width: point.x - start.x, height: point.y - start.y)
+                    parent.finish(point, delta)
+                } else { parent.cancel() }
+                start = nil
+                moving = false
+                menuOpened = false
+                // Do not let the same touch settle the parent drawer.
+                DispatchQueue.main.async { [weak self] in self?.parent.armed(false) }
+            default: break
+            }
+        }
+        private func openMenu() {
+            menuOpened = true
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            parent.hold(anchor)
+        }
     }
 }
 
@@ -387,7 +516,16 @@ struct BloomBoxNovaV2View: View {
         let size: CGFloat
         let moving: Bool
     }
-    @GestureState private var homeDrag: HomeDrag?
+    private struct WidgetDrag: Equatable {
+        let widget: BloomBoxPlacedWidget
+        let page: Int
+        let width: CGFloat
+        let height: CGFloat
+    }
+    @State private var homeDrag: HomeDrag?
+    @State private var widgetDrag: WidgetDrag?
+    @State private var widgetSelection: String?
+    @State private var selectionAnchor: CGRect?
     @State private var pointer = BloomBoxNovaPointer()
     @State private var dropFrames: [BloomBoxNovaDropTarget: CGRect] = [:]
     @State private var suppressDrawerForIcon = false
@@ -440,6 +578,7 @@ struct BloomBoxNovaV2View: View {
         let page: Int
         let editing: Bool
         let drag: HomeDrag?
+        let widgetDrag: WidgetDrag?
         let language: String
         let travel: CGFloat
         let drawer: Bool
@@ -462,7 +601,7 @@ struct BloomBoxNovaV2View: View {
     private func stableHome(travel: CGFloat) -> some View {
         BloomBoxNovaStableContent(signature: HomeSignature(
             workspace: workspace, names: names, iconRevision: iconRevision,
-            gifts: giftKeys, page: page, editing: editing, drag: homeDrag,
+            gifts: giftKeys, page: page, editing: editing, drag: homeDrag, widgetDrag: widgetDrag,
             language: language, travel: travel, drawer: drawer
         )) { homeView(travel: travel) }.equatable()
     }
@@ -507,7 +646,6 @@ struct BloomBoxNovaV2View: View {
                     // wallpaper behind the customizable drawer background.
                     stableHome(travel: travel)
                         .scaleEffect(editing ? 0.83 : 1, anchor: .top)
-                        .coordinateSpace(name: "BloomBoxNovaHome")
                         .offset(y: -progress * (height + geometry.safeAreaInsets.bottom))
                         .allowsHitTesting(!drawer)
                         .accessibilityHidden(drawer)
@@ -540,9 +678,14 @@ struct BloomBoxNovaV2View: View {
                     if editing {
                         editPanel(height: height).zIndex(2.2)
                     }
+                    let origin = geometry.frame(in: .global).origin
                     if let drag = homeDrag, drag.moving {
                         BloomBoxNovaDragOverlay(pointer: pointer,
-                            image: AnyView(tileImage(drag.key, size: drag.size * 1.12)))
+                            image: AnyView(tileImage(drag.key, size: drag.size * 1.12)), origin: origin)
+                            .zIndex(2.5)
+                    } else if let drag = widgetDrag {
+                        BloomBoxNovaDragOverlay(pointer: pointer,
+                            image: AnyView(widgetArtwork(drag.widget, width: drag.width, height: drag.height, active: false)), origin: origin)
                             .zIndex(2.5)
                     }
                 }
@@ -552,8 +695,12 @@ struct BloomBoxNovaV2View: View {
             if let folder { folderView(folder).zIndex(4) }
             if let selected {
                 GeometryReader { geo in
-                    contextPanel(selected, width: geo.size.width, height: geo.size.height)
+                    contextPanel(selected, width: geo.size.width, height: geo.size.height, origin: geo.frame(in: .global).origin)
                 }.zIndex(5)
+            }
+            if let id = widgetSelection,
+               let widget = workspace.widgets?[page]?.first(where: { $0.id == id }) {
+                widgetOptions(widget).zIndex(6)
             }
             if noteEditor {
                 modal(t("Edit note", "Editar nota"), close: { noteEditor = false }) {
@@ -588,20 +735,6 @@ struct BloomBoxNovaV2View: View {
         }
         .onPreferenceChange(BloomBoxNovaDropFrames.self) { frames in
             if dropFrames != frames { dropFrames = frames }
-        }
-        .onChange(of: homeDrag?.key) { key in
-            if key != nil {
-                suppressDrawerForIcon = true
-            } else {
-                // Let the parent recognizer finish the same touch before
-                // allowing another drawer swipe, including canceled drags.
-                DispatchQueue.main.async {
-                    if homeDrag == nil {
-                        suppressDrawerForIcon = false
-                        pointer.reset()
-                    }
-                }
-            }
         }
         .onChange(of: workspace) { _ in if loaded { save() } }
         .onChange(of: drawer) { opened in
@@ -708,7 +841,7 @@ struct BloomBoxNovaV2View: View {
                             ForEach(workspace.widgets?[index] ?? []) { widget in
                                 let w = CGFloat(widget.columns) * cellWidth - 8
                                 let h = CGFloat(widget.rows) * rowHeight - 8
-                                novaWidget(widget, pageIndex: index, width: w, height: h)
+                                novaWidget(widget, pageIndex: index, width: w, height: h, cellWidth: cellWidth, rowHeight: rowHeight)
                                     .position(x: 10 + CGFloat(widget.slot % columns) * cellWidth + CGFloat(widget.columns) * cellWidth / 2,
                                               y: 3 + CGFloat(widget.slot / columns) * rowHeight + CGFloat(widget.rows) * rowHeight / 2)
                             }
@@ -748,7 +881,7 @@ struct BloomBoxNovaV2View: View {
     }
 
     private var drawerGestureBlocked: Bool {
-        editing || suppressDrawerForIcon || homeDrag != nil || settings || searchSettings || drawerSettings || shortcutPicker ||
+        editing || suppressDrawerForIcon || homeDrag != nil || widgetDrag != nil || widgetSelection != nil || settings || searchSettings || drawerSettings || shortcutPicker ||
         selected != nil || folder != nil || folderSource != nil || searching
     }
 
@@ -1265,43 +1398,34 @@ struct BloomBoxNovaV2View: View {
         }
     }
 
-    private func homeTileGesture(_ key: String, size: CGFloat) -> some Gesture {
-        LongPressGesture(minimumDuration: 0.30, maximumDistance: 12)
-            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("BloomBoxNovaHome")))
-            .updating($homeDrag) { value, state, transaction in
-                transaction.animation = nil
-                switch value {
-                case .first(true):
-                    state = HomeDrag(key: key, size: size, moving: false)
-                case .second(true, let drag):
-                    let moved = drag.map { hypot($0.translation.width, $0.translation.height) >= 6 } ?? false
-                    state = HomeDrag(key: key, size: size, moving: moved)
-                default:
-                    break
-                }
-            }
-            .onChanged { value in
-                if case .second(true, let drag) = value,
-                   let drag, hypot(drag.translation.width, drag.translation.height) >= 6 {
-                    pointer.move(to: drag.location, highlight: nil)
-                }
-            }
-            .onEnded { value in
-                switch value {
-                case .second(true, let drag):
-                    if let drag, hypot(drag.translation.width, drag.translation.height) >= 6 {
-                        finishHomeDrag(key, at: drag.location)
-                    } else {
-                        searching = false
-                        animate { selected = key }
-                    }
-                case .first(true):
-                    searching = false
-                    animate { selected = key }
-                default:
-                    break
-                }
-            }
+    private func clearDrag() {
+        homeDrag = nil
+        widgetDrag = nil
+        pointer.reset()
+    }
+
+    private func showAppMenu(_ key: String, anchor: CGRect) {
+        clearDrag()
+        searching = false
+        selectionAnchor = anchor
+        animate { selected = key }
+    }
+
+    private func appTouch(_ key: String, size: CGFloat, permitsDrag: Bool) -> some View {
+        BloomBoxNovaTouchSurface(permitsDrag: permitsDrag,
+            tap: { if !editing { activate(key) } else { selected = key } },
+            hold: { showAppMenu(key, anchor: $0) },
+            armed: { suppressDrawerForIcon = $0 },
+            move: { point, _ in
+                guard permitsDrag, selected == nil else { return }
+                if homeDrag == nil { homeDrag = HomeDrag(key: key, size: size, moving: true) }
+                pointer.move(to: point, highlight: nil)
+            },
+            finish: { point, _ in
+                if homeDrag?.key == key { finishHomeDrag(key, at: point) }
+                clearDrag()
+            },
+            cancel: { clearDrag() })
     }
 
     private func slotView(_ key: String?, size: CGFloat, dockSlot: Int?, pageIndex: Int, slot: Int, hideLabel: Bool = false) -> some View {
@@ -1319,16 +1443,12 @@ struct BloomBoxNovaV2View: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .opacity(homeDrag?.key == key && homeDrag?.moving == true ? 0 : 1)
                 .contentShape(Rectangle())
-                .gesture(homeTileGesture(key, size: size))
-                .simultaneousGesture(TapGesture().onEnded {
-                    guard homeDrag == nil, !suppressDrawerForIcon, selected == nil else { return }
-                    if !editing { activate(key) }
-                })
+                .overlay { appTouch(key, size: size, permitsDrag: !editing) }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(displayName(key))
                 .accessibilityAddTraits(.isButton)
                 .accessibilityAction { if editing { selected = key } else { activate(key) } }
-                .accessibilityAction(named: Text(t("App options", "Opciones de app"))) { selected = key }
+                .accessibilityAction(named: Text(t("App options", "Opciones de app"))) { selectionAnchor = nil; selected = key }
             } else {
                 Color.clear.contentShape(Rectangle())
                     .onLongPressGesture(minimumDuration: 0.40, maximumDistance: 12) {
@@ -1342,7 +1462,7 @@ struct BloomBoxNovaV2View: View {
         .contentShape(Rectangle())
         .background(GeometryReader { geometry in
             Color.clear.preference(key: BloomBoxNovaDropFrames.self,
-                                   value: [destination: geometry.frame(in: .named("BloomBoxNovaHome"))])
+                                   value: [destination: geometry.frame(in: .global)])
         })
     }
 
@@ -1356,18 +1476,12 @@ struct BloomBoxNovaV2View: View {
         }
         .frame(maxWidth: .infinity, minHeight: hideLabel ? size + 4 : size + 20)
         .contentShape(Rectangle())
-        .gesture(LongPressGesture(minimumDuration: 0.38).exclusively(before: TapGesture()).onEnded { result in
-            switch result {
-            case .first: searching = false; animate { selected = key }
-            case .second:
-                if editing { animate { selected = key } } else { activate(key) }
-            }
-        })
+        .overlay { appTouch(key, size: size, permitsDrag: false) }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(displayName(key))
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { if editing { selected = key } else { activate(key) } }
-        .accessibilityAction(named: Text(t("App options", "Opciones de app"))) { selected = key }
+        .accessibilityAction(named: Text(t("App options", "Opciones de app"))) { selectionAnchor = nil; selected = key }
         content
     }
 
@@ -1448,18 +1562,23 @@ struct BloomBoxNovaV2View: View {
         }.buttonStyle(.plain)
     }
 
-    private func contextPanel(_ key: String, width: CGFloat, height: CGFloat) -> some View {
-        let anchor = dropFrames.first { destination, _ in
+    private func contextPanel(_ key: String, width: CGFloat, height: CGFloat, origin: CGPoint) -> some View {
+        let stored = selectionAnchor ?? dropFrames.first { destination, _ in
             if destination.dock { return workspace.dock.indices.contains(destination.slot) && workspace.dock[destination.slot] == key }
             return destination.page == page && workspace.pages.indices.contains(page) &&
                 workspace.pages[page].indices.contains(destination.slot) && workspace.pages[page][destination.slot] == key
         }?.value
+        let anchor = stored?.offsetBy(dx: -origin.x, dy: -origin.y)
         let bubbleWidth = min(294, max(180, width - 24))
-        let bubbleHeight = min(440, height * 0.70)
+        let gap: CGFloat = 28
+        let topRoom = max(0, (anchor?.minY ?? height / 2) - gap - 10)
+        let bottomRoom = max(0, height - (anchor?.maxY ?? height / 2) - gap - 10)
+        let above = topRoom >= bottomRoom
+        let bubbleHeight = min(440, max(90, max(topRoom, bottomRoom)))
         let x = min(width - bubbleWidth / 2 - 12, max(bubbleWidth / 2 + 12, anchor?.midX ?? width / 2))
-        let above = (anchor?.midY ?? height / 2) > height / 2
-        let y = min(height - bubbleHeight / 2 - 10, max(bubbleHeight / 2 + 10,
-            (anchor?.midY ?? height / 2) + (above ? -1 : 1) * (bubbleHeight / 2 + 20)))
+        let y = above ? (anchor?.minY ?? height / 2) - gap - bubbleHeight / 2
+                      : (anchor?.maxY ?? height / 2) + gap + bubbleHeight / 2
+        let tailX = min(x + bubbleWidth / 2 - 14, max(x - bubbleWidth / 2 + 14, anchor?.midX ?? x))
         return ZStack(alignment: .topLeading) {
             Color.clear.contentShape(Rectangle()).onTapGesture { selected = nil }
             VStack(spacing: 0) {
@@ -1532,9 +1651,9 @@ struct BloomBoxNovaV2View: View {
             .position(x: x, y: y)
             if anchor != nil {
                 Circle().fill(Color.white).frame(width: 13, height: 13)
-                    .position(x: x, y: y + (above ? 1 : -1) * (bubbleHeight / 2 + 7))
+                    .position(x: tailX, y: y + (above ? 1 : -1) * (bubbleHeight / 2 + 7))
                 Circle().fill(Color.white).frame(width: 7, height: 7)
-                    .position(x: x, y: y + (above ? 1 : -1) * (bubbleHeight / 2 + 19))
+                    .position(x: tailX, y: y + (above ? 1 : -1) * (bubbleHeight / 2 + 19))
             }
         }
         .accessibilityIdentifier("bloombox.nova.contextBubble")
@@ -1570,23 +1689,110 @@ struct BloomBoxNovaV2View: View {
         }
     }
 
-    private func novaWidget(_ widget: BloomBoxPlacedWidget, pageIndex: Int, width: CGFloat, height: CGFloat) -> some View {
+    private func widgetArtwork(_ widget: BloomBoxPlacedWidget, width: CGFloat, height: CGFloat, active: Bool) -> some View {
         var plain = widget
         plain.glass = false
         return BloomBoxGridWidgetView(widget: plain, width: width, height: height,
-                                     active: page == pageIndex && !drawer, clockAccentColor: accent)
-            .background(raised, in: RoundedRectangle(cornerRadius: 16))
-            .onTapGesture {
-                if widget.kind == "notes" { noteEditor = true }
-                if widget.kind == "media" { widgetMediaID = widget.id; widgetMediaImport = true }
+                                     active: active, clockAccentColor: accent)
+            .background(raised.opacity(workspace.opacity(for: widget.id)), in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func novaWidget(_ widget: BloomBoxPlacedWidget, pageIndex: Int, width: CGFloat, height: CGFloat,
+                            cellWidth: CGFloat, rowHeight: CGFloat) -> some View {
+        widgetArtwork(widget, width: width, height: height, active: page == pageIndex && !drawer)
+            .opacity(widgetDrag?.widget.id == widget.id ? 0 : 1)
+            .overlay {
+                BloomBoxNovaTouchSurface(permitsDrag: !editing,
+                    tap: {
+                        if editing { widgetSelection = widget.id }
+                        else if widget.kind == "notes" { noteEditor = true }
+                        else if widget.kind == "media" { widgetMediaID = widget.id; widgetMediaImport = true }
+                    },
+                    hold: { _ in clearDrag(); widgetSelection = widget.id },
+                    armed: { suppressDrawerForIcon = $0 },
+                    move: { point, _ in
+                        guard !editing, widgetSelection == nil else { return }
+                        if widgetDrag == nil {
+                            widgetDrag = WidgetDrag(widget: widget, page: pageIndex, width: width, height: height)
+                        }
+                        pointer.move(to: point, highlight: nil)
+                    },
+                    finish: { _, delta in
+                        if widgetDrag?.widget.id == widget.id {
+                            let col = min(workspace.columns - widget.columns, max(0,
+                                widget.slot % workspace.columns + Int((delta.width / cellWidth).rounded())))
+                            let row = min(BloomBoxNovaWorkspace.capacity / workspace.columns - widget.rows, max(0,
+                                widget.slot / workspace.columns + Int((delta.height / rowHeight).rounded())))
+                            if !workspace.changeWidget(widget.id, page: pageIndex, slot: row * workspace.columns + col) {
+                                UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                            }
+                        }
+                        clearDrag()
+                    },
+                    cancel: { clearDrag() })
             }
             .overlay(alignment: .topTrailing) {
                 if editing {
-                    Button { workspace.removeWidget(widget.id, page: pageIndex) } label: {
-                        Image(systemName: "minus.circle.fill").font(.title3).foregroundStyle(.white, .red)
+                    Button { widgetSelection = widget.id } label: {
+                        Image(systemName: "ellipsis.circle.fill").font(.title3).foregroundStyle(Color.white)
                     }.buttonStyle(.plain)
                 }
             }
+            .accessibilityLabel(t("Widget", "Widget"))
+            .accessibilityAction(named: Text(t("Widget options", "Opciones del widget"))) { widgetSelection = widget.id }
+    }
+
+    private func widgetOptions(_ widget: BloomBoxPlacedWidget) -> some View {
+        modal(t("Widget options", "Opciones del widget"), close: { widgetSelection = nil }) {
+            Text(t("Background transparency", "Transparencia del fondo")).font(.headline)
+            HStack {
+                Slider(value: Binding(
+                    get: { 1 - workspace.opacity(for: widget.id) },
+                    set: { workspace.setOpacity(1 - $0, id: widget.id) }
+                ), in: 0...1)
+                Text("\(Int(((1 - workspace.opacity(for: widget.id)) * 100).rounded()))%")
+                    .monospacedDigit().frame(width: 48)
+            }
+            actionRow(t("No background", "Sin fondo"), "square.dashed") {
+                workspace.setOpacity(0, id: widget.id)
+            }
+            Text(t("Size", "Tamaño")).font(.headline)
+            HStack {
+                Text(t("Width", "Ancho"))
+                Spacer()
+                control("minus", t("Narrower", "Reducir ancho")) { resizeWidget(widget, width: max(1, widget.columns - 1), height: widget.rows) }
+                Text("\(widget.columns)")
+                control("plus", t("Wider", "Ampliar ancho")) { resizeWidget(widget, width: min(workspace.columns, widget.columns + 1), height: widget.rows) }
+            }
+            HStack {
+                Text(t("Height", "Alto"))
+                Spacer()
+                control("minus", t("Shorter", "Reducir alto")) { resizeWidget(widget, width: widget.columns, height: max(1, widget.rows - 1)) }
+                Text("\(widget.rows)")
+                control("plus", t("Taller", "Ampliar alto")) { resizeWidget(widget, width: widget.columns, height: min(BloomBoxNovaWorkspace.capacity / workspace.columns, widget.rows + 1)) }
+            }
+            if widget.kind == "media" {
+                actionRow(t("Change image or GIF", "Cambiar imagen o GIF"), "photo") {
+                    widgetSelection = nil; widgetMediaID = widget.id; widgetMediaImport = true
+                }
+            }
+            if widget.kind == "notes" {
+                actionRow(t("Edit note", "Editar nota"), "pencil") { widgetSelection = nil; noteEditor = true }
+            }
+            actionRow(t("Remove widget", "Eliminar widget"), "trash", destructive: true) {
+                workspace.removeWidget(widget.id, page: page); widgetSelection = nil
+            }
+            actionRow(t("Done", "Listo"), "checkmark") { widgetSelection = nil }
+        }
+    }
+
+    private func resizeWidget(_ widget: BloomBoxPlacedWidget, width: Int, height: Int) {
+        let col = min(widget.slot % workspace.columns, workspace.columns - width)
+        let row = min(widget.slot / workspace.columns, BloomBoxNovaWorkspace.capacity / workspace.columns - height)
+        let slot = row * workspace.columns + col
+        if !workspace.changeWidget(widget.id, page: page, slot: slot, width: width, height: height) {
+            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        }
     }
 
     private func addNovaWidget(_ kind: String, style: String? = nil) {
