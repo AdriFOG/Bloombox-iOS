@@ -166,3 +166,32 @@ do {
     fputs("BloomBox icon generation failed: \(error)\n", stderr)
     exit(1)
 }
+
+// Fail fast on the same native asset compiler used for archive. Do not silently
+// substitute flattened artwork when a layered icon is malformed.
+if ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true" {
+    let output = FileManager.default.temporaryDirectory.appendingPathComponent("bloom-icon-preflight-" + UUID().uuidString)
+    do {
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: output) }
+        let tool = Process()
+        tool.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+        tool.arguments = ["actool", "--compile", output.path,
+            "--platform", "iphoneos", "--minimum-deployment-target", "15.0",
+            "--target-device", "iphone", "--target-device", "ipad",
+            "--app-icon", "AppIcon", "--include-all-app-icons",
+            "--output-partial-info-plist", output.appendingPathComponent("Info.plist").path,
+            "--output-format", "human-readable-text", "--warnings", "--errors",
+            "AppIcon.icon", "Resources/Assets.xcassets"]
+        try tool.run()
+        tool.waitUntilExit()
+        guard tool.terminationStatus == 0,
+              FileManager.default.fileExists(atPath: output.appendingPathComponent("Assets.car").path) else {
+            fatalError("Native Bloom icon actool preflight failed (status \(tool.terminationStatus))")
+        }
+        print("Native Bloom icon actool preflight succeeded.")
+    } catch {
+        fputs("Native Bloom icon validation failed: \(error)\n", stderr)
+        exit(1)
+    }
+}
