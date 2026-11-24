@@ -96,7 +96,9 @@ assert "onBack: { forward(to: 4) }" in wizard_flow
 assert 'selectedLauncher = "hybrid"' in wizard_flow
 assert 'title: "Híbrido"' in wizard_flow
 assert "BloomBoxLaunchPreferences.setPreferredMode(" in wizard_flow
-assert 'validModes: Set<String> = ["ios", "gamebox", "hybrid"]' in launcher_prefs
+assert 'validModes: Set<String> = ["ios", "gamebox", "hybrid", "nova"]' in launcher_prefs
+assert 'value: "nova"' in launcher_root
+assert 'option("nova",' in wizard_flow
 assert "profileModesKey" in launcher_prefs
 assert 'value: "hybrid"' in launcher_root
 assert "if preferredExperience == \"hybrid\" { liveBoardMode = \"ios\" }" in host
