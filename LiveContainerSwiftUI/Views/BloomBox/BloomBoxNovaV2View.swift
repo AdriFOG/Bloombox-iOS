@@ -100,7 +100,8 @@ struct BloomBoxNovaWorkspace: Codable, Equatable {
             }
         }
         for id in folders.keys.sorted() {
-            folders[id]?.apps = (folders[id]?.apps ?? []).filter { seen.insert($0).inserted }
+            let uniqueApps = (folders[id]?.apps ?? []).filter { seen.insert($0).inserted }
+            folders[id]?.apps = uniqueApps
             if folders[id]?.apps.isEmpty != false {
                 folders.removeValue(forKey: id)
                 remove(id)
