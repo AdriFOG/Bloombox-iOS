@@ -402,6 +402,54 @@ struct BloomBoxHomeScreen: View {
                         canJIT: { key in
                             launchWithJIT != nil && (appMap[key].map { !LiveContainerHomeAdapter.isEmbeddedSigner($0) } ?? false)
                         },
+                        jitEnabled: { key in
+                            guard let app = appMap[key] else { return false }
+                            let mode = BloomBoxJITGuestPolicy.mode(for: app.appInfo.relativeBundlePath,
+                                defaults: LiveContainerPreferencesAdapter.defaults)
+                            let guest = Bundle(path: app.appInfo.bundlePath())
+                            let melon = BloomBoxMeloNXProfile.matches(bundleID: app.bundleIdentifier,
+                                version: guest?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
+                            return BloomBoxJITGuestPolicy.wantsJIT(
+                                automatic: app.appInfo.isJITNeeded || app.appInfo.is32bit || melon,
+                                forced: nil, mode: mode)
+                        },
+                        setJIT: { key, enabled in
+                            if let app = appMap[key] {
+                                BloomBoxJITGuestPolicy.setMode(enabled ? .enabled : .disabled,
+                                    for: app.appInfo.relativeBundlePath, defaults: LiveContainerPreferencesAdapter.defaults)
+                            }
+                        },
+                        rename: { key in renameValue = title(key); renameKey = key },
+                        changeIcon: { key in if let app = appMap[key] { appearanceApp = LiveBoardAppearanceSelection(app: app) } },
+                        toggleFavorite: { key in favorites = BloomBoxHomeAppPolicy.toggledFavorite(key, in: favorites) },
+                        favorite: { key in favoriteKeys.contains(key) },
+                        toggleNetwork: { key in
+                            if let app = appMap[key] { _ = LiveContainerHomeAdapter.toggleNetwork(app) }
+                        },
+                        networkBlocked: { key in
+                            guard let app = appMap[key] else { return false }
+                            return LiveContainerHomeAdapter.snapshot(app, displayName: title(key)).isNetworkBlocked
+                        },
+                        addTweak: { key in
+                            if let app = appMap[key] {
+                                pendingTweakApp = app
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                    if pendingTweakApp === app { choosingAppTweak = true }
+                                }
+                            }
+                        },
+                        toggleAudio: { key in
+                            if let app = appMap[key] {
+                                let defaults = LiveContainerPreferencesAdapter.defaults
+                                let previous = BloomBoxAudioMixStore.isEnabled(for: app.bundleIdentifier, defaults: defaults)
+                                BloomBoxAudioMixStore.setEnabled(!previous, for: app.bundleIdentifier, defaults: defaults)
+                                simultaneousAudioVersion &+= 1
+                            }
+                        },
+                        audioEnabled: { key in
+                            guard let app = appMap[key] else { return false }
+                            return BloomBoxAudioMixStore.isEnabled(for: app.bundleIdentifier, defaults: LiveContainerPreferencesAdapter.defaults)
+                        },
                         isAndroid: { key in huskGames.contains { $0.key == key } },
                         launch: launchLibraryKey,
                         launchJIT: { key in if let app = appMap[key] { requestLaunch(app, jit: true) } },

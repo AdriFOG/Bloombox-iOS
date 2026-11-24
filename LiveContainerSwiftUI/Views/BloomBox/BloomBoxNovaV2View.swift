@@ -64,6 +64,66 @@ struct BloomBoxNovaWorkspace: Codable, Equatable {
     // Optional for compatibility with workspaces saved before the search bar.
     var searchBar: SearchBar?
     var drawerAppearance: DrawerAppearance?
+    var widgets: [Int: [BloomBoxPlacedWidget]]?
+
+    func widgetCells(_ widget: BloomBoxPlacedWidget) -> Set<Int> {
+        let x = widget.slot % columns, y = widget.slot / columns
+        guard widget.slot >= 0, widget.columns > 0, widget.rows > 0,
+              x + widget.columns <= columns, (y + widget.rows) * columns <= Self.capacity else { return [] }
+        return Set((0..<widget.rows).flatMap { row in
+            (0..<widget.columns).map { widget.slot + row * columns + $0 }
+        })
+    }
+
+    func occupiedByWidgets(_ page: Int) -> Set<Int> {
+        (widgets?[page] ?? []).reduce(into: Set<Int>()) { $0.formUnion(widgetCells($1)) }
+    }
+
+    func freeAppSlot(_ page: Int) -> Int? {
+        guard pages.indices.contains(page) else { return nil }
+        let occupied = occupiedByWidgets(page)
+        return pages[page].indices.first { pages[page][$0] == nil && !occupied.contains($0) }
+    }
+
+    mutating func insertWidget(_ kind: String, style: String?, preferred: Int) -> Int {
+        let candidates = [preferred] + pages.indices.filter { $0 != preferred }
+        for index in candidates where pages.indices.contains(index) {
+            let occupied = occupiedByWidgets(index)
+            for slot in pages[index].indices {
+                var widget = BloomBoxPlacedWidget(kind: kind, slot: slot, columns: 2, rows: 2)
+                widget.glass = false
+                widget.clockStyle = style
+                let cells = widgetCells(widget)
+                guard cells.count == 4, cells.isDisjoint(with: occupied),
+                      cells.allSatisfy({ pages[index][$0] == nil }) else { continue }
+                var next = widgets ?? [:]
+                next[index, default: []].append(widget)
+                widgets = next
+                return index
+            }
+        }
+        pages.append(Self.emptyPage())
+        return insertWidget(kind, style: style, preferred: pages.count - 1)
+    }
+
+    mutating func removeWidget(_ id: String, page: Int) {
+        widgets?[page]?.removeAll { $0.id == id }
+    }
+
+    mutating func updateWidgetMedia(_ id: String, name: String) {
+        for page in Array(widgets?.keys ?? Dictionary<Int, [BloomBoxPlacedWidget]>().keys) {
+            guard let index = widgets?[page]?.firstIndex(where: { $0.id == id }) else { continue }
+            widgets?[page]?[index].mediaName = name
+        }
+    }
+
+    mutating func putInFolder(_ key: String, id: String) {
+        guard key != id, folders[key] == nil, var destination = folders[id] else { return }
+        if destination.apps.contains(key) { return }
+        remove(key)
+        destination.apps.append(key)
+        folders[id] = destination
+    }
 
     mutating func reconcile(_ installed: [String]) {
         let valid = Set(installed)
@@ -139,10 +199,10 @@ struct BloomBoxNovaWorkspace: Codable, Equatable {
 
     mutating func add(_ key: String, preferred: Int) {
         remove(key)
-        if pages.indices.contains(preferred), let slot = pages[preferred].firstIndex(of: nil) {
+        if pages.indices.contains(preferred), let slot = freeAppSlot(preferred) {
             pages[preferred][slot] = key
-        } else if let i = pages.firstIndex(where: { $0.contains(nil) }),
-                  let slot = pages[i].firstIndex(of: nil) {
+        } else if let i = pages.indices.first(where: { freeAppSlot($0) != nil }),
+                  let slot = freeAppSlot(i) {
             pages[i][slot] = key
         } else {
             pages.append(Self.emptyPage())
@@ -152,7 +212,7 @@ struct BloomBoxNovaWorkspace: Codable, Equatable {
 
     mutating func place(_ key: String, page: Int, slot: Int) {
         guard pages.indices.contains(page), pages[page].indices.contains(slot),
-              pages[page][slot] != key else { return }
+              pages[page][slot] != key, !occupiedByWidgets(page).contains(slot) else { return }
         let displaced = pages[page][slot]
         // Swap in-place when moving within a workspace or dock.
         let sourcePage = pages.firstIndex { $0.contains(key) }
@@ -200,6 +260,17 @@ struct BloomBoxNovaWorkspace: Codable, Equatable {
     mutating func removePage(_ index: Int) {
         guard pages.count > 1, pages.indices.contains(index) else { return }
         let removed = pages.remove(at: index).compactMap { $0 }
+        // Page removal must not silently discard widgets. Retain them on a
+        // dedicated replacement page if the page contains any.
+        if let retained = widgets?[index], !retained.isEmpty {
+            var next = widgets ?? [:]
+            next.removeValue(forKey: index)
+            widgets = Dictionary(uniqueKeysWithValues: next.map { ($0.key > index ? $0.key - 1 : $0.key, $0.value) })
+            pages.append(Self.emptyPage())
+            widgets?[pages.count - 1] = retained
+        } else if let old = widgets {
+            widgets = Dictionary(uniqueKeysWithValues: old.filter { $0.key != index }.map { ($0.key > index ? $0.key - 1 : $0.key, $0.value) })
+        }
         for key in removed { add(key, preferred: min(index, pages.count - 1)) }
     }
 }
@@ -227,12 +298,6 @@ private struct BloomBoxNovaDragOverlay: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             if let position = pointer.position {
-                if let rect = position.highlight {
-                    RoundedRectangle(cornerRadius: 10)
-                        .strokeBorder(Color(red: 0.54, green: 0.87, blue: 0.64), lineWidth: 2)
-                        .frame(width: max(0, rect.width - 4), height: max(0, rect.height - 4))
-                        .position(x: rect.midX, y: rect.midY)
-                }
                 image.position(x: position.location.x, y: position.location.y - 12)
             }
         }
@@ -273,6 +338,17 @@ struct BloomBoxNovaV2View: View {
     let isGuest: (String) -> Bool
     let hasGift: (String) -> Bool
     let canJIT: (String) -> Bool
+    let jitEnabled: (String) -> Bool
+    let setJIT: (String, Bool) -> Void
+    let rename: (String) -> Void
+    let changeIcon: (String) -> Void
+    let toggleFavorite: (String) -> Void
+    let favorite: (String) -> Bool
+    let toggleNetwork: (String) -> Void
+    let networkBlocked: (String) -> Bool
+    let addTweak: (String) -> Void
+    let toggleAudio: (String) -> Void
+    let audioEnabled: (String) -> Bool
     let isAndroid: (String) -> Bool
     let launch: (String) -> Void
     let launchJIT: (String) -> Void
@@ -316,6 +392,14 @@ struct BloomBoxNovaV2View: View {
     @State private var dropFrames: [BloomBoxNovaDropTarget: CGRect] = [:]
     @State private var suppressDrawerForIcon = false
     @State private var editing = false
+    @State private var widgetsExpanded = false
+    @State private var widgetQuery = ""
+    @State private var expandedWidgetProvider = true
+    @State private var widgetMediaID: String?
+    @State private var widgetMediaImport = false
+    @State private var widgetMediaError = false
+    @State private var noteEditor = false
+    @AppStorage("ManzanaNote", store: LiveContainerPreferencesAdapter.defaults) private var widgetNote = ""
     @State private var settings = false
     @State private var searchSettings = false
     @State private var drawerSettings = false
@@ -422,10 +506,22 @@ struct BloomBoxNovaV2View: View {
                     // Move the Home icons out of the way, leaving only the
                     // wallpaper behind the customizable drawer background.
                     stableHome(travel: travel)
+                        .scaleEffect(editing ? 0.83 : 1, anchor: .top)
                         .coordinateSpace(name: "BloomBoxNovaHome")
                         .offset(y: -progress * (height + geometry.safeAreaInsets.bottom))
                         .allowsHitTesting(!drawer)
                         .accessibilityHidden(drawer)
+                    // Separate, full-bleed background outside the safe-area
+                    // content frame. The search and app grid stay inset.
+                    rgbColor(drawerStyle.backgroundRGB)
+                        .opacity(1 - drawerStyle.transparency)
+                        .frame(width: geometry.size.width,
+                               height: height + geometry.safeAreaInsets.top + geometry.safeAreaInsets.bottom)
+                        .position(x: geometry.size.width / 2,
+                                  y: (height + geometry.safeAreaInsets.bottom - geometry.safeAreaInsets.top) / 2)
+                        .offset(y: (1 - progress) * (height + geometry.safeAreaInsets.top + geometry.safeAreaInsets.bottom))
+                        .allowsHitTesting(false)
+                        .zIndex(0.5)
                     stableDrawer
                         .frame(width: geometry.size.width, height: height)
                         .offset(y: (1 - progress) * height)
@@ -438,7 +534,12 @@ struct BloomBoxNovaV2View: View {
                         .frame(width: geometry.size.width, height: 44)
                         .position(x: geometry.size.width / 2, y: barY)
                         .simultaneousGesture(drawerGesture(travel: travel, opening: !drawer))
+                        .opacity(editing ? 0 : 1)
+                        .allowsHitTesting(!editing)
                         .zIndex(2)
+                    if editing {
+                        editPanel(height: height).zIndex(2.2)
+                    }
                     if let drag = homeDrag, drag.moving {
                         BloomBoxNovaDragOverlay(pointer: pointer,
                             image: AnyView(tileImage(drag.key, size: drag.size * 1.12)))
@@ -446,11 +547,20 @@ struct BloomBoxNovaV2View: View {
                     }
                 }
                 .frame(width: geometry.size.width, height: height)
-                .clipped()
             }
             if settings { settingsView.zIndex(3) }
             if let folder { folderView(folder).zIndex(4) }
-            if let selected { contextPanel(selected).zIndex(5) }
+            if let selected {
+                GeometryReader { geo in
+                    contextPanel(selected, width: geo.size.width, height: geo.size.height)
+                }.zIndex(5)
+            }
+            if noteEditor {
+                modal(t("Edit note", "Editar nota"), close: { noteEditor = false }) {
+                    TextEditor(text: $widgetNote).frame(minHeight: 150)
+                    actionRow(t("Done", "Listo"), "checkmark") { noteEditor = false }
+                }.zIndex(10)
+            }
             if let folderSource { folderPicker(folderSource).zIndex(6) }
             if searchSettings { searchSettingsView.zIndex(7) }
             if shortcutPicker { shortcutPickerView.zIndex(8) }
@@ -521,6 +631,17 @@ struct BloomBoxNovaV2View: View {
                 workspace.wallpaper = 3
             } catch { wallpaperError = true }
         }
+        .fileImporter(isPresented: $widgetMediaImport, allowedContentTypes: [.image]) { result in
+            defer { widgetMediaID = nil }
+            guard let id = widgetMediaID else { return }
+            do {
+                let file = try BloomBoxWidgetMedia.importFile(result.get())
+                workspace.updateWidgetMedia(id, name: file)
+            } catch { widgetMediaError = true }
+        }
+        .alert(t("Widget image could not be loaded", "No se pudo cargar la imagen del widget"), isPresented: $widgetMediaError) {
+            Button("OK", role: .cancel) {}
+        }
         .alert(t("Wallpaper could not be loaded", "No se pudo cargar el fondo"), isPresented: $wallpaperError) {
             Button("OK", role: .cancel) {}
         }
@@ -551,17 +672,7 @@ struct BloomBoxNovaV2View: View {
 
     private func homeView(travel: CGFloat) -> some View {
         VStack(spacing: 4) {
-            HStack(spacing: 12) {
-                Text("Nova").font(.system(size: 22, weight: .bold))
-                Spacer()
-                control(editing ? "checkmark" : "pencil", editing ? t("Done", "Listo") : t("Edit Home", "Editar inicio")) {
-                    animate { editing.toggle() }
-                }
-                control("gearshape", t("Nova settings", "Ajustes de Nova")) { animate { settings = true } }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            if editing { editorBar }
+            // No permanent title or edit/settings buttons on the desktop.
             TabView(selection: $page) {
                 ForEach(workspace.pages.indices, id: \.self) { index in
                     GeometryReader { geo in
@@ -578,7 +689,8 @@ struct BloomBoxNovaV2View: View {
                                 HStack(spacing: 0) {
                                     ForEach(0..<columns, id: \.self) { column in
                                         let slot = row * columns + column
-                                        if workspace.pages[index].indices.contains(slot) {
+                                        if workspace.pages[index].indices.contains(slot),
+                                           !workspace.occupiedByWidgets(index).contains(slot) {
                                             slotView(workspace.pages[index][slot], size: size,
                                                      dockSlot: nil, pageIndex: index, slot: slot)
                                                 .frame(width: cellWidth, height: rowHeight)
@@ -592,6 +704,15 @@ struct BloomBoxNovaV2View: View {
                         .padding(.horizontal, 10)
                         .padding(.top, 3)
                         .frame(width: geo.size.width, height: geo.size.height, alignment: .bottom)
+                        .overlay(alignment: .topLeading) {
+                            ForEach(workspace.widgets?[index] ?? []) { widget in
+                                let w = CGFloat(widget.columns) * cellWidth - 8
+                                let h = CGFloat(widget.rows) * rowHeight - 8
+                                novaWidget(widget, pageIndex: index, width: w, height: h)
+                                    .position(x: 10 + CGFloat(widget.slot % columns) * cellWidth + CGFloat(widget.columns) * cellWidth / 2,
+                                              y: 3 + CGFloat(widget.slot / columns) * rowHeight + CGFloat(widget.rows) * rowHeight / 2)
+                            }
+                        }
                     }.tag(index)
                 }
             }
@@ -609,7 +730,7 @@ struct BloomBoxNovaV2View: View {
                         .accessibilityLabel(t("Open app drawer", "Abrir cajón de apps"))
                     }.padding(.horizontal, 12)
                 }.frame(height: 22)
-                dockView
+                dockView.opacity(editing ? 0 : 1).allowsHitTesting(!editing)
                 // Reserve the same bottom position as the shared search bar.
                 Color.clear.frame(height: 50).allowsHitTesting(false)
             }
@@ -1066,7 +1187,7 @@ struct BloomBoxNovaV2View: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .foregroundStyle(drawerInk)
-            .background(rgbColor(drawerStyle.backgroundRGB).opacity(1 - drawerStyle.transparency))
+            .background(Color.clear)
         }
         .accessibilityIdentifier("bloombox.nova.drawer")
     }
@@ -1147,13 +1268,12 @@ struct BloomBoxNovaV2View: View {
     private func homeTileGesture(_ key: String, size: CGFloat) -> some Gesture {
         LongPressGesture(minimumDuration: 0.30, maximumDistance: 12)
             .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("BloomBoxNovaHome")))
-            .exclusively(before: TapGesture())
             .updating($homeDrag) { value, state, transaction in
                 transaction.animation = nil
                 switch value {
-                case .first(.first(true)):
+                case .first(true):
                     state = HomeDrag(key: key, size: size, moving: false)
-                case .first(.second(true, let drag)):
+                case .second(true, let drag):
                     let moved = drag.map { hypot($0.translation.width, $0.translation.height) >= 6 } ?? false
                     state = HomeDrag(key: key, size: size, moving: moved)
                 default:
@@ -1161,26 +1281,23 @@ struct BloomBoxNovaV2View: View {
                 }
             }
             .onChanged { value in
-                if case .first(.second(true, let drag)) = value,
+                if case .second(true, let drag) = value,
                    let drag, hypot(drag.translation.width, drag.translation.height) >= 6 {
-                    let rect = target(at: drag.location).flatMap { dropFrames[$0] }
-                    pointer.move(to: drag.location, highlight: rect)
+                    pointer.move(to: drag.location, highlight: nil)
                 }
             }
             .onEnded { value in
                 switch value {
-                case .first(.second(true, let drag)):
+                case .second(true, let drag):
                     if let drag, hypot(drag.translation.width, drag.translation.height) >= 6 {
                         finishHomeDrag(key, at: drag.location)
                     } else {
                         searching = false
                         animate { selected = key }
                     }
-                case .first(.first(true)):
+                case .first(true):
                     searching = false
                     animate { selected = key }
-                case .second:
-                    if editing { animate { selected = key } } else { activate(key) }
                 default:
                     break
                 }
@@ -1203,15 +1320,22 @@ struct BloomBoxNovaV2View: View {
                 .opacity(homeDrag?.key == key && homeDrag?.moving == true ? 0 : 1)
                 .contentShape(Rectangle())
                 .gesture(homeTileGesture(key, size: size))
+                .simultaneousGesture(TapGesture().onEnded {
+                    guard homeDrag == nil, !suppressDrawerForIcon, selected == nil else { return }
+                    if !editing { activate(key) }
+                })
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(displayName(key))
                 .accessibilityAddTraits(.isButton)
                 .accessibilityAction { if editing { selected = key } else { activate(key) } }
                 .accessibilityAction(named: Text(t("App options", "Opciones de app"))) { selected = key }
-            } else if editing || homeDrag != nil {
-                RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(Color.gray, style: StrokeStyle(lineWidth: 1, dash: [4]))
-                    .frame(width: size, height: size)
+            } else {
+                Color.clear.contentShape(Rectangle())
+                    .onLongPressGesture(minimumDuration: 0.40, maximumDistance: 12) {
+                        if dockSlot == nil && !editing && !drawer {
+                            animate { editing = true; widgetsExpanded = false; widgetQuery = "" }
+                        }
+                    }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1313,47 +1437,118 @@ struct BloomBoxNovaV2View: View {
             .background(Color(red: 0.07, green: 0.09, blue: 0.11).ignoresSafeArea().onTapGesture(perform: close))
     }
 
-    private func contextPanel(_ key: String) -> some View {
-        modal(displayName(key), close: { selected = nil }) {
-            if workspace.folders[key] != nil {
-                actionRow(t("Open folder", "Abrir carpeta"), "folder") { selected = nil; folder = key }
-                actionRow(t("Dissolve folder", "Deshacer carpeta"), "folder.badge.minus") {
-                    workspace.dissolve(key, page: page); selected = nil
-                }
-            } else {
-                actionRow(t("Open", "Abrir"), "play.fill") { selected = nil; activate(key) }
-                if canJIT(key) {
-                    actionRow(t("Launch with JIT", "Abrir con JIT"), "bolt.fill") {
-                        selected = nil; recordDrawerLaunch(key); settleDrawer(open: false); folder = nil; launchJIT(key)
+    private func bubbleRow(_ label: String, _ symbol: String, destructive: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: symbol).frame(width: 22)
+                Text(label).frame(maxWidth: .infinity, alignment: .leading)
+            }.font(.subheadline.weight(.medium))
+                .foregroundStyle(destructive ? Color.red : Color.black)
+                .padding(.horizontal, 12).padding(.vertical, 10)
+        }.buttonStyle(.plain)
+    }
+
+    private func contextPanel(_ key: String, width: CGFloat, height: CGFloat) -> some View {
+        let anchor = dropFrames.first { destination, _ in
+            if destination.dock { return workspace.dock.indices.contains(destination.slot) && workspace.dock[destination.slot] == key }
+            return destination.page == page && workspace.pages.indices.contains(page) &&
+                workspace.pages[page].indices.contains(destination.slot) && workspace.pages[page][destination.slot] == key
+        }?.value
+        let bubbleWidth = min(294, max(180, width - 24))
+        let bubbleHeight = min(440, height * 0.70)
+        let x = min(width - bubbleWidth / 2 - 12, max(bubbleWidth / 2 + 12, anchor?.midX ?? width / 2))
+        let above = (anchor?.midY ?? height / 2) > height / 2
+        let y = min(height - bubbleHeight / 2 - 10, max(bubbleHeight / 2 + 10,
+            (anchor?.midY ?? height / 2) + (above ? -1 : 1) * (bubbleHeight / 2 + 20)))
+        return ZStack(alignment: .topLeading) {
+            Color.clear.contentShape(Rectangle()).onTapGesture { selected = nil }
+            VStack(spacing: 0) {
+                HStack {
+                    tileImage(key, size: 30)
+                    Text(displayName(key)).font(.headline).lineLimit(1)
+                    Spacer()
+                    Button { selected = nil } label: { Image(systemName: "xmark").padding(8) }.buttonStyle(.plain)
+                }.padding(12)
+                Divider()
+                ScrollView {
+                    VStack(spacing: 0) {
+                        if workspace.folders[key] != nil {
+                            bubbleRow(t("Open folder", "Abrir carpeta"), "folder") { selected = nil; folder = key }
+                            bubbleRow(t("Dissolve folder", "Deshacer carpeta"), "folder.badge.minus") {
+                                workspace.dissolve(key, page: page); selected = nil
+                            }
+                        } else {
+                            bubbleRow(t("Open", "Abrir"), "play.fill") { selected = nil; activate(key) }
+                            if workspace.contains(key) {
+                                bubbleRow(t("Remove from Home Screen", "Quitar del escritorio"), "minus.circle", destructive: true) {
+                                    workspace.remove(key); selected = nil
+                                }
+                            } else {
+                                bubbleRow(t("Add to Home", "Añadir al escritorio"), "house") {
+                                    workspace.add(key, preferred: page); selected = nil; settleDrawer(open: false)
+                                }
+                            }
+                            bubbleRow(t("Add to folder", "Añadir a carpeta"), "folder.badge.plus") { selected = nil; folderSource = key }
+                            if canJIT(key) {
+                                bubbleRow(jitEnabled(key) ? t("Disable JIT", "Deshabilitar JIT") : t("Enable JIT", "Habilitar JIT"), "bolt.fill") {
+                                    setJIT(key, !jitEnabled(key)); selected = nil
+                                }
+                                bubbleRow(t("Launch with JIT", "Abrir con JIT"), "bolt") {
+                                    selected = nil; recordDrawerLaunch(key); settleDrawer(open: false); folder = nil; launchJIT(key)
+                                }
+                                bubbleRow(t("Rename", "Renombrar"), "pencil") { selected = nil; rename(key) }
+                                bubbleRow(t("Change icon", "Cambiar icono"), "photo") { selected = nil; changeIcon(key) }
+                                bubbleRow(favorite(key) ? t("Unfavorite", "Quitar favorito") : t("Favorite", "Favorito"), "star") { selected = nil; toggleFavorite(key) }
+                                bubbleRow(networkBlocked(key) ? t("Allow Internet", "Permitir Internet") : t("Block Internet", "Bloquear Internet"), "wifi") { selected = nil; toggleNetwork(key) }
+                                bubbleRow(audioEnabled(key) ? t("Disable simultaneous audio", "Desactivar audio simultáneo") : t("Allow simultaneous audio", "Permitir audio simultáneo"), "speaker.wave.2") { selected = nil; toggleAudio(key) }
+                                bubbleRow(t("Add tweak", "Añadir tweak"), "square.and.arrow.down.on.square") { selected = nil; addTweak(key) }
+                                bubbleRow(t("App settings", "Ajustes de app"), "gearshape") { selected = nil; manage(key) }
+                            }
+                            if isAndroid(key) {
+                                bubbleRow(t("Portrait", "Vertical"), "iphone") { selected = nil; orientation(key, "portrait") }
+                                bubbleRow(t("Landscape", "Horizontal"), "iphone.landscape") { selected = nil; orientation(key, "landscape") }
+                                bubbleRow(t("Ask every launch", "Preguntar al abrir"), "arrow.triangle.2.circlepath") { selected = nil; orientation(key, "hybrid") }
+                            }
+                            if isGuest(key) {
+                                bubbleRow(t("Uninstall", "Desinstalar"), "trash", destructive: true) { selected = nil; uninstall(key) }
+                            }
+                        }
+                        bubbleRow(t("Pin to dock", "Fijar en Dock"), "rectangle.bottomthird.inset.filled") {
+                            workspace.placeInDock(key, slot: workspace.dock.firstIndex(of: nil) ?? (BloomBoxNovaWorkspace.dockCapacity - 1), page: page)
+                            selected = nil; settleDrawer(open: false)
+                        }
+                        ForEach(workspace.pages.indices, id: \.self) { index in
+                            bubbleRow(t("Move to page", "Mover a página") + " \(index + 1)", "rectangle.on.rectangle") {
+                                workspace.add(key, preferred: index); page = index; selected = nil; settleDrawer(open: false)
+                            }
+                        }
                     }
-                    actionRow(t("App settings", "Ajustes de app"), "gearshape") { selected = nil; manage(key) }
-                }
-                if isAndroid(key) {
-                    actionRow(t("Portrait", "Vertical"), "iphone") { selected = nil; orientation(key, "portrait") }
-                    actionRow(t("Landscape", "Horizontal"), "iphone.landscape") { selected = nil; orientation(key, "landscape") }
-                    actionRow(t("Ask every launch", "Preguntar al abrir"), "arrow.triangle.2.circlepath") { selected = nil; orientation(key, "hybrid") }
-                }
-                actionRow(t("Add to Home", "Añadir al inicio"), "house") { workspace.add(key, preferred: page); selected = nil; settleDrawer(open: false) }
-                actionRow(t("Create folder", "Crear carpeta"), "folder.badge.plus") { selected = nil; folderSource = key }
-                if isGuest(key) {
-                    actionRow(t("Uninstall", "Desinstalar"), "trash", destructive: true) { selected = nil; uninstall(key) }
                 }
             }
-            actionRow(t("Pin to dock", "Fijar en dock"), "rectangle.bottomthird.inset.filled") {
-                workspace.placeInDock(key, slot: workspace.dock.firstIndex(of: nil) ?? (BloomBoxNovaWorkspace.dockCapacity - 1), page: page)
-                selected = nil; settleDrawer(open: false)
-            }
-            if workspace.contains(key) {
-                actionRow(t("Remove shortcut", "Quitar acceso"), "minus.circle") {
-                    if workspace.folders[key] != nil { workspace.folders.removeValue(forKey: key) }
-                    workspace.remove(key); selected = nil
-                }
+            .foregroundStyle(Color.black)
+            .frame(width: bubbleWidth, height: bubbleHeight)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 22))
+            .shadow(color: .black.opacity(0.2), radius: 12, y: 3)
+            .position(x: x, y: y)
+            if anchor != nil {
+                Circle().fill(Color.white).frame(width: 13, height: 13)
+                    .position(x: x, y: y + (above ? 1 : -1) * (bubbleHeight / 2 + 7))
+                Circle().fill(Color.white).frame(width: 7, height: 7)
+                    .position(x: x, y: y + (above ? 1 : -1) * (bubbleHeight / 2 + 19))
             }
         }
+        .accessibilityIdentifier("bloombox.nova.contextBubble")
     }
 
     private func folderPicker(_ first: String) -> some View {
         modal(t("Choose another app", "Elige otra app"), close: { folderSource = nil }) {
+            ForEach(workspace.folders.keys.sorted(), id: \.self) { id in
+                actionRow(workspace.folders[id]?.name ?? t("Folder", "Carpeta"), "folder") {
+                    workspace.putInFolder(first, id: id)
+                    folderSource = nil; settleDrawer(open: false)
+                }
+            }
+            Text(t("Create new folder with", "Crear carpeta nueva con")).font(.headline)
             ForEach(distinctKeys.filter { $0 != first }, id: \.self) { second in
                 actionRow(name(second), "plus") {
                     workspace.createFolder(first, second, name: t("Folder", "Carpeta"), page: page)
@@ -1375,11 +1570,122 @@ struct BloomBoxNovaV2View: View {
         }
     }
 
+    private func novaWidget(_ widget: BloomBoxPlacedWidget, pageIndex: Int, width: CGFloat, height: CGFloat) -> some View {
+        var plain = widget
+        plain.glass = false
+        return BloomBoxGridWidgetView(widget: plain, width: width, height: height,
+                                     active: page == pageIndex && !drawer, clockAccentColor: accent)
+            .background(raised, in: RoundedRectangle(cornerRadius: 16))
+            .onTapGesture {
+                if widget.kind == "notes" { noteEditor = true }
+                if widget.kind == "media" { widgetMediaID = widget.id; widgetMediaImport = true }
+            }
+            .overlay(alignment: .topTrailing) {
+                if editing {
+                    Button { workspace.removeWidget(widget.id, page: pageIndex) } label: {
+                        Image(systemName: "minus.circle.fill").font(.title3).foregroundStyle(.white, .red)
+                    }.buttonStyle(.plain)
+                }
+            }
+    }
+
+    private func addNovaWidget(_ kind: String, style: String? = nil) {
+        page = workspace.insertWidget(kind, style: style, preferred: page)
+        widgetsExpanded = false
+        editing = false
+    }
+
+    private func widgetOption(_ title: String, kind: String, style: String? = nil) -> some View {
+        var preview = BloomBoxPlacedWidget(kind: kind, slot: 0, columns: 2, rows: 2)
+        preview.glass = false
+        preview.clockStyle = style
+        return VStack(spacing: 6) {
+            BloomBoxGridWidgetView(widget: preview, width: 128, height: 104, active: false, clockAccentColor: accent)
+                .background(raised, in: RoundedRectangle(cornerRadius: 16))
+                .allowsHitTesting(false)
+            Text(title).font(.caption).foregroundStyle(.white)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { addNovaWidget(kind, style: style) }
+        .onLongPressGesture(minimumDuration: 0.4) { addNovaWidget(kind, style: style) }
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { addNovaWidget(kind, style: style) }
+    }
+
+    private func editPanel(height: CGFloat) -> some View {
+        VStack(spacing: 12) {
+            if !widgetsExpanded {
+                HStack(spacing: 24) {
+                    Button { importWallpaper = true } label: {
+                        VStack { Image(systemName: "photo.on.rectangle").font(.title2); Text(t("Wallpapers", "Fondos")).font(.caption) }
+                    }
+                    Button { settings = true } label: {
+                        VStack { Image(systemName: "gearshape").font(.title2); Text(t("Settings", "Ajustes")).font(.caption) }
+                    }
+                    Button { animate { editing = false } } label: {
+                        VStack { Image(systemName: "checkmark.circle").font(.title2); Text(t("Done", "Listo")).font(.caption) }
+                    }
+                }.buttonStyle(.plain).padding(8)
+                editorBar
+            }
+            VStack(alignment: .leading, spacing: 12) {
+                Capsule().fill(Color.gray).frame(width: 38, height: 4)
+                    .frame(maxWidth: .infinity).padding(.top, 4)
+                    .onTapGesture { animate { widgetsExpanded.toggle() } }
+                HStack {
+                    Image(systemName: "square.grid.2x2")
+                    Text(t("Widgets", "Widgets")).font(.headline)
+                    Spacer()
+                    Button { animate { widgetsExpanded.toggle() } } label: {
+                        Image(systemName: widgetsExpanded ? "chevron.down" : "chevron.up")
+                    }.buttonStyle(.plain)
+                }
+                if widgetsExpanded {
+                    TextField(t("Search widgets", "Buscar widgets"), text: $widgetQuery)
+                        .textFieldStyle(.plain).padding(12)
+                        .background(raised, in: Capsule())
+                }
+                ScrollView {
+                    if widgetQuery.isEmpty || "BloomBox clock reloj notas notes foto gif media".localizedCaseInsensitiveContains(widgetQuery) {
+                        Button { expandedWidgetProvider.toggle() } label: {
+                            HStack {
+                                Image(systemName: "square.grid.2x2.fill").font(.title2).frame(width: 42, height: 42)
+                                VStack(alignment: .leading) {
+                                    Text("BloomBox").font(.headline)
+                                    Text(t("6 widgets", "6 widgets")).font(.caption).foregroundStyle(.gray)
+                                }
+                                Spacer()
+                                Image(systemName: expandedWidgetProvider ? "chevron.up" : "chevron.down")
+                            }.padding(12).background(raised, in: RoundedRectangle(cornerRadius: 16))
+                        }.buttonStyle(.plain)
+                        if expandedWidgetProvider && widgetsExpanded {
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 8)], spacing: 16) {
+                                widgetOption(t("Minimal clock", "Reloj minimalista"), kind: "clock", style: "minimal")
+                                widgetOption(t("Flip clock", "Reloj flip"), kind: "clock", style: "flip")
+                                widgetOption(t("Analog clock", "Reloj analógico"), kind: "clock", style: "analog")
+                                widgetOption(t("Pixel clock", "Reloj pixel"), kind: "clock", style: "pixel")
+                                widgetOption(t("Notes", "Notas"), kind: "notes")
+                                widgetOption(t("Photo or GIF", "Foto o GIF"), kind: "media")
+                            }.padding(.vertical, 8)
+                        }
+                    }
+                }
+            }
+            .padding(16)
+            .frame(height: widgetsExpanded ? max(180, height - 20) : min(180, height * 0.30))
+            .background(panel, in: RoundedRectangle(cornerRadius: 24))
+            .gesture(DragGesture(minimumDistance: 20).onEnded { value in
+                if value.translation.height < -30 { animate { widgetsExpanded = true } }
+                if value.translation.height > 30 { animate { widgetsExpanded = false } }
+            })
+        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+    }
+
     private var settingsView: some View {
         modal(t("Nova settings", "Ajustes de Nova"), close: { settings = false }) {
             Text(t("Home layout", "Diseño del inicio")).font(.headline).foregroundStyle(accent)
             actionRow(t("Columns", "Columnas") + ": \(workspace.columns)", "square.grid.3x3") {
-                workspace.columns = workspace.columns == 4 ? 5 : 4
+                if workspace.widgets?.values.allSatisfy({ $0.isEmpty }) != false { workspace.columns = workspace.columns == 4 ? 5 : 4 }
             }
             actionRow(t("Icon labels", "Nombres de apps"), workspace.labels ? "checkmark.square" : "square") {
                 workspace.labels.toggle()
