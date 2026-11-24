@@ -74,6 +74,19 @@ Community ports still require separate on-device compatibility testing. [Read re
 
 *Real iPhone screenshots supplied by the maintainer in November 2026, resized for the README. Screens reflect a development build and personal setup; wallpapers, characters, third-party apps and games are not included with BloomBox. Some labels remain in Spanish depending on settings.*
 
+## More launcher styles · Nova
+
+BloomBox lets you choose how your in-app desktop looks and feels. Alongside the iOS-inspired launcher shown above, Nova offers an Android-inspired alternative with a customizable app drawer, search bar, dock, widgets and home-screen layouts.
+
+<table>
+<tr>
+<td align="center" width="50%"><img src="screenshots/showcase/nova-home-2026-11.jpg" width="260" alt="Nova desktop in BloomBox with transparent clock widget, pink particle wallpaper and customizable dock"><br><b>Nova · Home</b><br>Make room for the apps and widgets you want.</td>
+<td align="center" width="50%"><img src="screenshots/showcase/nova-drawer-2026-11.jpg" width="260" alt="Nova app drawer with transparent background, app search and recently used apps"><br><b>Nova · App drawer</b><br>Search and browse installed apps with your own style.</td>
+</tr>
+</table>
+
+*Real screenshots from the maintainer's Nova development build. Nova is an optional launcher style inside BloomBox, not a replacement for the system Home Screen. Personal wallpapers and guest apps shown are not bundled.*
+
 ## What you can do
 
 | Feature | What it brings to your iPhone |
