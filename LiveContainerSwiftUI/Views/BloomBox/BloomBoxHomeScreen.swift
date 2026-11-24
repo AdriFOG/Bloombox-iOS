@@ -263,6 +263,7 @@ struct BloomBoxHomeScreen: View {
         sharedModel.apps.first { $0.bundleIdentifier == "com.husk.app" && (!$0.appInfo.isLocked || sharedModel.isHiddenAppUnlocked) }
     }
     private func refreshHuskGames() {
+        if isNova { Self.novaHuskIconCache.removeAllObjects() }
         guard let host = husk else { huskGames = []; return }
         let profile = BloomBoxProfileStore.active
         let folder: String?
@@ -379,9 +380,20 @@ struct BloomBoxHomeScreen: View {
         GeometryReader { geometry in
             ZStack(alignment: .top) {
                 if isNova {
+                    let novaApps = appMap
+                    let novaKeys = Array(Set(appKeys)).sorted()
+                    let novaNames = Dictionary(uniqueKeysWithValues: novaKeys.map {
+                        ($0, BloomBoxL10n.t(title($0, appsByKey: novaApps)))
+                    })
+                    let novaSorted = novaKeys.sorted {
+                        (novaNames[$0] ?? $0).localizedStandardCompare(novaNames[$1] ?? $1) == .orderedAscending
+                    }
+                    let novaRevision = "\(darkIcons):\(appCustomization.revision):" +
+                        novaKeys.compactMap { novaApps[$0].map { String(describing: ObjectIdentifier($0)) } }.joined(separator: "|")
                     BloomBoxNovaV2View(profileID: themeActiveID,
-                        keys: appKeys, name: { BloomBoxL10n.t(title($0)) },
-                        icon: { key, size in AnyView(novaIcon(key, size: size)) },
+                        keys: novaKeys, names: novaNames, orderedKeys: novaSorted,
+                        iconRevision: novaRevision,
+                        icon: { key, size in AnyView(novaIcon(key, size: size, appsByKey: novaApps)) },
                         isGuest: { key in
                             if let app = appMap[key] { return !LiveContainerHomeAdapter.isEmbeddedSigner(app) }
                             return huskGames.contains { $0.key == key }
@@ -1465,14 +1477,38 @@ struct BloomBoxHomeScreen: View {
         }
     }
 
-    @ViewBuilder private func novaIcon(_ key: String, size: CGFloat) -> some View {
+    private static let novaHuskIconCache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.totalCostLimit = 12 * 1024 * 1024
+        cache.countLimit = 100
+        return cache
+    }()
+
+    private func novaHuskIcon(_ path: String) -> UIImage? {
+        let cacheKey = path as NSString
+        if let cached = Self.novaHuskIconCache.object(forKey: cacheKey) { return cached }
+        guard let image = UIImage(contentsOfFile: path) else { return nil }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let side: CGFloat = 192
+        let thumbnail = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { _ in
+            let scale = side / max(1, min(image.size.width, image.size.height))
+            let w = image.size.width * scale
+            let h = image.size.height * scale
+            image.draw(in: CGRect(x: (side-w)/2, y: (side-h)/2, width: w, height: h))
+        }
+        Self.novaHuskIconCache.setObject(thumbnail, forKey: cacheKey, cost: 192 * 192 * 4)
+        return thumbnail
+    }
+
+    @ViewBuilder private func novaIcon(_ key: String, size: CGFloat, appsByKey: [String: LCAppModel]) -> some View {
         if let game = huskGames.first(where: { $0.key == key }) {
-            if let image = UIImage(contentsOfFile: game.directory.appendingPathComponent("icon.png").path) {
+            if let image = novaHuskIcon(game.directory.appendingPathComponent("icon.png").path) {
                 Image(uiImage: image).resizable().scaledToFill().frame(width: size, height: size).clipped()
             } else {
                 Image(systemName: "gamecontroller.fill").frame(width: size, height: size).background(Color.indigo)
             }
-        } else if let app = appMap[key] {
+        } else if let app = appsByKey[key] {
             LiveBoardIconImage(app: app, dark: darkIcons).frame(width: size, height: size)
         } else if key == Self.sideStoreKey,
                   let image = LiveContainerHomeAdapter.builtInSignerIcon(dark: darkIcons) {

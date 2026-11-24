@@ -206,6 +206,49 @@ struct BloomBoxNovaWorkspace: Codable, Equatable {
 
 // All Nova surfaces are deliberately opaque, with plain controls. System
 // pickers, guest settings and installer actions are owned by their existing hosts.
+@MainActor private final class BloomBoxNovaPointer: ObservableObject {
+    struct Position: Equatable {
+        let location: CGPoint
+        let highlight: CGRect?
+    }
+    @Published private(set) var position: Position?
+    func move(to point: CGPoint, highlight: CGRect?) {
+        let next = Position(location: point, highlight: highlight)
+        if position != next { position = next }
+    }
+    func reset() { position = nil }
+}
+
+// Only this small view observes touch coordinates. The desktop and drawer
+// update when a drag begins or ends, not for each pointer sample.
+private struct BloomBoxNovaDragOverlay: View {
+    @ObservedObject var pointer: BloomBoxNovaPointer
+    let image: AnyView
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            if let position = pointer.position {
+                if let rect = position.highlight {
+                    RoundedRectangle(cornerRadius: 10)
+                        .strokeBorder(Color(red: 0.54, green: 0.87, blue: 0.64), lineWidth: 2)
+                        .frame(width: max(0, rect.width - 4), height: max(0, rect.height - 4))
+                        .position(x: rect.midX, y: rect.midY)
+                }
+                image.position(x: position.location.x, y: position.location.y - 12)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct BloomBoxNovaStableContent<Signature: Equatable, Content: View>: View, Equatable {
+    let signature: Signature
+    let content: () -> Content
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.signature == rhs.signature }
+    var body: some View { content() }
+}
+
 private struct BloomBoxNovaDropTarget: Hashable {
     let page: Int
     let slot: Int
@@ -222,7 +265,10 @@ private struct BloomBoxNovaDropFrames: PreferenceKey {
 struct BloomBoxNovaV2View: View {
     let profileID: String
     let keys: [String]
-    let name: (String) -> String
+    let names: [String: String]
+    let orderedKeys: [String]
+    let iconRevision: String
+    private func name(_ key: String) -> String { names[key] ?? key }
     let icon: (String, CGFloat) -> AnyView
     let isGuest: (String) -> Bool
     let hasGift: (String) -> Bool
@@ -263,9 +309,10 @@ struct BloomBoxNovaV2View: View {
     private struct HomeDrag: Equatable {
         let key: String
         let size: CGFloat
-        let location: CGPoint?
+        let moving: Bool
     }
     @GestureState private var homeDrag: HomeDrag?
+    @State private var pointer = BloomBoxNovaPointer()
     @State private var dropFrames: [BloomBoxNovaDropTarget: CGRect] = [:]
     @State private var suppressDrawerForIcon = false
     @State private var editing = false
@@ -299,9 +346,51 @@ struct BloomBoxNovaV2View: View {
         return keys.filter { seen.insert($0).inserted }
     }
     private var visibleKeys: [String] {
-        distinctKeys.filter { query.isEmpty || name($0).localizedCaseInsensitiveContains(query) }
-            .sorted { name($0).localizedStandardCompare(name($1)) == .orderedAscending }
+        query.isEmpty ? orderedKeys : orderedKeys.filter { name($0).localizedCaseInsensitiveContains(query) }
     }
+    private struct HomeSignature: Equatable {
+        let workspace: BloomBoxNovaWorkspace
+        let names: [String: String]
+        let iconRevision: String
+        let gifts: Set<String>
+        let page: Int
+        let editing: Bool
+        let drag: HomeDrag?
+        let language: String
+        let travel: CGFloat
+        let drawer: Bool
+    }
+
+    private struct DrawerSignature: Equatable {
+        let style: BloomBoxNovaWorkspace.DrawerAppearance
+        let names: [String: String]
+        let iconRevision: String
+        let gifts: Set<String>
+        let query: String
+        let editing: Bool
+        let language: String
+        let shape: Int
+        let drawer: Bool
+    }
+
+    private var giftKeys: Set<String> { Set(keys.filter(hasGift)) }
+
+    private func stableHome(travel: CGFloat) -> some View {
+        BloomBoxNovaStableContent(signature: HomeSignature(
+            workspace: workspace, names: names, iconRevision: iconRevision,
+            gifts: giftKeys, page: page, editing: editing, drag: homeDrag,
+            language: language, travel: travel, drawer: drawer
+        )) { homeView(travel: travel) }.equatable()
+    }
+
+    private var stableDrawer: some View {
+        BloomBoxNovaStableContent(signature: DrawerSignature(
+            style: drawerStyle, names: names, iconRevision: iconRevision,
+            gifts: giftKeys, query: query, editing: editing, language: language,
+            shape: workspace.iconShape, drawer: drawer
+        )) { drawerView() }.equatable()
+    }
+
     private var grid: [GridItem] {
         Array(repeating: GridItem(.flexible(), spacing: 5), count: workspace.columns)
     }
@@ -332,11 +421,12 @@ struct BloomBoxNovaV2View: View {
                 ZStack(alignment: .top) {
                     // Move the Home icons out of the way, leaving only the
                     // wallpaper behind the customizable drawer background.
-                    homeView(travel: travel)
+                    stableHome(travel: travel)
+                        .coordinateSpace(name: "BloomBoxNovaHome")
                         .offset(y: -progress * (height + geometry.safeAreaInsets.bottom))
                         .allowsHitTesting(!drawer)
                         .accessibilityHidden(drawer)
-                    drawerView()
+                    stableDrawer
                         .frame(width: geometry.size.width, height: height)
                         .offset(y: (1 - progress) * height)
                         .allowsHitTesting(drawer)
@@ -349,13 +439,9 @@ struct BloomBoxNovaV2View: View {
                         .position(x: geometry.size.width / 2, y: barY)
                         .simultaneousGesture(drawerGesture(travel: travel, opening: !drawer))
                         .zIndex(2)
-                    if let drag = homeDrag, let location = drag.location {
-                        let origin = geometry.frame(in: .global).origin
-                        tileImage(drag.key, size: drag.size * 1.12)
-                            .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
-                            .position(x: location.x - origin.x, y: location.y - origin.y - 12)
-                            .allowsHitTesting(false)
-                            .accessibilityHidden(true)
+                    if let drag = homeDrag, drag.moving {
+                        BloomBoxNovaDragOverlay(pointer: pointer,
+                            image: AnyView(tileImage(drag.key, size: drag.size * 1.12)))
                             .zIndex(2.5)
                     }
                 }
@@ -390,7 +476,9 @@ struct BloomBoxNovaV2View: View {
             if let selected, !valid(selected) { self.selected = nil }
             if let folder, workspace.folders[folder] == nil { self.folder = nil }
         }
-        .onPreferenceChange(BloomBoxNovaDropFrames.self) { dropFrames = $0 }
+        .onPreferenceChange(BloomBoxNovaDropFrames.self) { frames in
+            if dropFrames != frames { dropFrames = frames }
+        }
         .onChange(of: homeDrag?.key) { key in
             if key != nil {
                 suppressDrawerForIcon = true
@@ -398,7 +486,10 @@ struct BloomBoxNovaV2View: View {
                 // Let the parent recognizer finish the same touch before
                 // allowing another drawer swipe, including canceled drags.
                 DispatchQueue.main.async {
-                    if homeDrag == nil { suppressDrawerForIcon = false }
+                    if homeDrag == nil {
+                        suppressDrawerForIcon = false
+                        pointer.reset()
+                    }
                 }
             }
         }
@@ -1030,14 +1121,16 @@ struct BloomBoxNovaV2View: View {
     }
 
     private func target(at location: CGPoint) -> BloomBoxNovaDropTarget? {
-        let available = dropFrames.filter { target, rect in
-            (target.dock || target.page == page) && rect.contains(location)
+        var best: BloomBoxNovaDropTarget?
+        for (candidate, rect) in dropFrames where
+            (candidate.dock || candidate.page == page) && rect.contains(location) {
+            if let current = best {
+                if candidate.dock == current.dock {
+                    if candidate.slot < current.slot { best = candidate }
+                } else if candidate.dock { best = candidate }
+            } else { best = candidate }
         }
-        // Dock wins in the unlikely event of overlapping frames.
-        return available.keys.sorted {
-            if $0.dock != $1.dock { return $0.dock }
-            return $0.slot < $1.slot
-        }.first
+        return best
     }
 
     private func finishHomeDrag(_ key: String, at location: CGPoint) {
@@ -1053,18 +1146,25 @@ struct BloomBoxNovaV2View: View {
 
     private func homeTileGesture(_ key: String, size: CGFloat) -> some Gesture {
         LongPressGesture(minimumDuration: 0.30, maximumDistance: 12)
-            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .global))
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("BloomBoxNovaHome")))
             .exclusively(before: TapGesture())
             .updating($homeDrag) { value, state, transaction in
                 transaction.animation = nil
                 switch value {
                 case .first(.first(true)):
-                    state = HomeDrag(key: key, size: size, location: nil)
+                    state = HomeDrag(key: key, size: size, moving: false)
                 case .first(.second(true, let drag)):
                     let moved = drag.map { hypot($0.translation.width, $0.translation.height) >= 6 } ?? false
-                    state = HomeDrag(key: key, size: size, location: moved ? drag?.location : nil)
+                    state = HomeDrag(key: key, size: size, moving: moved)
                 default:
                     break
+                }
+            }
+            .onChanged { value in
+                if case .first(.second(true, let drag)) = value,
+                   let drag, hypot(drag.translation.width, drag.translation.height) >= 6 {
+                    let rect = target(at: drag.location).flatMap { dropFrames[$0] }
+                    pointer.move(to: drag.location, highlight: rect)
                 }
             }
             .onEnded { value in
@@ -1090,13 +1190,7 @@ struct BloomBoxNovaV2View: View {
     private func slotView(_ key: String?, size: CGFloat, dockSlot: Int?, pageIndex: Int, slot: Int, hideLabel: Bool = false) -> some View {
         let destination = BloomBoxNovaDropTarget(page: dockSlot == nil ? pageIndex : -1,
                                                  slot: dockSlot ?? slot, dock: dockSlot != nil)
-        let highlighted = homeDrag?.location.flatMap { target(at: $0) } == destination
         return ZStack {
-            if highlighted {
-                RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(accent, lineWidth: 2)
-                    .padding(2)
-            }
             if let key, valid(key) {
                 VStack(spacing: 3) {
                     tileImage(key, size: size)
@@ -1106,7 +1200,7 @@ struct BloomBoxNovaV2View: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .opacity(homeDrag?.key == key && homeDrag?.location != nil ? 0 : 1)
+                .opacity(homeDrag?.key == key && homeDrag?.moving == true ? 0 : 1)
                 .contentShape(Rectangle())
                 .gesture(homeTileGesture(key, size: size))
                 .accessibilityElement(children: .ignore)
@@ -1124,7 +1218,7 @@ struct BloomBoxNovaV2View: View {
         .contentShape(Rectangle())
         .background(GeometryReader { geometry in
             Color.clear.preference(key: BloomBoxNovaDropFrames.self,
-                                   value: [destination: geometry.frame(in: .global)])
+                                   value: [destination: geometry.frame(in: .named("BloomBoxNovaHome"))])
         })
     }
 
