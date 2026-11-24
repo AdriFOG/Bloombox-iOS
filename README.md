@@ -1,12 +1,14 @@
 <div align="center">
 
-# BloomBox 🌸
+<img src="screenshots/BloomBox-Mascot.svg" width="180" height="180" alt="BloomBox green mascot on a purple gradient">
+
+# BloomBox
 
 ### Less configuring. More enjoying your iPhone.
 
 A personal home for your apps, widgets and files — with room to experiment.
 
-[**Download BloomBox 3.2.3**](https://github.com/AdriFOG/Bloombox-iOS/releases/tag/v3.2.3) · [Builds](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml) · [Report an issue](https://github.com/AdriFOG/Bloombox-iOS/issues)
+[**Download BloomBox 3.3.3**](https://github.com/AdriFOG/Bloombox-iOS/releases/tag/v3.3.3) · [Builds](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml) · [Report an issue](https://github.com/AdriFOG/Bloombox-iOS/issues)
 
 [![Build](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-purple.svg)](LICENSE) · [Original-work attribution](LICENSE-ADDITIONAL-TERMS.md)
@@ -16,6 +18,12 @@ A personal home for your apps, widgets and files — with room to experiment.
 **BloomBox is an independently maintained iOS launcher and application container built on LiveContainer technology.** Bring compatible apps into one customizable space, organize your desktop, discover community projects and manage files without leaving BloomBox.
 
 Its home screen lives **inside the app**; it does not replace the iOS Home Screen. Experimental features are clearly identified below so you can choose what to try.
+
+## What's new
+
+**Latest public release: [BloomBox 3.3.3](https://github.com/AdriFOG/Bloombox-iOS/releases/tag/v3.3.3)** — IPA installation and instant Home refresh hotfix.
+
+**In development on main:** the new BloomBox mascot and native iOS icon appearances (default, dark and tinted), plus Nova, an alternative customizable launcher with a desktop, app drawer, widgets and news page. These development changes are not yet part of the public release.
 
 ## BloomBox 3.2.3 — iOS & Android Files, App Icons, Transparent Profiles
 
@@ -37,7 +45,7 @@ Its home screen lives **inside the app**; it does not replace the iOS Home Scree
 - **Compact GameBox and news:** one news item at a time, with arrows and full article view.
 - Husk, JIT and guest installation logic remains unchanged; previous known issues still apply.
 
-[3.2.1 release notes and installation guide](docs/BloomBox-3.2.1-Release-Notes.md). Latest: [3.2.3 release notes](docs/BloomBox-3.2.3-Release-Notes.md).
+[3.2.1 release notes and installation guide](docs/BloomBox-3.2.1-Release-Notes.md). [3.2.3 release notes](docs/BloomBox-3.2.3-Release-Notes.md).
 
 ## BloomBox 3.2.0 — Port Stores & RAM+
 
@@ -113,7 +121,7 @@ Backups do not include the guest IPA, and cloud sessions or device-bound credent
 
 ## Get started
 
-1. Open the [BloomBox 3.0.1 release](https://github.com/AdriFOG/Bloombox-iOS/releases/tag/v3.0.1) and read the installation notes. Future releases will be published under AdriFOG.
+1. Open the [latest BloomBox release](https://github.com/AdriFOG/Bloombox-iOS/releases/latest) and read the installation notes.
 2. Download **`BloomBox-SideStore-unsigned.ipa`** from that release's assets.
 3. Sign and install it with **SideStore**, retaining all app extensions. The downloaded IPA is unsigned and cannot be installed by opening it alone.
 4. Open BloomBox, import a compatible guest IPA, and make the desktop yours. Open **Modules** when you want to explore advanced features.
