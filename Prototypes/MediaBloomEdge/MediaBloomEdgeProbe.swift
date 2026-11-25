@@ -69,6 +69,7 @@ private struct MediaShortcut: Identifiable {
 private struct EdgeDrawer: View {
     var right: Bool
     var opened: Bool
+    var opacity: Double
     var onToggle: () -> Void
     var onSync: () -> Void
     var onApp: (MediaShortcut) -> Void
@@ -89,14 +90,7 @@ private struct EdgeDrawer: View {
         let contour = EdgeContour(right: right, expansion: opened ? 1 : 0)
         ZStack(alignment: anchor) {
             contour
-                .fill(LinearGradient(
-                    colors: [Color.black.opacity(0.96),
-                             Color(red: 0.13, green: 0.11, blue: 0.16).opacity(0.86)],
-                    startPoint: right ? .trailing : .leading,
-                    endPoint: right ? .leading : .trailing))
-                .overlay {
-                    contour.stroke(Color.white.opacity(0.10), lineWidth: 0.8)
-                }
+                .fill(Color.black.opacity(opacity))
                 .contentShape(contour)
                 .onTapGesture(perform: onToggle)
 
@@ -232,6 +226,8 @@ private struct JellyVolumeControl: View {
 private struct EdgePreview: View {
     @AppStorage("MBEdgeProbeRightV1") private var onRight = false
     @AppStorage("MBEdgeProbeHeightV1") private var relativeY = 0.54
+    @AppStorage("MediaBloomEdgeOpacityV1") private var edgeOpacity = 1.0
+    @State private var showEdgeSettings = false
     @State private var opened = false
     @State private var volumeOpen = false
     @State private var synchronizing = false
@@ -274,6 +270,7 @@ private struct EdgePreview: View {
                 EdgeDrawer(
                     right: onRight,
                     opened: opened,
+                    opacity: edgeOpacity,
                     onToggle: toggleDrawer,
                     onSync: syncPreview,
                     onApp: selectApp
@@ -325,6 +322,19 @@ private struct EdgePreview: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
             .animation(jellySpring, value: opened)
+            .sheet(isPresented: $showEdgeSettings) {
+                NavigationView {
+                    Form {
+                        Section(header: Text("MediaBloom Edge")) {
+                            Text("Opacidad: \(Int((edgeOpacity * 100).rounded()))%")
+                            Slider(value: $edgeOpacity, in: 0...1, step: 0.01)
+                            Button("Negro puro") { edgeOpacity = 1 }
+                        }
+                    }
+                    .navigationTitle("Ajustes")
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Listo") { showEdgeSettings = false } } }
+                }
+            }
         }
     }
 
@@ -364,6 +374,10 @@ private struct EdgePreview: View {
                     .font(.system(size: 11, weight: .bold, design: .rounded))
                     .tracking(2.0)
                 Spacer()
+                Button { showEdgeSettings = true } label: {
+                    Image(systemName: "gearshape").font(.system(size: 17)).frame(width: 38, height: 38)
+                }
+                .accessibilityLabel("Ajustes del borde")
                 Button {
                     withAnimation { onRight.toggle() }
                     notice("Borde: \(onRight ? "derecho" : "izquierdo")")
