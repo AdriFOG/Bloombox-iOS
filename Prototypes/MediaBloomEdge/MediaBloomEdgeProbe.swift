@@ -21,36 +21,39 @@ private enum EdgeTone {
     static let surface = Color(red: 0.14, green: 0.115, blue: 0.17)
 }
 
+// The same contour lives on screen throughout both states. Only its geometry
+// changes, so the gel grows from the edge instead of sliding a rigid panel in.
 private struct EdgeContour: Shape {
     var right: Bool
+    var expansion: CGFloat
+
+    var animatableData: CGFloat {
+        get { expansion }
+        set { expansion = newValue }
+    }
 
     func path(in rect: CGRect) -> Path {
-        let w = rect.width
-        let h = rect.height
-        var p = Path()
-        p.move(to: CGPoint(x: 0, y: 0))
-        p.addLine(to: CGPoint(x: w * 0.52, y: 0))
-        p.addCurve(to: CGPoint(x: w * 0.65, y: h * 0.14),
-                   control1: CGPoint(x: w * 0.58, y: 0),
-                   control2: CGPoint(x: w * 0.64, y: h * 0.08))
-        p.addCurve(to: CGPoint(x: w * 0.96, y: h * 0.36),
-                   control1: CGPoint(x: w * 0.80, y: h * 0.24),
-                   control2: CGPoint(x: w * 0.96, y: h * 0.29))
-        p.addCurve(to: CGPoint(x: w * 0.96, y: h * 0.64),
-                   control1: CGPoint(x: w * 1.02, y: h * 0.45),
-                   control2: CGPoint(x: w * 1.02, y: h * 0.55))
-        p.addCurve(to: CGPoint(x: w * 0.65, y: h * 0.86),
-                   control1: CGPoint(x: w * 0.96, y: h * 0.73),
-                   control2: CGPoint(x: w * 0.80, y: h * 0.76))
-        p.addCurve(to: CGPoint(x: w * 0.52, y: h),
-                   control1: CGPoint(x: w * 0.64, y: h * 0.92),
-                   control2: CGPoint(x: w * 0.58, y: h))
-        p.addLine(to: CGPoint(x: 0, y: h))
-        p.closeSubpath()
-        if right {
-            return p.applying(CGAffineTransform(translationX: w, y: 0)
-                .scaledBy(x: -1, y: 1))
+        let t = max(0, min(1.12, expansion))
+        let stretch = min(t, 1)
+        let w = min(rect.width, 13 + (rect.width - 20) * t)
+        // Height blooms early; the inward bulge catches up a fraction later.
+        let h = min(rect.height, 80 + (rect.height - 80) * (1 - pow(1 - stretch, 1.35)))
+        let y = (rect.height - h) / 2
+        func pt(_ x: CGFloat, _ v: CGFloat) -> CGPoint {
+            CGPoint(x: right ? rect.maxX - x * w : rect.minX + x * w,
+                    y: rect.minY + y + v * h)
         }
+        var p = Path()
+        p.move(to: pt(0, 0))
+        p.addCurve(to: pt(0.80, 0.21),
+                   control1: pt(0, 0.09), control2: pt(0.69, 0.10))
+        p.addCurve(to: pt(1, 0.50),
+                   control1: pt(0.96, 0.37), control2: pt(1, 0.40))
+        p.addCurve(to: pt(0.80, 0.79),
+                   control1: pt(1, 0.60), control2: pt(0.96, 0.63))
+        p.addCurve(to: pt(0, 1),
+                   control1: pt(0.69, 0.90), control2: pt(0, 0.91))
+        p.closeSubpath()
         return p
     }
 }
@@ -64,6 +67,8 @@ private struct MediaShortcut: Identifiable {
 
 private struct EdgeDrawer: View {
     var right: Bool
+    var opened: Bool
+    var onToggle: () -> Void
     var onSync: () -> Void
     var onVolume: () -> Void
     var onApp: (MediaShortcut) -> Void
@@ -80,21 +85,44 @@ private struct EdgeDrawer: View {
     ]
 
     var body: some View {
-        ZStack(alignment: right ? .trailing : .leading) {
-            EdgeContour(right: right)
-                .fill(Color.black.opacity(0.96))
+        let anchor: Alignment = right ? .trailing : .leading
+        let contour = EdgeContour(right: right, expansion: opened ? 1 : 0)
+        ZStack(alignment: anchor) {
+            contour
+                .fill(LinearGradient(
+                    colors: [Color.black.opacity(0.96),
+                             Color(red: 0.13, green: 0.11, blue: 0.16).opacity(0.86)],
+                    startPoint: right ? .trailing : .leading,
+                    endPoint: right ? .leading : .trailing))
                 .overlay {
-                    EdgeContour(right: right)
-                        .stroke(Color.white.opacity(0.10), lineWidth: 0.7)
+                    contour.stroke(Color.white.opacity(0.10), lineWidth: 0.8)
                 }
-            VStack(spacing: 13) {
+                .contentShape(contour)
+                .onTapGesture(perform: onToggle)
+
+            // A generous touch target for the small closed tab.
+            if !opened {
+                Button(action: onToggle) {
+                    Capsule()
+                        .fill(EdgeTone.purple.opacity(0.7))
+                        .frame(width: 2, height: 25)
+                        .frame(width: 30, height: 88, alignment: right ? .trailing : .leading)
+                        .padding(right ? .trailing : .leading, 5)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Abrir menú lateral")
+                .transition(.opacity)
+            }
+
+            VStack(spacing: 10) {
                 edgeButton("arrow.triangle.2.circlepath", fill: EdgeTone.purple,
                            label: "Resincronizar") { onSync() }
                 edgeButton("speaker.wave.2.fill", fill: Color.white.opacity(0.19),
                            label: "Volumen") { onVolume() }
                 Rectangle()
                     .fill(Color.white.opacity(0.17))
-                    .frame(width: 33, height: 1)
+                    .frame(width: 30, height: 1)
                     .padding(.vertical, 2)
                 ForEach(apps) { app in
                     edgeButton(app.symbol, fill: app.tint, label: app.title) {
@@ -102,12 +130,16 @@ private struct EdgeDrawer: View {
                     }
                 }
             }
-            .frame(width: 74)
-            .padding(.leading, right ? 0 : 8)
-            .padding(.trailing, right ? 8 : 0)
-            .padding(.vertical, 12)
+            .frame(width: 66)
+            .padding(right ? .trailing : .leading, 5)
+            .scaleEffect(opened ? 1 : 0.55, anchor: right ? .trailing : .leading)
+            .offset(x: opened ? 0 : (right ? 28 : -28))
+            .opacity(opened ? 1 : 0)
+            .animation(opened ? .easeOut(duration: 0.23).delay(0.12) : .easeOut(duration: 0.10),
+                       value: opened)
+            .allowsHitTesting(opened)
+            .accessibilityHidden(!opened)
         }
-        .frame(width: 138, height: 414)
         .accessibilityElement(children: .contain)
     }
 
@@ -153,11 +185,14 @@ private struct EdgePreview: View {
     @State private var playing = true
     @State private var progress = 0.35
 
-    private let menuHeight: CGFloat = 414
-    private let menuWidth: CGFloat = 138
+    private let menuHeight: CGFloat = 462
+    private let menuWidth: CGFloat = 120
+    private let jellySpring = Animation.spring(response: 0.52, dampingFraction: 0.67, blendDuration: 0.12)
 
     var body: some View {
         GeometryReader { geo in
+            let panelHeight = min(menuHeight, max(1, geo.size.height - 16))
+            let volumeWidth = min(226, max(100, geo.size.width - menuWidth - 20))
             ZStack {
                 background
                 demoPlayer(in: geo)
@@ -165,8 +200,7 @@ private struct EdgePreview: View {
                     Color.black.opacity(0.001)
                         .ignoresSafeArea()
                         .onTapGesture {
-                            withAnimation(.spring(response: 0.33,
-                                                  dampingFraction: 0.86)) {
+                            withAnimation(jellySpring) {
                                 opened = false
                                 volumeOpen = false
                             }
@@ -174,57 +208,39 @@ private struct EdgePreview: View {
                 }
                 if volumeOpen && opened {
                     volumePopup
-                        .frame(width: 226)
-                        .position(x: onRight ? geo.size.width - 168 : 168,
+                        .frame(width: volumeWidth)
+                        .position(x: onRight ? geo.size.width - menuWidth - 8 - volumeWidth / 2 : menuWidth + 8 + volumeWidth / 2,
                                   y: max(165, min(geo.size.height - 150,
                                                 geo.size.height * relativeY - 120)))
                         .transition(.opacity.combined(with: .scale(scale: 0.94)))
                         .zIndex(2)
                 }
-                if opened {
-                    EdgeDrawer(
-                        right: onRight,
-                        onSync: syncPreview,
-                        onVolume: {
-                            withAnimation(.easeOut(duration: 0.18)) {
-                                volumeOpen.toggle()
-                            }
-                        },
-                        onApp: selectApp
-                    )
-                    .position(x: onRight ? geo.size.width - menuWidth / 2 : menuWidth / 2,
-                              y: clampedY(in: geo))
-                    .transition(.move(edge: onRight ? .trailing : .leading)
-                        .combined(with: .opacity))
-                    .zIndex(3)
-                    .gesture(DragGesture(minimumDistance: 20)
-                        .onEnded { value in
-                            relativeY = Double(max(0.28, min(0.72,
+                EdgeDrawer(
+                    right: onRight,
+                    opened: opened,
+                    onToggle: toggleDrawer,
+                    onSync: syncPreview,
+                    onVolume: {
+                        withAnimation(.easeOut(duration: 0.18)) {
+                            volumeOpen.toggle()
+                        }
+                    },
+                    onApp: selectApp
+                )
+                .frame(width: menuWidth, height: menuHeight)
+                .scaleEffect(x: 1, y: panelHeight / menuHeight)
+                .position(x: onRight ? geo.size.width - menuWidth / 2 : menuWidth / 2,
+                          y: clampedY(in: geo, height: panelHeight))
+                .zIndex(3)
+                .simultaneousGesture(DragGesture(minimumDistance: 20)
+                    .onEnded { value in
+                        guard abs(value.translation.height) > abs(value.translation.width) else { return }
+                        withAnimation(jellySpring) {
+                            relativeY = Double(max(0.20, min(0.80,
                                 CGFloat(relativeY) +
                                 value.translation.height / max(geo.size.height, 1))))
-                        })
-                } else {
-                    Capsule()
-                        .fill(Color.black)
-                        .frame(width: 12, height: 80)
-                        .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
-                        .overlay {
-                            Capsule()
-                                .fill(EdgeTone.purple.opacity(0.7))
-                                .frame(width: 2, height: 27)
                         }
-                        .position(x: onRight ? geo.size.width - 6 : 6,
-                                  y: clampedY(in: geo))
-                        .onTapGesture {
-                            withAnimation(.spring(response: 0.35,
-                                                  dampingFraction: 0.83)) {
-                                opened = true
-                            }
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        }
-                        .transition(.opacity)
-                        .zIndex(3)
-                }
+                    })
                 if showNotice {
                     VStack {
                         Spacer()
@@ -242,15 +258,22 @@ private struct EdgePreview: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
-            .animation(.spring(response: 0.35, dampingFraction: 0.86),
-                       value: opened)
+            .animation(jellySpring, value: opened)
         }
     }
 
-    private func clampedY(in geometry: GeometryProxy) -> CGFloat {
-        let half = menuHeight / 2
-        return min(max(geometry.size.height * relativeY, half + 32),
-                   max(half + 32, geometry.size.height - half - 32))
+    private func clampedY(in geometry: GeometryProxy, height: CGFloat) -> CGFloat {
+        let half = height / 2
+        return min(max(geometry.size.height * relativeY, half + 8),
+                   max(half + 8, geometry.size.height - half - 8))
+    }
+
+    private func toggleDrawer() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        withAnimation(jellySpring) {
+            opened.toggle()
+            if !opened { volumeOpen = false }
+        }
     }
 
     private var background: some View {
@@ -420,7 +443,7 @@ private struct EdgePreview: View {
     private func selectApp(_ app: MediaShortcut) {
         headline = app.title
         currentSong = "Acceso rápido de muestra • HotSwap pendiente"
-        withAnimation(.spring(response: 0.33, dampingFraction: 0.85)) {
+        withAnimation(jellySpring) {
             opened = false
             volumeOpen = false
         }
