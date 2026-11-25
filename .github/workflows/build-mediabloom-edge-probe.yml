@@ -1,0 +1,126 @@
+name: MediaBloom Edge - BloomBox Guest IPA (UI Probe)
+
+on:
+  push:
+    branches:
+      - feature/mediabloom-edge-probe-20261124
+    paths:
+      - Prototypes/MediaBloomEdge/**
+      - .github/workflows/build-mediabloom-edge-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-edge-demo:
+    name: Build standalone Edge Probe IPA for BloomBox
+    runs-on: macos-latest
+    steps:
+      - name: Select Xcode 26.2
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.2'
+
+      - name: Checkout isolated UI probe
+        uses: actions/checkout@v4
+
+      - name: Build iOS ARM64 native guest app
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROJECT="$GITHUB_WORKSPACE/Prototypes/MediaBloomEdge"
+          APP="$RUNNER_TEMP/EdgeBuild/Payload/MediaBloomEdgeProbe.app"
+          mkdir -p "$APP" "$GITHUB_WORKSPACE/dist"
+          cp "$PROJECT/Info.plist" "$APP/Info.plist"
+          plutil -lint "$APP/Info.plist"
+          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          xcrun --sdk iphoneos swiftc \
+            -sdk "$SDK" \
+            -target arm64-apple-ios16.0 \
+            -parse-as-library \
+            -O \
+            -emit-executable \
+            -framework SwiftUI \
+            -framework UIKit \
+            -framework MediaPlayer \
+            -o "$APP/MediaBloomEdgeProbe" \
+            "$PROJECT/MediaBloomEdgeProbe.swift"
+          chmod 755 "$APP/MediaBloomEdgeProbe"
+          file "$APP/MediaBloomEdgeProbe"
+
+      - name: Make simple original Edge icon
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/EdgeBuild/Payload/MediaBloomEdgeProbe.app"
+          export EDGE_ICON_APP="$APP"
+          python3 - <<'PY'
+          import os, math, struct, zlib
+          dest = os.environ["EDGE_ICON_APP"]
+          def chunk(kind, value):
+              return struct.pack(">I",len(value))+kind+value+struct.pack(">I",zlib.crc32(kind+value)&0xffffffff)
+          def make_icon(side):
+              raw = bytearray()
+              for y in range(side):
+                  raw.append(0)
+                  for x in range(side):
+                      xx=x/side
+                      yy=y/side
+                      # Flat violet-on-dark icon, no reflections or glow.
+                      r,g,b=(28,24,39)
+                      dx=xx-.5
+                      dy=yy-.5
+                      radius=math.hypot(dx,dy)
+                      if .21 < radius < .27 and yy < .57:
+                          r,g,b=(159,119,232)
+                      if .20 < xx < .31 and .44 < yy < .75 and abs(xx-.255)<.055:
+                          r,g,b=(188,160,244)
+                      if .69 < xx < .80 and .44 < yy < .75 and abs(xx-.745)<.055:
+                          r,g,b=(188,160,244)
+                      if .33 < xx < .67 and .66 < yy < .75:
+                          r,g,b=(125,89,205)
+                      raw.extend((r,g,b,255))
+              data=(b"\x89PNG\r\n\x1a\n"+
+                    chunk(b"IHDR",struct.pack(">IIBBBBB",side,side,8,6,0,0,0))+
+                    chunk(b"IDAT",zlib.compress(bytes(raw),level=9))+
+                    chunk(b"IEND",b""))
+              with open(os.path.join(dest,f"EdgeIcon@{2 if side==120 else 3}x.png"),"wb") as out:
+                  out.write(data)
+          make_icon(120)
+          make_icon(180)
+          PY
+
+      - name: Package and verify BloomBox-importable IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/EdgeBuild"
+          zip -qry "$GITHUB_WORKSPACE/dist/MediaBloom-Edge-BloomBox-Test.ipa" Payload
+          unzip -tq "$GITHUB_WORKSPACE/dist/MediaBloom-Edge-BloomBox-Test.ipa"
+          python3 - <<'PY'
+          import plistlib,zipfile,os,struct
+          path=os.path.join(os.environ["GITHUB_WORKSPACE"],"dist","MediaBloom-Edge-BloomBox-Test.ipa")
+          with zipfile.ZipFile(path) as z:
+              payload="Payload/MediaBloomEdgeProbe.app/"
+              names=set(z.namelist())
+              needed={payload+"Info.plist",payload+"MediaBloomEdgeProbe",payload+"EdgeIcon@2x.png",payload+"EdgeIcon@3x.png"}
+              assert needed<=names, needed-names
+              info=plistlib.loads(z.read(payload+"Info.plist"))
+              assert info["CFBundleIdentifier"]=="com.adrifog.bloombox.mediabloomedgeprobe"
+              assert info["CFBundleExecutable"]=="MediaBloomEdgeProbe"
+              exe=z.read(payload+"MediaBloomEdgeProbe")
+              assert exe[:4]==bytes.fromhex("cffaedfe"),exe[:4]
+              assert len(exe)>10000
+              assert len(z.namelist())>=5
+              print("PASS: BloomBox guest IPA with arm64 executable, valid plist and icons")
+              print("IPA bytes:",os.path.getsize(path))
+          PY
+
+      - name: Upload test IPA (no public release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: MediaBloom-Edge-BloomBox-Test
+          path: dist/MediaBloom-Edge-BloomBox-Test.ipa
+          if-no-files-found: error
+          retention-days: 14
