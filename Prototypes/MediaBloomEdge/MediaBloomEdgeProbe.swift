@@ -85,7 +85,7 @@ private struct EdgeDrawer: View {
                 .fill(Color.black.opacity(0.96))
                 .overlay {
                     EdgeContour(right: right)
-                        .strokeBorder(Color.white.opacity(0.10), lineWidth: 0.7)
+                        .stroke(Color.white.opacity(0.10), lineWidth: 0.7)
                 }
             VStack(spacing: 13) {
                 edgeButton("arrow.triangle.2.circlepath", fill: EdgeTone.purple,
@@ -197,10 +197,11 @@ private struct EdgePreview: View {
                     .transition(.move(edge: onRight ? .trailing : .leading)
                         .combined(with: .opacity))
                     .zIndex(3)
-                    .gesture(DragGesture(minimumDistance: 16)
-                        .onChanged { value in
+                    .gesture(DragGesture(minimumDistance: 20)
+                        .onEnded { value in
                             relativeY = Double(max(0.28, min(0.72,
-                                value.location.y / max(geo.size.height, 1) + relativeY)))
+                                CGFloat(relativeY) +
+                                value.translation.height / max(geo.size.height, 1))))
                         })
                 } else {
                     Capsule()
