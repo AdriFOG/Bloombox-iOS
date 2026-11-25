@@ -71,7 +71,6 @@ private struct EdgeDrawer: View {
     var opened: Bool
     var onToggle: () -> Void
     var onSync: () -> Void
-    var onVolume: () -> Void
     var onApp: (MediaShortcut) -> Void
 
     private let apps: [MediaShortcut] = [
@@ -119,8 +118,11 @@ private struct EdgeDrawer: View {
             VStack(spacing: 10) {
                 edgeButton("arrow.triangle.2.circlepath", fill: EdgeTone.purple,
                            label: "Resincronizar") { onSync() }
-                edgeButton("speaker.wave.2.fill", fill: Color.white.opacity(0.19),
-                           label: "Volumen") { onVolume() }
+                // The unified volume control is rendered above this reserved slot.
+                Color.clear
+                    .frame(width: 45, height: 45)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
                 Rectangle()
                     .fill(Color.white.opacity(0.17))
                     .frame(width: 30, height: 1)
@@ -173,6 +175,60 @@ private struct SystemVolumeSlider: UIViewRepresentable {
     func updateUIView(_ uiView: MPVolumeView, context: Context) {}
 }
 
+// One capsule for both states; its outer edge and speaker stay fixed.
+private struct JellyVolumeControl: View {
+    var right: Bool
+    var expanded: Bool
+    var maximumWidth: CGFloat
+    var onToggle: () -> Void
+
+    private let diameter: CGFloat = 45
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if right { slider }
+            speaker
+            if !right { slider }
+        }
+        .frame(width: expanded ? maximumWidth : diameter, height: diameter,
+               alignment: right ? .trailing : .leading)
+        .background {
+            Capsule()
+                .fill(Color(red: 0.18, green: 0.18, blue: 0.20).opacity(0.98))
+                .overlay(Capsule().stroke(Color.white.opacity(0.13), lineWidth: 0.9))
+        }
+        .clipShape(Capsule())
+        .contentShape(Capsule())
+    }
+
+    private var speaker: some View {
+        Button(action: onToggle) {
+            Image(systemName: "speaker.wave.2.fill")
+                .font(.system(size: 19, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.white)
+                .frame(width: diameter, height: diameter)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(expanded ? "Cerrar volumen" : "Abrir volumen")
+    }
+
+    private var slider: some View {
+        SystemVolumeSlider()
+            .frame(width: max(1, maximumWidth - diameter - 16), height: 30)
+            .padding(right ? .leading : .trailing, 12)
+            .padding(right ? .trailing : .leading, 4)
+            .frame(width: expanded ? max(0, maximumWidth - diameter) : 0,
+                   alignment: right ? .trailing : .leading)
+            .clipped()
+            .opacity(expanded ? 1 : 0)
+            .allowsHitTesting(expanded)
+            .accessibilityHidden(!expanded)
+            .accessibilityLabel("Volumen de iOS")
+    }
+}
+
 private struct EdgePreview: View {
     @AppStorage("MBEdgeProbeRightV1") private var onRight = false
     @AppStorage("MBEdgeProbeHeightV1") private var relativeY = 0.54
@@ -199,8 +255,8 @@ private struct EdgePreview: View {
             let panelHeight = min(menuHeight, max(1, geo.size.height - 16))
             let panelScale = panelHeight / menuHeight
             let panelY = clampedY(in: geo, height: panelHeight)
-            let volumeStart = volumeButtonInset + 22.5 - 7
-            let volumeWidth = min(184, max(1, geo.size.width - volumeStart - 16))
+            let volumeStart = volumeButtonInset - 22.5
+            let volumeWidth = min(215, max(45, geo.size.width - volumeStart - 16))
             let volumeX = onRight ? geo.size.width - volumeStart - volumeWidth / 2 : volumeStart + volumeWidth / 2
             ZStack {
                 background
@@ -220,11 +276,6 @@ private struct EdgePreview: View {
                     opened: opened,
                     onToggle: toggleDrawer,
                     onSync: syncPreview,
-                    onVolume: {
-                        withAnimation(jellySpring) {
-                            volumeOpen.toggle()
-                        }
-                    },
                     onApp: selectApp
                 )
                 .frame(width: menuWidth, height: menuHeight)
@@ -241,14 +292,20 @@ private struct EdgePreview: View {
                                 value.translation.height / max(geo.size.height, 1))))
                         }
                     })
-                if volumeOpen && opened {
-                    volumeBar
-                        .frame(width: volumeWidth, height: 42)
-                        .transition(.scale(scale: 0.05,
-                                           anchor: onRight ? .trailing : .leading)
-                            .combined(with: .opacity))
-                        .position(x: volumeX, y: panelY + volumeButtonY * panelScale)
-                        .zIndex(4)
+                if opened {
+                    JellyVolumeControl(right: onRight, expanded: volumeOpen,
+                                       maximumWidth: volumeWidth) {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        withAnimation(jellySpring) {
+                            volumeOpen.toggle()
+                        }
+                    }
+                    .frame(width: volumeWidth, height: 45,
+                           alignment: onRight ? .trailing : .leading)
+                    .scaleEffect(x: 1, y: panelScale)
+                    .position(x: volumeX, y: panelY + volumeButtonY * panelScale)
+                    .transition(.opacity)
+                    .zIndex(4)
                 }
                 if showNotice {
                     VStack {
@@ -415,21 +472,6 @@ private struct EdgePreview: View {
             .padding(.bottom, 24)
         }
         .foregroundStyle(.white)
-    }
-
-    private var volumeBar: some View {
-        SystemVolumeSlider()
-            .frame(height: 30)
-            // Keep the slider away from the small overlap with its source icon.
-            .padding(onRight ? .trailing : .leading, 16)
-            .padding(onRight ? .leading : .trailing, 12)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background {
-                Capsule()
-                    .fill(Color(red: 0.10, green: 0.09, blue: 0.13).opacity(0.96))
-                    .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.8))
-            }
-            .accessibilityLabel("Volumen de iOS")
     }
 
     private func syncPreview() {
