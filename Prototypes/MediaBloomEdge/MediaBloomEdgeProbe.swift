@@ -35,7 +35,7 @@ private struct EdgeContour: Shape {
     func path(in rect: CGRect) -> Path {
         let t = max(0, min(1.12, expansion))
         let stretch = min(t, 1)
-        let w = min(rect.width, 13 + (rect.width - 20) * t)
+        let w = min(rect.width, 12 + (rect.width - 15) * t)
         // Height blooms early; the inward bulge catches up a fraction later.
         let h = min(rect.height, 80 + (rect.height - 80) * (1 - pow(1 - stretch, 1.35)))
         let y = (rect.height - h) / 2
@@ -45,14 +45,15 @@ private struct EdgeContour: Shape {
         }
         var p = Path()
         p.move(to: pt(0, 0))
-        p.addCurve(to: pt(0.80, 0.21),
-                   control1: pt(0, 0.09), control2: pt(0.69, 0.10))
+        // A shallow, almost flat rail with soft shoulders at the screen edge.
+        p.addCurve(to: pt(0.97, 0.16),
+                   control1: pt(0, 0.075), control2: pt(0.97, 0.09))
         p.addCurve(to: pt(1, 0.50),
-                   control1: pt(0.96, 0.37), control2: pt(1, 0.40))
-        p.addCurve(to: pt(0.80, 0.79),
-                   control1: pt(1, 0.60), control2: pt(0.96, 0.63))
+                   control1: pt(1, 0.24), control2: pt(1, 0.39))
+        p.addCurve(to: pt(0.97, 0.84),
+                   control1: pt(1, 0.61), control2: pt(1, 0.76))
         p.addCurve(to: pt(0, 1),
-                   control1: pt(0.69, 0.90), control2: pt(0, 0.91))
+                   control1: pt(0.97, 0.91), control2: pt(0, 0.925))
         p.closeSubpath()
         return p
     }
@@ -185,14 +186,22 @@ private struct EdgePreview: View {
     @State private var playing = true
     @State private var progress = 0.35
 
-    private let menuHeight: CGFloat = 462
-    private let menuWidth: CGFloat = 120
+    private let menuHeight: CGFloat = 426
+    private let menuWidth: CGFloat = 82
+    // The column is 335 pt tall (six 45 pt buttons, six 10 pt gaps,
+    // and a 5 pt separator). Its second button is 90 pt above center.
+    private let volumeButtonY: CGFloat = -90
+    private let volumeButtonInset: CGFloat = 38
     private let jellySpring = Animation.spring(response: 0.52, dampingFraction: 0.67, blendDuration: 0.12)
 
     var body: some View {
         GeometryReader { geo in
             let panelHeight = min(menuHeight, max(1, geo.size.height - 16))
-            let volumeWidth = min(226, max(100, geo.size.width - menuWidth - 20))
+            let panelScale = panelHeight / menuHeight
+            let panelY = clampedY(in: geo, height: panelHeight)
+            let volumeStart = volumeButtonInset + 22.5 - 7
+            let volumeWidth = min(184, max(1, geo.size.width - volumeStart - 16))
+            let volumeX = onRight ? geo.size.width - volumeStart - volumeWidth / 2 : volumeStart + volumeWidth / 2
             ZStack {
                 background
                 demoPlayer(in: geo)
@@ -206,31 +215,22 @@ private struct EdgePreview: View {
                             }
                         }
                 }
-                if volumeOpen && opened {
-                    volumePopup
-                        .frame(width: volumeWidth)
-                        .position(x: onRight ? geo.size.width - menuWidth - 8 - volumeWidth / 2 : menuWidth + 8 + volumeWidth / 2,
-                                  y: max(165, min(geo.size.height - 150,
-                                                geo.size.height * relativeY - 120)))
-                        .transition(.opacity.combined(with: .scale(scale: 0.94)))
-                        .zIndex(2)
-                }
                 EdgeDrawer(
                     right: onRight,
                     opened: opened,
                     onToggle: toggleDrawer,
                     onSync: syncPreview,
                     onVolume: {
-                        withAnimation(.easeOut(duration: 0.18)) {
+                        withAnimation(jellySpring) {
                             volumeOpen.toggle()
                         }
                     },
                     onApp: selectApp
                 )
                 .frame(width: menuWidth, height: menuHeight)
-                .scaleEffect(x: 1, y: panelHeight / menuHeight)
+                .scaleEffect(x: 1, y: panelScale)
                 .position(x: onRight ? geo.size.width - menuWidth / 2 : menuWidth / 2,
-                          y: clampedY(in: geo, height: panelHeight))
+                          y: panelY)
                 .zIndex(3)
                 .simultaneousGesture(DragGesture(minimumDistance: 20)
                     .onEnded { value in
@@ -241,6 +241,15 @@ private struct EdgePreview: View {
                                 value.translation.height / max(geo.size.height, 1))))
                         }
                     })
+                if volumeOpen && opened {
+                    volumeBar
+                        .frame(width: volumeWidth, height: 42)
+                        .transition(.scale(scale: 0.05,
+                                           anchor: onRight ? .trailing : .leading)
+                            .combined(with: .opacity))
+                        .position(x: volumeX, y: panelY + volumeButtonY * panelScale)
+                        .zIndex(4)
+                }
                 if showNotice {
                     VStack {
                         Spacer()
@@ -253,7 +262,7 @@ private struct EdgePreview: View {
                     }
                     .transition(.opacity)
                     .allowsHitTesting(false)
-                    .zIndex(4)
+                    .zIndex(5)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -408,24 +417,19 @@ private struct EdgePreview: View {
         .foregroundStyle(.white)
     }
 
-    private var volumePopup: some View {
-        VStack(alignment: .leading, spacing: 11) {
-            HStack(spacing: 7) {
-                Image(systemName: "speaker.wave.2.fill")
-                    .foregroundStyle(EdgeTone.purple)
-                Text("Volumen de iOS")
-                    .font(.system(size: 13, weight: .semibold))
+    private var volumeBar: some View {
+        SystemVolumeSlider()
+            .frame(height: 30)
+            // Keep the slider away from the small overlap with its source icon.
+            .padding(onRight ? .trailing : .leading, 16)
+            .padding(onRight ? .leading : .trailing, 12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background {
+                Capsule()
+                    .fill(Color(red: 0.10, green: 0.09, blue: 0.13).opacity(0.96))
+                    .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.8))
             }
-            SystemVolumeSlider()
-                .frame(height: 32)
-            Text("Control real del volumen del sistema")
-                .font(.system(size: 10))
-                .foregroundStyle(.white.opacity(0.6))
-        }
-        .padding(17)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 19))
-        .overlay(RoundedRectangle(cornerRadius: 19)
-            .stroke(.white.opacity(0.08), lineWidth: 1))
+            .accessibilityLabel("Volumen de iOS")
     }
 
     private func syncPreview() {
