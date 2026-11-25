@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key><string>es_MX</string>
+    <key>CFBundleExecutable</key><string>MediaBloomEdgeProbe</string>
+    <key>CFBundleIdentifier</key><string>com.adrifog.bloombox.mediabloomedgeprobe</string>
+    <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+    <key>CFBundleName</key><string>MediaBloom Edge</string>
+    <key>CFBundleDisplayName</key><string>Edge Demo</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>0.1.0</string>
+    <key>CFBundleVersion</key><string>1</string>
+    <key>MinimumOSVersion</key><string>16.0</string>
+    <key>LSRequiresIPhoneOS</key><true/>
+    <key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
+    <key>UISupportedInterfaceOrientations</key>
+    <array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationPortraitUpsideDown</string></array>
+    <key>UIViewControllerBasedStatusBarAppearance</key><true/>
+    <key>UIStatusBarStyle</key><string>UIStatusBarStyleLightContent</string>
+    <key>UILaunchScreen</key><dict/>
+    <key>CFBundleIcons</key><dict>
+        <key>CFBundlePrimaryIcon</key><dict>
+            <key>CFBundleIconFiles</key><array><string>EdgeIcon</string></array>
+        </dict>
+    </dict>
+</dict>
+</plist>
