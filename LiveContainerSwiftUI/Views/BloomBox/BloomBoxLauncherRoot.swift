@@ -193,6 +193,9 @@ struct BloomBoxLauncherRootView: View {
             if !BloomBoxLauncherSession.restored {
                 mode = BloomBoxLaunchPreferences.resetForNewProcess(
                     defaults: LCUtils.appGroupUserDefault, profileID: activeProfileID)
+                // Import a validated installer seed on first launch, without changing JIT settings.
+                let pairingStorage = BloomBoxJITPairingStorage()
+                if !pairingStorage.hasRecord { _ = try? pairingStorage.load() }
                 BloomBoxLauncherSession.restored = true
             }
             ready = true
