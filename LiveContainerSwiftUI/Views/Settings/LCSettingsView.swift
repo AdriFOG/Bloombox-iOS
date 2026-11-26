@@ -84,6 +84,16 @@ struct LCSettingsView: View {
     var body: some View {
         NavigationView {
             Form {
+                if UserDefaults.sideStoreExist(), sharedModel.multiLCStatus != 2 {
+                    Section {
+                        NavigationLink {
+                            BloomBoxAppleAccountView(accentHex: BloomBoxProfileStore.active.accentHex,
+                                isPreview: false, onBack: nil, onNext: nil)
+                        } label: {
+                            Label(BloomBoxL10n.isEnglish ? "Apple Account" : "Cuenta Apple", systemImage: "person.crop.circle")
+                        }
+                    }
+                }
                 if sharedModel.multiLCStatus != 2 {
                     Section{
                         if !certificateDataFound {
