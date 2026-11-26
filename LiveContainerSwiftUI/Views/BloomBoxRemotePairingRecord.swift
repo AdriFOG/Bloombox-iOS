@@ -35,7 +35,7 @@ enum BloomBoxRemotePairingRecord {
 }
 
 /// Migrates pairing data from the previous launcher directory without losing it on updates.
-/// The legacy file is retained for rollback; Remove pairing file deletes both copies.
+/// Legacy and installer sources are retained for rollback; explicit Remove pairing file deletes local copies.
 struct BloomBoxJITPairingStorage {
     let documentsDirectory: URL
 
@@ -49,6 +49,12 @@ struct BloomBoxJITPairingStorage {
 
     var legacyURL: URL {
         documentsDirectory.appendingPathComponent("StrataJIT/pairingFile.plist")
+    }
+
+    /// siboot seeds the installed host sandbox, not BloomBox’s Documents directory.
+    var installerURL: URL {
+        documentsDirectory.deletingLastPathComponent()
+            .appendingPathComponent("Library/Application Support/rp_pairing_file.plist")
     }
 
     var hasRecord: Bool {
@@ -70,18 +76,30 @@ struct BloomBoxJITPairingStorage {
             source = pairingURL
         } else if fm.fileExists(atPath: legacyURL.path) {
             source = legacyURL
+        } else if fm.fileExists(atPath: installerURL.path) {
+            // This exact path belongs to the installed host. Do not search other
+            // applications, follow symlinks, or replace an existing pairing.
+            let details = try installerURL.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+            guard details.isRegularFile == true, details.isSymbolicLink == false,
+                  installerURL.resolvingSymlinksInPath() == documentsDirectory.deletingLastPathComponent().resolvingSymlinksInPath().appendingPathComponent("Library/Application Support/rp_pairing_file.plist").standardizedFileURL,
+                  let size = details.fileSize, size > 0, size < BloomBoxRemotePairingRecord.maximumBytes else {
+                throw BloomBoxRemotePairingRecord.PairingError.invalid
+            }
+            source = installerURL
         } else {
             throw BloomBoxRemotePairingRecord.PairingError.missing
         }
         let data = try Data(contentsOf: source)
         try BloomBoxRemotePairingRecord.validate(data)
-        if source == legacyURL { try save(data) }
+        if source != pairingURL { try save(data) }
         return data
     }
 
     func remove() throws {
         let fm = FileManager.default
-        for file in [pairingURL, legacyURL] where fm.fileExists(atPath: file.path) {
+        // Explicit removal also removes the seed from this app’s own sandbox,
+        // so it cannot be silently re-imported at the next launch.
+        for file in [pairingURL, legacyURL, installerURL] where fm.fileExists(atPath: file.path) {
             try fm.removeItem(at: file)
         }
     }
