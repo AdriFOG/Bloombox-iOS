@@ -88,7 +88,7 @@ struct BloomBoxJITPairingStorage {
         let resolvedRoot = root.resolvingSymlinksInPath().standardizedFileURL.path
         let relative = url.standardizedFileURL.path.dropFirst(root.standardizedFileURL.path.count)
         return relative.hasPrefix("/") &&
-            url.resolvingSymlinksInPath().standardizedFileURL.path == resolvedRoot + relative
+            url.resolvingSymlinksInPath().standardizedFileURL.path == resolvedRoot + String(relative)
     }
 
     private func exists(_ url: URL) -> Bool {
@@ -112,6 +112,15 @@ struct BloomBoxJITPairingStorage {
     func readInstallerSeed() throws -> Data {
         guard exists(installerURL) else { throw BloomBoxRemotePairingRecord.PairingError.missing }
         let data = try readLocal(installerURL)
+        try BloomBoxRemotePairingRecord.validate(data)
+        return data
+    }
+
+    /// Read-only inspection for diagnostics/export, without migration or synchronization.
+    func readCurrentPairing() throws -> Data {
+        let url = exists(pairingURL) ? pairingURL : legacyURL
+        guard exists(url) else { throw BloomBoxRemotePairingRecord.PairingError.missing }
+        let data = try readLocal(url)
         try BloomBoxRemotePairingRecord.validate(data)
         return data
     }
