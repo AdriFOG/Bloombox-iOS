@@ -1,0 +1,39 @@
+name: Cancel superseded pairing preview builds
+on:
+  push:
+    branches: [publish/installer-pairing-preview-1]
+    paths: ['.github/workflows/cancel-superseded-pairing-preview.yml']
+permissions:
+  actions: write
+  contents: read
+jobs:
+  cancel:
+    if: github.repository == 'AdriFOG/Bloombox-iOS'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Cancel only explicitly superseded experimental jobs
+        run: |
+          set -euo pipefail
+          while read -r id sha; do
+            run="$(gh api "repos/$GH_REPO/actions/runs/$id")"
+            if ! jq -e --arg sha "$sha" '.head_branch == "fix/installer-pairing-import" and .head_sha == $sha and (.status == "queued" or .status == "in_progress" or .status == "waiting")' <<<"$run" >/dev/null; then
+              echo "Skipping completed or mismatched run $id"
+              continue
+            fi
+            gh api -X POST "repos/$GH_REPO/actions/runs/$id/cancel" || echo "Run $id finished before cancellation or could not be canceled"
+          done <<'RUNS'
+          45787075071 e65c0945a87f3e6932f91f0b948ae66c30f971aa
+          45787082236 e65c0945a87f3e6932f91f0b948ae66c30f971aa
+          45787092258 a32b6717e5a77fe5f6e59a786bf304dca560ea5e
+          45787099709 a32b6717e5a77fe5f6e59a786bf304dca560ea5e
+          45787132866 ed07a610de2a25850daa7cb90d7303ed17dc13a1
+          45787139168 ed07a610de2a25850daa7cb90d7303ed17dc13a1
+          45787139145 ed07a610de2a25850daa7cb90d7303ed17dc13a1
+          45787171488 3152fea4a3779bdf6d1f5abc8db036123c65d6c0
+          45787180248 3152fea4a3779bdf6d1f5abc8db036123c65d6c0
+          45787180213 3152fea4a3779bdf6d1f5abc8db036123c65d6c0
+          45787218352 ee950f8e59e316199ca1045a46be1b64cf16c4d9
+          RUNS
