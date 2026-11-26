@@ -64,3 +64,69 @@ do { _ = try storage.load(); fatalError("Imported symlink seed") }
 catch BloomBoxRemotePairingRecord.PairingError.invalid { }
 precondition(!fm.fileExists(atPath: storage.pairingURL.path))
 print("PASS: installer seed migration, existing record precedence, explicit removal, invalid and symlink rejection.")
+
+ 
+// Handoff integration: the exact sideStore guest path and preferences contract.
+// Synthetic keys only; no real device credentials are used by CI.
+func sandbox(_ name: String) -> BloomBoxJITPairingStorage {
+    BloomBoxJITPairingStorage(documentsDirectory: tempRoot.appendingPathComponent(name).appendingPathComponent("Documents", isDirectory: true))
+}
+func writeSeed(_ storage: BloomBoxJITPairingStorage, _ bytes: Data) throws {
+    try fm.createDirectory(at: storage.installerURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try bytes.write(to: storage.installerURL)
+}
+let fresh = sandbox("fresh")
+precondition(fresh.handOffInstallerPairing() == .missing)
+precondition(!fm.fileExists(atPath: fresh.sideStorePreferencesURL.path))
+var seededRecord = valid
+seededRecord["alt_irk"] = Data(repeating: 7, count: 16)
+let realShape = try PropertyListSerialization.data(fromPropertyList: seededRecord, format: .xml, options: 0)
+try writeSeed(fresh, realShape)
+try fm.createDirectory(at: fresh.sideStorePreferencesURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+let otherPrefs: [String: Any] = ["unrelatedPreference": 123, "isPairingReset": true]
+try PropertyListSerialization.data(fromPropertyList: otherPrefs, format: .binary, options: 0).write(to: fresh.sideStorePreferencesURL)
+precondition(fresh.handOffInstallerPairing() == .delivered)
+precondition(try! fresh.readInstallerSeed() == realShape)
+precondition(try! fresh.readCurrentPairing() == realShape)
+let deliveredRemote = try fresh.readSideStoreRemote()
+precondition(BloomBoxJITPairingStorage.matches(deliveredRemote, realShape))
+let deliveredDict = try PropertyListSerialization.propertyList(from: deliveredRemote, format: nil) as! [String: Any]
+precondition(deliveredDict["alt_irk"] as? Data == Data(repeating: 7, count: 16))
+let prefs = try PropertyListSerialization.propertyList(from: Data(contentsOf: fresh.sideStorePreferencesURL), format: nil) as! [String: Any]
+precondition(prefs["isPairingReset"] as? Bool == false)
+precondition(prefs["activePairingProtocol"] as? String == "rppairing")
+precondition(prefs["unrelatedPreference"] as? Int == 123)
+precondition(fresh.handOffInstallerPairing() == .alreadyDelivered)
+// Resetting SideStore later does not silently resurrect the record.
+try fm.removeItem(at: fresh.sideStoreRemoteURL)
+precondition(fresh.handOffInstallerPairing() == .alreadyDelivered)
+precondition(!fm.fileExists(atPath: fresh.sideStoreRemoteURL.path))
+
+let manual = sandbox("manual")
+try writeSeed(manual, realShape)
+try manual.save(secondData)
+precondition(manual.handOffInstallerPairing() == .conflict)
+precondition(try! manual.readCurrentPairing() == secondData)
+precondition(!fm.fileExists(atPath: manual.sideStoreRemoteURL.path))
+
+let existingRemote = sandbox("existingRemote")
+try writeSeed(existingRemote, realShape)
+try fm.createDirectory(at: existingRemote.sideStoreRemoteURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+try secondData.write(to: existingRemote.sideStoreRemoteURL)
+precondition(existingRemote.handOffInstallerPairing() == .conflict)
+precondition(try! existingRemote.readSideStoreRemote() == secondData)
+precondition(!fm.fileExists(atPath: existingRemote.pairingURL.path))
+
+let bad = sandbox("bad")
+try writeSeed(bad, Data("invalid".utf8))
+precondition(bad.handOffInstallerPairing() == .invalid)
+precondition(!fm.fileExists(atPath: bad.sideStoreRemoteURL.path))
+let linked = sandbox("linked")
+try writeSeed(linked, realShape)
+let outside = tempRoot.appendingPathComponent("outsideSideStore")
+try fm.createDirectory(at: outside, withIntermediateDirectories: true)
+try fm.createDirectory(at: linked.documentsDirectory, withIntermediateDirectories: true)
+try fm.createSymbolicLink(at: linked.documentsDirectory.appendingPathComponent("SideStore"), withDestinationURL: outside)
+precondition(linked.handOffInstallerPairing() == .invalid)
+precondition(!fm.fileExists(atPath: outside.appendingPathComponent("Documents").path))
+print("PASS: fresh installer handoff, XML/alt_irk, exact SideStore preferences, matching records, reset preservation, conflicting records and sandbox boundaries.")
