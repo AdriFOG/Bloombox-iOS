@@ -22,6 +22,7 @@ on:
       - migration/import-full-source
       - feature/modules-liquidglass-ram-placeholder
       - feature/nova-launcher-v2
+      - fix/installer-pairing-import
   pull_request:
     branches:
       - main
