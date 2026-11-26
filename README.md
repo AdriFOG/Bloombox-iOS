@@ -8,6 +8,8 @@
 
 A personal home for your apps, widgets and files — with room to experiment.
 
+<a href="https://adrifog.github.io/Bloombox-iOS-Installer/"><img src="https://img.shields.io/badge/INSTALL%20BLOOMBOX-NO%20PC-7856D8?style=for-the-badge&logo=apple&logoColor=white" alt="Install BloomBox without a computer"></a>
+
 [**Download BloomBox 3.5.0**](https://github.com/AdriFOG/Bloombox-iOS/releases/latest) · [Builds](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml) · [Report an issue](https://github.com/AdriFOG/Bloombox-iOS/issues)
 
 [![Build](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml)
@@ -18,6 +20,17 @@ A personal home for your apps, widgets and files — with room to experiment.
 **BloomBox is an independently maintained iOS launcher and application container built on LiveContainer technology.** Bring compatible apps into one customizable space, organize your desktop, discover community projects and manage files without leaving BloomBox.
 
 Its home screen lives **inside the app**; it does not replace the iOS Home Screen. Experimental features are clearly identified below so you can choose what to try.
+
+> [!TIP]
+> **🌸 Install BloomBox without a computer / Instala BloomBox sin computadora**
+>
+> Follow the bilingual, step-by-step installer with video tutorials directly on your iPhone. / Sigue el instalador bilingüe con videotutoriales directamente desde tu iPhone.
+>
+> **[Open BloomBox Installer · Abrir instalador](https://adrifog.github.io/Bloombox-iOS-Installer/)**
+>
+> Requires iOS 27+, Open Minis 1.16+, LocalDevVPN, Wi-Fi and Developer Mode. Uses the third-party siboot signing tool; review the [security notes and known limitations](docs/BloomBox-3.5.0-Release-Notes.md) before using your Apple account.
+>
+> Requiere iOS 27+, Open Minis 1.16+, LocalDevVPN, Wi-Fi y modo de desarrollador. Utiliza siboot; consulta las notas de seguridad antes de iniciar sesión.
 
 ## What's new
 
