@@ -1,0 +1,7 @@
+# Native SideStore integration — phase 1
+
+The account page after profile creation uses the pinned bundled SideStore's existing sign-in controller (including its original two-factor authentication and Preview 4 repair). It does not implement Apple credential entry in BloomBox, request credential values from Keychain, or transfer sessions from another app. Only local item-presence status is checked; a saved local token is not a verified live Apple session. Remote expiry is handled by the signing engine when needed.
+
+The profile/checkpoint is saved before launching the bundled guest because the current host architecture can restart the BloomBox process. A short-lived, credential-free request selects the existing native SideStore Settings tab and sign-in action. The return button resumes the wizard. Preview mode remains non-mutating. Existing completed wizards are not forced to repeat. The Apple Account settings entry is available for maintenance.
+
+Known limitation: the bundled SideStore is a prebuilt binary. The login is its native UI, not an inline SwiftUI credential form. On-device testing is required for routing, account visibility, login cancellation, return, and two-factor completion. External SideStore accounts remain isolated unless imported using a supported, authorized mechanism. The background signing/installation engine and actual installation progress are not implemented in this phase. RAM+ still uses the latest stable release; the canonical repository address is corrected, with no change to signing or handoff behavior.

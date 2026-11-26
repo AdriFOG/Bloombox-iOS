@@ -12,7 +12,7 @@ func fixture(tag: String = "v1.3.0", assetName: String = BloomBoxRAMRelease.asse
         "assets": [
             ["name": assetName, "digest": digest ?? "sha256:" + validDigest,
              "size": publishedSize,
-             "browser_download_url": location ?? "https://github.com/adri23rep-stack/BloomBox/releases/download/\(tag)/\(assetName)"]
+             "browser_download_url": location ?? "https://github.com/AdriFOG/Bloombox-iOS/releases/download/\(tag)/\(assetName)"]
         ]
     ]
     return try! JSONSerialization.data(withJSONObject: value)
@@ -43,9 +43,9 @@ precondition(rejects(fixture(digest: "sha256:" + String(repeating: "g", count: 6
 precondition(rejects(fixture(publishedSize: 0)))
 precondition(rejects(fixture(publishedSize: 1024 * 1024 * 1024)))
 precondition(rejects(fixture(location: "https://evil.example/BloomBox-SideStore-unsigned.ipa")))
-precondition(rejects(fixture(location: "http://github.com/adri23rep-stack/BloomBox/releases/download/v1.3.0/BloomBox-SideStore-unsigned.ipa")))
-precondition(rejects(fixture(location: "https://github.com/adri23rep-stack/BloomBox/releases/download/v1.2.0/BloomBox-SideStore-unsigned.ipa")))
-precondition(rejects(fixture(location: "https://github.com/adri23rep-stack/BloomBox/releases/download/v1.3.0/BloomBox-SideStore-unsigned.ipa?token=bad")))
+precondition(rejects(fixture(location: "http://github.com/AdriFOG/Bloombox-iOS/releases/download/v1.3.0/BloomBox-SideStore-unsigned.ipa")))
+precondition(rejects(fixture(location: "https://github.com/AdriFOG/Bloombox-iOS/releases/download/v1.2.0/BloomBox-SideStore-unsigned.ipa")))
+precondition(rejects(fixture(location: "https://github.com/AdriFOG/Bloombox-iOS/releases/download/v1.3.0/BloomBox-SideStore-unsigned.ipa?token=bad")))
 precondition(rejects(fixture(assetName: "A-different-unsigned.ipa")))
 precondition(rejects(Data("[]".utf8)))
 precondition(rejects(Data("{}".utf8)))

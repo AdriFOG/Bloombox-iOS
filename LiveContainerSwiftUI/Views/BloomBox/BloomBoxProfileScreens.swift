@@ -14,6 +14,7 @@ struct BloomBoxWizardFlowView: View {
     @State private var photo: UIImage?
     @State private var selectedTheme = "KirbyPink"
     @State private var selectedLauncher = "hybrid"
+    @State private var restoredCheckpoint = false
 
     var body: some View {
         Group {
@@ -29,31 +30,34 @@ struct BloomBoxWizardFlowView: View {
                     name: $name, accentHex: $accentHex, photo: $photo,
                     isPreview: isPreview, isWizardPage: true, isEditing: false,
                     onBack: { forward(to: 0) },
-                    onContinue: { forward(to: 2) }
+                    onContinue: { completeProfile() }
                 )
             case 2:
+                BloomBoxAppleAccountView(accentHex: accentHex, isPreview: isPreview,
+                    onBack: { forward(to: 1) }, onNext: { forward(to: 3) })
+            case 3:
                 BloomBoxWizardHighlightsView(
                     accentHex: accentHex,
-                    onBack: { forward(to: 1) },
-                    onNext: { forward(to: 3) }
-                )
-            case 3:
-                BloomBoxWizardValidationView(
-                    accentHex: accentHex, isPreview: isPreview,
                     onBack: { forward(to: 2) },
-                    onFinish: { forward(to: 4) }
+                    onNext: { forward(to: 4) }
                 )
             case 4:
+                BloomBoxWizardValidationView(
+                    accentHex: accentHex, isPreview: isPreview,
+                    onBack: { forward(to: 3) },
+                    onFinish: { forward(to: 5) }
+                )
+            case 5:
                 BloomBoxWizardThemeChoiceView(
                     selectedID: $selectedTheme, accentHex: accentHex,
                     isPreview: isPreview,
-                    onBack: { forward(to: 3) },
-                    onFinish: { forward(to: 5) }
+                    onBack: { forward(to: 4) },
+                    onFinish: { forward(to: 6) }
                 )
             default:
                 BloomBoxWizardLauncherChoiceView(
                     selection: $selectedLauncher, accentHex: accentHex,
-                    onBack: { forward(to: 4) },
+                    onBack: { forward(to: 5) },
                     onFinish: {
                         if !isPreview {
                             // Save the theme and profile before the launcher mode.
@@ -68,6 +72,7 @@ struct BloomBoxWizardFlowView: View {
                             defaults.set(
                                 BloomBoxLaunchPreferences.runtimeMode(for: selectedLauncher),
                                 forKey: BloomBoxLaunchPreferences.sessionKey)
+                            defaults.removeObject(forKey: BloomBoxAccountPolicy.resumeKey)
                         }
                         onFinish()
                     }
@@ -75,9 +80,32 @@ struct BloomBoxWizardFlowView: View {
             }
         }
         .animation(.easeInOut(duration: 0.28), value: page)
+        .onAppear { restoreAccountCheckpoint() }
+    }
+
+    @MainActor private func completeProfile() {
+        if isPreview { forward(to: 2); return }
+        // Guest authentication can restart the host. Save profile and checkpoint first.
+        BloomBoxProfileStore.finishInitialSetup(name: name, accentHex: accentHex, image: photo)
+        let defaults = LiveContainerPreferencesAdapter.defaults
+        defaults.set(true, forKey: BloomBoxAccountPolicy.resumeKey)
+        defaults.synchronize()
+        forward(to: BloomBoxAccountPolicy.initialAccountPage(BloomBoxAppleAccount.state()))
+    }
+
+    @MainActor private func restoreAccountCheckpoint() {
+        guard !restoredCheckpoint else { return }
+        restoredCheckpoint = true
+        guard !isPreview, LiveContainerPreferencesAdapter.defaults.bool(forKey: BloomBoxAccountPolicy.resumeKey),
+              let profile = BloomBoxProfileStore.profiles.first(where: { $0.id == BloomBoxUserProfile.primaryID }) else { return }
+        name = profile.name
+        accentHex = profile.accentHex
+        photo = BloomBoxProfileStore.photo(for: profile)
+        page = BloomBoxAccountPolicy.initialAccountPage(BloomBoxAppleAccount.state())
     }
 
     private func forward(to newPage: Int) {
+        if !isPreview && newPage < 2 { LiveContainerPreferencesAdapter.defaults.removeObject(forKey: BloomBoxAccountPolicy.resumeKey) }
         withAnimation(.easeInOut(duration: 0.34)) { page = newPage }
     }
 }
@@ -131,7 +159,7 @@ struct BloomBoxProfileEditorView: View {
                             Label("BloomBox", systemImage: "sparkle")
                                 .font(.system(size: 14, weight: .bold, design: .rounded))
                             Spacer()
-                            Text("02 / 05")
+                            Text("02 / 06")
                                 .font(.system(size: 12, weight: .medium, design: .rounded)
                                         .monospacedDigit())
                         }

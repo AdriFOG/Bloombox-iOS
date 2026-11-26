@@ -47,7 +47,7 @@ struct BloomBoxWizardThemeChoiceView: View {
                         Label("BloomBox", systemImage: "sparkle")
                             .font(.system(size: 14, weight: .bold, design: .rounded))
                         Spacer()
-                        Text("05 / 05")
+                        Text("06 / 06")
                             .font(.system(size: 12, weight: .medium, design: .rounded).monospacedDigit())
                     }
                     .foregroundStyle(ink.opacity(0.70))

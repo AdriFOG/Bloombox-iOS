@@ -4,7 +4,7 @@ import Foundation
 /// The app's CFBundleShortVersionString comes from upstream LiveContainer and
 /// is NOT the BloomBox release tag. Do not match releases using that field.
 enum BloomBoxRAMRelease {
-    static let latestAPI = URL(string: "https://api.github.com/repos/adri23rep-stack/BloomBox/releases/latest")!
+    static let latestAPI = URL(string: "https://api.github.com/repos/AdriFOG/Bloombox-iOS/releases/latest")!
     static let assetName = "BloomBox-SideStore-unsigned.ipa"
 
     struct Asset {
@@ -43,7 +43,7 @@ enum BloomBoxRAMRelease {
               components.port == nil,
               components.user == nil, components.password == nil,
               components.query == nil, components.fragment == nil,
-              components.percentEncodedPath == "/adri23rep-stack/BloomBox/releases/download/\(tag)/\(assetName)",
+              components.percentEncodedPath == "/AdriFOG/Bloombox-iOS/releases/download/\(tag)/\(assetName)",
               let size = item["size"] as? Int64,
               size > 0 && size < 1024 * 1024 * 1024 else {
             throw Failure(message: "La última release no tiene una IPA oficial única con URL, tamaño y SHA-256 verificables. No se instaló nada.")

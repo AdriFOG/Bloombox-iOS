@@ -476,6 +476,92 @@ static void BBInstallAnisetteLoginHook(void) {
     BBAuthOriginalViewDidLoad = (void (*)(UIViewController *, SEL))BBInstallAuthMethod(cls, @selector(viewDidLoad), (IMP)BBAuthViewDidLoad);
 }
 
+// Account entry from BloomBox: a short-lived request contains only an ID,
+// mode and expiry. Route to SideStore's own authentication controller.
+@interface BBAccountReturnTarget : NSObject
+- (void)returnToBloomBox;
+@end
+@implementation BBAccountReturnTarget
+- (void)returnToBloomBox { [LCSharedUtils launchToGuestAppWithClassicMode:0]; }
+@end
+
+static char BBAccountReturnKey;
+static void (*BBAccountOriginalTabAppear)(UITabBarController *, SEL, BOOL);
+
+static Class BBAccountControllerClass(NSString *name) {
+    return NSClassFromString([@"SideStore." stringByAppendingString:name]) ?:
+           NSClassFromString([@"AltStore." stringByAppendingString:name]) ?:
+           NSClassFromString(name);
+}
+
+static void BBAccountShowNativeLogin(UITableViewController *settings, NSUInteger remaining) {
+    if (!settings.viewIfLoaded.window || settings.presentedViewController ||
+        settings.navigationController.presentedViewController) {
+        if (remaining > 0) {
+            __weak UITableViewController *weakSettings = settings;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                if (weakSettings) BBAccountShowNativeLogin(weakSettings, remaining - 1);
+            });
+        }
+        return;
+    }
+    UITableView *table = settings.tableView;
+    // The pinned SettingsVC's signIn section is section zero.
+    // Use its existing action only while the native sign-in row is present.
+    if ([table numberOfSections] > 0 && [table numberOfRowsInSection:0] == 1 &&
+        [settings respondsToSelector:@selector(tableView:didSelectRowAtIndexPath:)]) {
+        [settings tableView:table didSelectRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:0]];
+    }
+}
+
+static void BBAccountTabAppear(UITabBarController *tab, SEL cmd, BOOL animated) {
+    BBAccountOriginalTabAppear(tab, cmd, animated);
+    NSString *group = LCSharedUtils.appGroupID;
+    NSUserDefaults *defaults = group.length ? [[NSUserDefaults alloc] initWithSuiteName:group] : nil;
+    NSDictionary *request = [defaults dictionaryForKey:@"BloomBoxNativeAccountRequestV1"];
+    if (!request) return;
+    [defaults removeObjectForKey:@"BloomBoxNativeAccountRequestV1"];
+    [defaults synchronize];
+    NSString *nonce = request[@"id"], *mode = request[@"mode"];
+    NSDate *expiry = request[@"expires"];
+    if (![nonce isKindOfClass:NSString.class] || ![[NSUUID alloc] initWithUUIDString:nonce] ||
+        ![expiry isKindOfClass:NSDate.class] || [expiry timeIntervalSinceNow] <= 0 ||
+        [expiry timeIntervalSinceNow] > 125 ||
+        ![mode isKindOfClass:NSString.class] || ![@[@"signin", @"manage"] containsObject:mode]) return;
+    Class cls = BBAccountControllerClass(@"SettingsViewController");
+    if (!cls || ![cls isSubclassOfClass:UITableViewController.class]) return;
+    for (UIViewController *candidate in tab.viewControllers) {
+        UIViewController *root = [candidate isKindOfClass:UINavigationController.class] ?
+            ((UINavigationController *)candidate).viewControllers.firstObject : candidate;
+        if (![root isKindOfClass:cls]) continue;
+        UITableViewController *settings = (UITableViewController *)root;
+        if (!objc_getAssociatedObject(settings, &BBAccountReturnKey)) {
+            BBAccountReturnTarget *target = [BBAccountReturnTarget new];
+            UIBarButtonItem *back = [[UIBarButtonItem alloc] initWithTitle:@"BloomBox" style:UIBarButtonItemStylePlain
+                target:target action:@selector(returnToBloomBox)];
+            NSMutableArray *items = [settings.navigationItem.leftBarButtonItems mutableCopy] ?: [NSMutableArray array];
+            [items insertObject:back atIndex:0];
+            settings.navigationItem.leftBarButtonItems = items;
+            objc_setAssociatedObject(settings, &BBAccountReturnKey, target, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        tab.selectedViewController = candidate;
+        if ([mode isEqualToString:@"signin"]) {
+            __weak UITableViewController *weakSettings = settings;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                if (weakSettings) BBAccountShowNativeLogin(weakSettings, 8);
+            });
+        }
+        break;
+    }
+}
+
+static void BBInstallAccountEntryHook(void) {
+    Class cls = BBAccountControllerClass(@"TabBarController");
+    if (!cls || ![cls isSubclassOfClass:UITabBarController.class] || BBAccountOriginalTabAppear) return;
+    BBAccountOriginalTabAppear = (void (*)(UITabBarController *, SEL, BOOL))
+        BBInstallAuthMethod(cls, @selector(viewDidAppear:), (IMP)BBAccountTabAppear);
+}
+
 void installSideStoreHooks(void) {
     Class ramProtocol = NSClassFromString(@"BloomBoxRAMProtocol");
     if (ramProtocol) {
@@ -496,6 +582,7 @@ void installSideStoreHooks(void) {
     
     if (!NSUserDefaults.isLiveProcess) {
         BBInstallAnisetteLoginHook();
+        BBInstallAccountEntryHook();
         // add escape button
         Method viewDidLoadMethod = class_getInstanceMethod(PrivClass(MyAppsViewController), @selector(viewDidLoad));
         SideStoreMyAppsViewController_orig_viewDidload = (void (*)(UICollectionViewController *, SEL))method_getImplementation(viewDidLoadMethod);

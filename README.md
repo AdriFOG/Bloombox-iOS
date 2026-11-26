@@ -10,7 +10,7 @@ A personal home for your apps, widgets and files — with room to experiment.
 
 <a href="https://adrifog.github.io/Bloombox-iOS-Installer/"><img src="https://img.shields.io/badge/INSTALL%20BLOOMBOX-NO%20PC-7856D8?style=for-the-badge&logo=apple&logoColor=white" alt="Install BloomBox without a computer"></a>
 
-[**Download BloomBox 3.5.0**](https://github.com/AdriFOG/Bloombox-iOS/releases/latest) · [Builds](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml) · [Report an issue](https://github.com/AdriFOG/Bloombox-iOS/issues)
+[**Download BloomBox 3.6.0**](https://github.com/AdriFOG/Bloombox-iOS/releases/latest) · [Builds](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml) · [Report an issue](https://github.com/AdriFOG/Bloombox-iOS/issues)
 
 [![Build](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-purple.svg)](LICENSE) · [Original-work attribution](LICENSE-ADDITIONAL-TERMS.md)
@@ -33,6 +33,8 @@ Its home screen lives **inside the app**; it does not replace the iOS Home Scree
 > Requiere iOS 27+, Open Minis 1.16+, LocalDevVPN, Wi-Fi y modo de desarrollador. Utiliza siboot; consulta las notas de seguridad antes de iniciar sesión.
 
 ## What's new
+
+**BloomBox 3.6.0 — Apple Account Onboarding:** after creating your profile, link your Apple Account through the bundled SideStore sign-in with the existing connection repair option. Saved local accounts are detected without copying credentials. Manage the account from BloomBox Settings. RAM+ release discovery now points at the current repository and selects the latest stable build. See the [3.6.0 release notes](docs/BloomBox-3.6.0-Release-Notes.md) for scope and limitations.
 
 **BloomBox 3.5.0 — No-PC Installer & SideStore Repair:** install using [BloomBox Installer](https://adrifog.github.io/Bloombox-iOS-Installer/) and Open Minis on supported iOS devices. Automatic installer pairing handoff, JIT pairing diagnostics, one-time Anisette metadata synchronization and a Repair connection button in SideStore's sign-in screen. Apple account authentication remains in SideStore. RAM+ server approval has been tested, but automatic reinstall is not reliable yet. Read the [3.5.0 release notes and security limitations](docs/BloomBox-3.5.0-Release-Notes.md) before installing.
 
