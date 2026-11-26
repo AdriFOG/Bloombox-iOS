@@ -57,11 +57,7 @@ struct BloomBoxJITPairingStorage {
             .appendingPathComponent("Library/Application Support/rp_pairing_file.plist")
     }
 
-    private var installerPathIsLocal: Bool {
-        let sandbox = documentsDirectory.deletingLastPathComponent().resolvingSymlinksInPath()
-        let expected = sandbox.appendingPathComponent("Library/Application Support/rp_pairing_file.plist")
-        return installerURL.resolvingSymlinksInPath().standardizedFileURL.path == expected.standardizedFileURL.path
-    }
+    private var installerPathIsLocal: Bool { isLocal(installerURL) }
 
     // SideInstaller 2.2.0 uses these paths and settings for modern SideStore:
     // https://github.com/FrizzleM/SideInstaller/blob/v2.2.0/ios-app/PairingTargets.swift
@@ -84,11 +80,23 @@ struct BloomBoxJITPairingStorage {
     }
 
     private func isLocal(_ url: URL) -> Bool {
-        let root = documentsDirectory.deletingLastPathComponent()
-        let resolvedRoot = root.resolvingSymlinksInPath().standardizedFileURL.path
-        let relative = url.standardizedFileURL.path.dropFirst(root.standardizedFileURL.path.count)
-        return relative.hasPrefix("/") &&
-            url.resolvingSymlinksInPath().standardizedFileURL.path == resolvedRoot + String(relative)
+        let root = documentsDirectory.deletingLastPathComponent().standardizedFileURL
+        let rootPrefix = root.path + "/"
+        let path = url.standardizedFileURL.path
+        guard path.hasPrefix(rootPrefix) else { return false }
+        let components = path.dropFirst(rootPrefix.count).split(separator: "/")
+        guard !components.isEmpty else { return false }
+        // Resolving the final URL alone is insufficient when a descendant
+        // doesn't exist yet. Reject symlinks at every existing component,
+        // including a dangling link, before any directory or file is created.
+        let fm = FileManager.default
+        var cursor = root
+        for component in components {
+            cursor.appendPathComponent(String(component))
+            if (try? fm.destinationOfSymbolicLink(atPath: cursor.path)) != nil { return false }
+            if !fm.fileExists(atPath: cursor.path) { break }
+        }
+        return true
     }
 
     private func exists(_ url: URL) -> Bool {
