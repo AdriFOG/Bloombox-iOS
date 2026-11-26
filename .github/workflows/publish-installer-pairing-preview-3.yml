@@ -1,0 +1,39 @@
+name: Publish tested installer pairing preview
+on:
+  push:
+    branches: [publish/installer-pairing-preview-1]
+    paths: ['.github/workflows/publish-installer-pairing-preview-3.yml']
+permissions:
+  actions: read
+  contents: write
+jobs:
+  publish:
+    if: github.repository == 'AdriFOG/Bloombox-iOS'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_ID: '45796384975'
+      ARTIFACT_ID: '15105982612'
+      TESTED_HEAD: '02f7ec335467900dbe2b4997838f2cee6b3ff201'
+      TAG: 'v3.4.0-installer-pairing.3'
+    steps:
+      - name: Verify exact successful build and artifact
+        run: |
+          set -euo pipefail
+          gh api "repos/$GH_REPO/actions/runs/$RUN_ID" | jq -e --arg sha "$TESTED_HEAD" '.conclusion == "success" and .head_sha == $sha and .head_branch == "fix/installer-pairing-import"'
+          gh api "repos/$GH_REPO/actions/artifacts/$ARTIFACT_ID" | jq -e --argjson run "$RUN_ID" '.name == "BloomBox-SideStore-unsigned.ipa" and .expired == false and .workflow_run.id == $run and .digest == "sha256:eb2a32f5953c86570bd5589988038f001747fce507b84f8b8159c40d01264cba"'
+          gh api "repos/$GH_REPO/actions/artifacts/$ARTIFACT_ID/zip" > artifact.zip
+          echo "eb2a32f5953c86570bd5589988038f001747fce507b84f8b8159c40d01264cba  artifact.zip" | sha256sum -c -
+          mkdir release
+          unzip -j artifact.zip BloomBox-SideStore-unsigned.ipa -d release
+          unzip -tq release/BloomBox-SideStore-unsigned.ipa
+          (cd release && sha256sum BloomBox-SideStore-unsigned.ipa > SHA256SUMS.txt)
+      - name: Publish existing IPA without rebuilding
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Prerelease already exists; refusing overwrite."
+            exit 1
+          fi
+          gh release create "$TAG" release/BloomBox-SideStore-unsigned.ipa release/SHA256SUMS.txt --target "$TESTED_HEAD" --prerelease --latest=false --title "BloomBox 3.4.0 — Installer Pairing Preview 3" --notes "Experimental no-PC pairing import. Exact IPA from successful Actions run 45796384975, artifact 15105982612. PR #32; tested push commit $TESTED_HEAD. Adds one-time official remote Anisette configuration for validated installer handoffs. No certificate, password, token or ADI blob changes. Pairing and JIT behavior unchanged. Login and RAM+ still require on-device validation. No rebuild. Not a stable release. / Configuración experimental de Anisette; conserva la firma, el pairing y JIT. Inicio de sesión y RAM+ pendientes de prueba."
