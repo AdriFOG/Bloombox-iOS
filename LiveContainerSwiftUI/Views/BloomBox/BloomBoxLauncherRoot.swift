@@ -193,9 +193,11 @@ struct BloomBoxLauncherRootView: View {
             if !BloomBoxLauncherSession.restored {
                 mode = BloomBoxLaunchPreferences.resetForNewProcess(
                     defaults: LCUtils.appGroupUserDefault, profileID: activeProfileID)
-                // Import a validated installer seed on first launch, without changing JIT settings.
-                let pairingStorage = BloomBoxJITPairingStorage()
-                if !pairingStorage.hasRecord { _ = try? pairingStorage.load() }
+                // Deliver the installer seed before the bundled SideStore starts.
+                // No seed means a normal installation: no preferences are touched.
+                let pairingStorage = BloomBoxJITPairingStorage(documentsDirectory: LCPath.docPath)
+                let handoff = pairingStorage.handOffInstallerPairing()
+                UserDefaults.standard.set(handoff.rawValue, forKey: "BloomBoxInstallerPairingHandoffStatus")
                 BloomBoxLauncherSession.restored = true
             }
             ready = true
