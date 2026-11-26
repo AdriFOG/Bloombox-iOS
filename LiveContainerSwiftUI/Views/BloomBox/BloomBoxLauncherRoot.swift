@@ -198,6 +198,10 @@ struct BloomBoxLauncherRootView: View {
                 let pairingStorage = BloomBoxJITPairingStorage(documentsDirectory: LCPath.docPath)
                 let handoff = pairingStorage.handOffInstallerPairing()
                 UserDefaults.standard.set(handoff.rawValue, forKey: "BloomBoxInstallerPairingHandoffStatus")
+                if handoff == .delivered || handoff == .alreadyDelivered {
+                    let anisette = pairingStorage.configureInstallerAnisette()
+                    UserDefaults.standard.set(anisette.rawValue, forKey: "BloomBoxInstallerAnisetteStatus")
+                }
                 BloomBoxLauncherSession.restored = true
             }
             ready = true

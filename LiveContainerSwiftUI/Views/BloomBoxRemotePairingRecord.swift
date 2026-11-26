@@ -218,6 +218,51 @@ struct BloomBoxJITPairingStorage {
         } catch { return .failed }
     }
 
+    // Plan B: only change SideStore's supported Anisette preferences, and only
+    // for a validated installer handoff. Never read or copy credentials,
+    // signing certificates, session tokens or ADI blobs here.
+    enum AnisetteRepairResult: String {
+        case notApplicable, alreadyConfigured, configured, failed
+    }
+
+    private var anisetteRepairMarker: URL {
+        installerURL.deletingLastPathComponent().appendingPathComponent("BloomBoxInstallerAnisette-v1")
+    }
+
+    func configureInstallerAnisette() -> AnisetteRepairResult {
+        guard exists(handoffMarker), isLocal(handoffMarker),
+              isLocal(anisetteRepairMarker), isLocal(sideStorePreferencesURL),
+              let seed = try? readInstallerSeed(),
+              let remote = try? readSideStoreRemote(),
+              Self.matches(seed, remote) else { return .notApplicable }
+        if exists(anisetteRepairMarker) { return .alreadyConfigured }
+        do {
+            var prefs = try preferences()
+            guard prefs["isPairingReset"] as? Bool == false,
+                  prefs["activePairingProtocol"] as? String == "rppairing" else { return .notApplicable }
+            // SideInstaller 2.2.0, SideStoreAnisetteHandoff. Use the official
+            // remote server and its compatible client headers. Do not reset
+            // adi.pb automatically: SideStore offers a user-controlled reset.
+            let desired: [String: Any] = [
+                "useOnDeviceAnisette": false,
+                "disableAnisetteRotation": true,
+                "menuAnisetteURL": "https://new.ani.sidestore.io",
+                "customAnisetteClientInfo": "<MacBookPro18,3> <Mac OS X;26.6;25F84> <com.apple.AuthKit/1 (com.apple.akd/1.0)>",
+                "customAnisetteUserAgent": "AuthKit/1 (Macintosh; OS X 26.6) (com.apple.akd/1.0)"
+            ]
+            for (key, value) in desired { prefs[key] = value }
+            let bytes = try PropertyListSerialization.data(fromPropertyList: prefs, format: .binary, options: 0)
+            try bytes.write(to: sideStorePreferencesURL, options: [.atomic, .completeFileProtection])
+            let saved = try preferences()
+            guard desired.allSatisfy({ key, value in
+                guard let actual = saved[key] else { return false }
+                return (value as? NSObject)?.isEqual(actual) == true
+            }) else { return .failed }
+            try Data("configured".utf8).write(to: anisetteRepairMarker, options: [.atomic, .completeFileProtection])
+            return .configured
+        } catch { return .failed }
+    }
+
     var hasRecord: Bool {
         let fm = FileManager.default
         return fm.fileExists(atPath: pairingURL.path) || fm.fileExists(atPath: legacyURL.path)

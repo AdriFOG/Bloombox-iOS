@@ -498,6 +498,19 @@ struct BloomBoxJITSetup: View {
                         }
                         Button(words("Actualizar diagnóstico", "Refresh diagnostics")) { updatePairingSources() }
                         if let exportStatus { Text(exportStatus).font(.footnote) }
+                        if let raw = UserDefaults.standard.string(forKey: "BloomBoxInstallerAnisetteStatus"),
+                           let state = BloomBoxJITPairingStorage.AnisetteRepairResult(rawValue: raw) {
+                            switch state {
+                            case .configured, .alreadyConfigured:
+                                Text(words("Anisette: configuración remota aplicada. Si persiste el error ADI, usa Reset adi.pb en SideStore y conserva los encabezados personalizados. El certificado no se cambia.", "Anisette: remote configuration applied. If the ADI error persists, use Reset adi.pb in SideStore and keep custom headers. The certificate is not changed."))
+                                    .font(.footnote)
+                            case .failed:
+                                Text(words("Anisette: no se pudo guardar la configuración.", "Anisette: could not save the configuration."))
+                                    .font(.footnote).foregroundStyle(.orange)
+                            case .notApplicable:
+                                EmptyView()
+                            }
+                        }
                         Text(words("Los archivos contienen claves privadas. Guárdalos en En mi iPhone y no los compartas. Formato válido no significa conexión comprobada.",
                                    "Files contain private keys. Save them in On My iPhone and do not share them. Valid format does not prove a live connection."))
                             .font(.footnote).foregroundStyle(.secondary)

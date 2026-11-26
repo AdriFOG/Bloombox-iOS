@@ -130,3 +130,40 @@ try fm.createSymbolicLink(at: linked.documentsDirectory.appendingPathComponent("
 precondition(linked.handOffInstallerPairing() == .invalid)
 precondition(!fm.fileExists(atPath: outside.appendingPathComponent("Documents").path))
 print("PASS: fresh installer handoff, XML/alt_irk, exact SideStore preferences, matching records, reset preservation, conflicting records and sandbox boundaries.")
+
+
+// Plan B never modifies the original files, existing credentials, or unrelated
+// preferences; it is a one-time configuration for installer-seeded SideStore.
+let auth = sandbox("anisette")
+precondition(auth.configureInstallerAnisette() == .notApplicable)
+try writeSeed(auth, realShape)
+precondition(auth.handOffInstallerPairing() == .delivered)
+var authPrefs = try PropertyListSerialization.propertyList(from: Data(contentsOf: auth.sideStorePreferencesURL), format: nil) as! [String: Any]
+authPrefs["unrelatedSetting"] = 42
+authPrefs["useOnDeviceAnisette"] = true
+try PropertyListSerialization.data(fromPropertyList: authPrefs, format: .binary, options: 0).write(to: auth.sideStorePreferencesURL)
+let authSeed = try auth.readInstallerSeed()
+let authJit = try auth.readCurrentPairing()
+let authRemote = try auth.readSideStoreRemote()
+precondition(auth.configureInstallerAnisette() == .configured)
+let configured = try PropertyListSerialization.propertyList(from: Data(contentsOf: auth.sideStorePreferencesURL), format: nil) as! [String: Any]
+precondition(configured["useOnDeviceAnisette"] as? Bool == false)
+precondition(configured["disableAnisetteRotation"] as? Bool == true)
+precondition(configured["menuAnisetteURL"] as? String == "https://new.ani.sidestore.io")
+precondition((configured["customAnisetteClientInfo"] as? String)?.contains("Mac OS X;") == true)
+precondition(configured["customAnisetteUserAgent"] != nil)
+precondition(configured["unrelatedSetting"] as? Int == 42)
+precondition(configured["isPairingReset"] as? Bool == false)
+precondition(configured["activePairingProtocol"] as? String == "rppairing")
+precondition(try! auth.readInstallerSeed() == authSeed)
+precondition(try! auth.readCurrentPairing() == authJit)
+precondition(try! auth.readSideStoreRemote() == authRemote)
+var userPrefs = configured
+userPrefs["useOnDeviceAnisette"] = true
+let userBytes = try PropertyListSerialization.data(fromPropertyList: userPrefs, format: .binary, options: 0)
+try userBytes.write(to: auth.sideStorePreferencesURL)
+precondition(auth.configureInstallerAnisette() == .alreadyConfigured)
+precondition(try! Data(contentsOf: auth.sideStorePreferencesURL) == userBytes)
+precondition(manual.configureInstallerAnisette() == .notApplicable)
+precondition(linked.configureInstallerAnisette() == .notApplicable)
+print("PASS: Anisette installer setup is scoped, idempotent and preserves all pairing records.")
