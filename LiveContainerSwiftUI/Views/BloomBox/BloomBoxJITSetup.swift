@@ -1,6 +1,19 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+private struct BloomBoxPairingExportDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.propertyList] }
+    let data: Data
+    init(data: Data) { self.data = data }
+    init(configuration: ReadConfiguration) throws {
+        guard let bytes = configuration.file.regularFileContents else { throw CocoaError(.fileReadCorruptFile) }
+        data = bytes
+    }
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
+    }
+}
+
 struct BloomBoxJITSetup: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("LCJITEnablerType", store: LCUtils.appGroupUserDefault) private var provider = JITEnablerType.SideJITServer.rawValue
@@ -11,6 +24,11 @@ struct BloomBoxJITSetup: View {
     // Never turn this on automatically: it affects all private guest containers.
     @AppStorage("LCSharePrivateDataWithLiveProcess") private var sharePrivateDataWithLiveProcess = false
     @State private var importing = false
+    @State private var exportingPairing = false
+    @State private var exportDocument: BloomBoxPairingExportDocument?
+    @State private var exportName = "BloomBox-Pairing"
+    @State private var exportStatus: String?
+    @State private var pairingSourceSummary: [String] = []
     @State private var hasPairing = (try? BloomBoxJITPairingStorage().load()) != nil
     @AppStorage("BloomBoxJITSyncWithSideStore", store: LCUtils.appGroupUserDefault)
     private var automaticPairing = true
@@ -98,6 +116,14 @@ struct BloomBoxJITSetup: View {
             }
         }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.data], onCompletion: importPairing)
+        .fileExporter(isPresented: $exportingPairing, document: exportDocument,
+                      contentType: .propertyList, defaultFilename: exportName) { result in
+            exportDocument = nil
+            switch result {
+            case .success: exportStatus = words("Copia guardada en Archivos.", "Copy saved to Files.")
+            case .failure: exportStatus = words("No se pudo exportar la copia.", "Could not export the copy.")
+            }
+        }
         .onAppear { refreshPairing() }
         .onChange(of: demoUnconfigured) { enabled in
             if enabled { demoSwitchOn = false }
@@ -286,6 +312,7 @@ struct BloomBoxJITSetup: View {
         let result = BloomBoxJITPairingSync.synchronize()
         hasPairing = (try? BloomBoxJITPairingStorage().load()) != nil
         lastPairingVerified = LCUtils.appGroupUserDefault.object(forKey: BloomBoxJITPairingSync.lastVerifiedKey) as? Date
+        updatePairingSources()
         switch result {
         case .disabled:
             syncMessage = words("Sincronización desactivada.", "Synchronization is off.")
@@ -304,6 +331,60 @@ struct BloomBoxJITSetup: View {
                 ? words("No se encontró un pairing compartido de SideStore. Se conserva el archivo actual.",
                         "No shared SideStore pairing was found. Your existing file is preserved.")
                 : nil
+        }
+    }
+
+    private func updatePairingSources() {
+        guard !demoUnconfigured else { return }
+        let storage = BloomBoxJITPairingStorage(documentsDirectory: LCPath.docPath)
+        func inspect(_ read: () throws -> Data) -> (Data?, String) {
+            do { return (try read(), words("formato válido", "valid format")) }
+            catch BloomBoxRemotePairingRecord.PairingError.missing { return (nil, words("ausente", "missing")) }
+            catch BloomBoxRemotePairingRecord.PairingError.invalid { return (nil, words("inválido", "invalid")) }
+            catch { return (nil, words("no se pudo leer", "unreadable")) }
+        }
+        let seed = inspect { try storage.readInstallerSeed() }
+        let jit = inspect { try storage.readCurrentPairing() }
+        let sideStore = inspect { try storage.readSideStoreRemote() }
+        pairingSourceSummary = [
+            "Siboot: " + seed.1,
+            "BloomBox JIT: " + jit.1,
+            "SideStore: " + sideStore.1
+        ]
+        if let a = seed.0, let b = jit.0 {
+            pairingSourceSummary.append(BloomBoxJITPairingStorage.matches(a, b)
+                ? words("Siboot y JIT coinciden.", "Siboot and JIT match.")
+                : words("Siboot y JIT son diferentes.", "Siboot and JIT differ."))
+        }
+        if let a = seed.0, let b = sideStore.0 {
+            pairingSourceSummary.append(BloomBoxJITPairingStorage.matches(a, b)
+                ? words("Siboot y SideStore coinciden.", "Siboot and SideStore match.")
+                : words("Siboot y SideStore son diferentes.", "Siboot and SideStore differ."))
+        }
+        if let raw = UserDefaults.standard.string(forKey: "BloomBoxInstallerPairingHandoffStatus"),
+           let status = BloomBoxJITPairingStorage.HandoffResult(rawValue: raw) {
+            switch status {
+            case .missing: break
+            case .invalid: pairingSourceSummary.append(words("Entrega: archivo inválido.", "Handoff: invalid file."))
+            case .conflict: pairingSourceSummary.append(words("Entrega: se conservaron archivos o ajustes existentes.", "Handoff: existing files or settings preserved."))
+            case .delivered: pairingSourceSummary.append(words("Entrega: archivos y preferencias verificados en disco.", "Handoff: files and preferences verified on disk."))
+            case .alreadyDelivered: pairingSourceSummary.append(words("Entrega: realizada anteriormente; no se repite.", "Handoff: previously completed; not repeated."))
+            case .failed: pairingSourceSummary.append(words("Entrega: no se pudo completar.", "Handoff: could not complete."))
+            }
+        }
+    }
+
+    private func exportPairing(_ name: String, read: (BloomBoxJITPairingStorage) throws -> Data) {
+        guard !demoUnconfigured else { return }
+        do {
+            let storage = BloomBoxJITPairingStorage(documentsDirectory: LCPath.docPath)
+            let bytes = try read(storage)
+            exportName = name
+            exportDocument = BloomBoxPairingExportDocument(data: bytes)
+            exportingPairing = true
+            exportStatus = nil
+        } catch {
+            exportStatus = words("No hay un archivo válido para exportar.", "No valid file is available to export.")
         }
     }
 
@@ -401,6 +482,25 @@ struct BloomBoxJITSetup: View {
                         Text("Enable Developer Mode in Settings. Connect your existing LocalDevVPN before Prepare device or Launch with JIT; SideStore can keep using the same VPN. The first launch may download a developer disk image.")
                         Label(LCUtils.bloomBoxCanDebug() ? "Debugging permission available" : "Re-signing required: debugging permission missing", systemImage: LCUtils.bloomBoxCanDebug() ? "checkmark.shield" : "exclamationmark.shield")
                         Text("JIT applies only to guests installed inside BloomBox, not other iPhone apps. It runs through LiveProcess, and some guest engines need a matching iOS 27 JIT script. Keep extensions when updating.").foregroundStyle(.secondary)
+                    }
+                    Section(words("Archivos de emparejamiento", "Pairing files")) {
+                        ForEach(pairingSourceSummary.indices, id: \.self) { index in
+                            Text(pairingSourceSummary[index]).font(.footnote)
+                        }
+                        Button(words("Exportar original de siboot", "Export original siboot pairing")) {
+                            exportPairing("BloomBox-Siboot-Pairing") { try $0.readInstallerSeed() }
+                        }
+                        Button(words("Exportar pairing de JIT", "Export JIT pairing")) {
+                            exportPairing("BloomBox-JIT-Pairing") { try $0.readCurrentPairing() }
+                        }
+                        Button(words("Exportar pairing de SideStore", "Export SideStore pairing")) {
+                            exportPairing("BloomBox-SideStore-Pairing") { try $0.readSideStoreRemote() }
+                        }
+                        Button(words("Actualizar diagnóstico", "Refresh diagnostics")) { updatePairingSources() }
+                        if let exportStatus { Text(exportStatus).font(.footnote) }
+                        Text(words("Los archivos contienen claves privadas. Guárdalos en En mi iPhone y no los compartas. Formato válido no significa conexión comprobada.",
+                                   "Files contain private keys. Save them in On My iPhone and do not share them. Valid format does not prove a live connection."))
+                            .font(.footnote).foregroundStyle(.secondary)
                     }
                     Section("Datos privados de las apps") {
                         Toggle("Permitir datos privados en LiveProcess", isOn: $sharePrivateDataWithLiveProcess)
