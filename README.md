@@ -8,7 +8,7 @@
 
 A personal home for your apps, widgets and files — with room to experiment.
 
-[**Download BloomBox 3.4.0**](https://github.com/AdriFOG/Bloombox-iOS/releases/latest) · [Builds](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml) · [Report an issue](https://github.com/AdriFOG/Bloombox-iOS/issues)
+[**Download BloomBox 3.5.0**](https://github.com/AdriFOG/Bloombox-iOS/releases/latest) · [Builds](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml) · [Report an issue](https://github.com/AdriFOG/Bloombox-iOS/issues)
 
 [![Build](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/AdriFOG/Bloombox-iOS/actions/workflows/build.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-purple.svg)](LICENSE) · [Original-work attribution](LICENSE-ADDITIONAL-TERMS.md)
@@ -20,6 +20,8 @@ A personal home for your apps, widgets and files — with room to experiment.
 Its home screen lives **inside the app**; it does not replace the iOS Home Screen. Experimental features are clearly identified below so you can choose what to try.
 
 ## What's new
+
+**BloomBox 3.5.0 — No-PC Installer & SideStore Repair:** install using [BloomBox Installer](https://adrifog.github.io/Bloombox-iOS-Installer/) and Open Minis on supported iOS devices. Automatic installer pairing handoff, JIT pairing diagnostics, one-time Anisette metadata synchronization and a Repair connection button in SideStore's sign-in screen. Apple account authentication remains in SideStore. RAM+ server approval has been tested, but automatic reinstall is not reliable yet. Read the [3.5.0 release notes and security limitations](docs/BloomBox-3.5.0-Release-Notes.md) before installing.
 
 **BloomBox 3.4.0 — Nova Launcher & Bloom:** an optional Android-inspired launcher with its own desktop, customizable drawer and search bar, transparent widgets, profile-scoped layout and the familiar News page. Meet Bloom, the new mascot with native default, dark and tinted icon appearances.
 
