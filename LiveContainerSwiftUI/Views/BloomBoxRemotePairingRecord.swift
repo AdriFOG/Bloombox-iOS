@@ -57,6 +57,12 @@ struct BloomBoxJITPairingStorage {
             .appendingPathComponent("Library/Application Support/rp_pairing_file.plist")
     }
 
+    private var installerPathIsLocal: Bool {
+        let sandbox = documentsDirectory.deletingLastPathComponent().resolvingSymlinksInPath()
+        let expected = sandbox.appendingPathComponent("Library/Application Support/rp_pairing_file.plist")
+        return installerURL.resolvingSymlinksInPath().standardizedFileURL.path == expected.standardizedFileURL.path
+    }
+
     var hasRecord: Bool {
         let fm = FileManager.default
         return fm.fileExists(atPath: pairingURL.path) || fm.fileExists(atPath: legacyURL.path)
@@ -81,7 +87,7 @@ struct BloomBoxJITPairingStorage {
             // applications, follow symlinks, or replace an existing pairing.
             let details = try installerURL.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
             guard details.isRegularFile == true, details.isSymbolicLink == false,
-                  installerURL.resolvingSymlinksInPath() == documentsDirectory.deletingLastPathComponent().resolvingSymlinksInPath().appendingPathComponent("Library/Application Support/rp_pairing_file.plist").standardizedFileURL,
+                  installerPathIsLocal,
                   let size = details.fileSize, size > 0, size < BloomBoxRemotePairingRecord.maximumBytes else {
                 throw BloomBoxRemotePairingRecord.PairingError.invalid
             }
@@ -99,7 +105,8 @@ struct BloomBoxJITPairingStorage {
         let fm = FileManager.default
         // Explicit removal also removes the seed from this app’s own sandbox,
         // so it cannot be silently re-imported at the next launch.
-        for file in [pairingURL, legacyURL, installerURL] where fm.fileExists(atPath: file.path) {
+        let localFiles = installerPathIsLocal ? [pairingURL, legacyURL, installerURL] : [pairingURL, legacyURL]
+        for file in localFiles where fm.fileExists(atPath: file.path) {
             try fm.removeItem(at: file)
         }
     }
