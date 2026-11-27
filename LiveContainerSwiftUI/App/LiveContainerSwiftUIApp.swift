@@ -166,7 +166,7 @@ private enum BloomBoxNestedProbeSessionV2 {
     return 0
 }
 
-private struct BloomBoxNestedProbeAppV2: App {
+private struct BloomBoxNestedProbeAppV2: SwiftUI.App {
     var body: some Scene {
         WindowGroup {
             if let root = BloomBoxNestedProbeSessionV2.root {
