@@ -4,9 +4,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/nested-bloombox-probe.yml
-      - LiveContainer/LCBootstrap.m
-      - LiveContainerSwiftUI/App/LiveContainerSwiftUIApp.swift
-      - Scripts/package-nested-bloombox-probe.py
+      - Experiments/NestedProbeV3/**
   workflow_dispatch:
 permissions:
   contents: read
@@ -15,54 +13,36 @@ jobs:
     if: github.head_ref == 'experimental/nested-bloombox-probe' || github.ref == 'refs/heads/experimental/nested-bloombox-probe'
     runs-on: macos-latest
     steps:
-      - uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '26.2'
-      - uses: actions/checkout@v6
-        with:
-          submodules: recursive
-      - name: Restore pinned dependencies
-        run: python3 Scripts/fetch-bundled-dependencies.py
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-ios
-      - name: Build pairing library
-        run: bash Scripts/build-ondevice-pairing.sh
-      - name: Render application icon
-        run: swift Scripts/generate-bloombox-icon.swift
-      - name: Compile fresh BloomBox archive
+      - uses: actions/checkout@v4
+      - name: Compile minimal UIKit guest
         run: |
           set -euo pipefail
-          if ls -d *.xcworkspace >/dev/null 2>&1; then
-            project_args=(-workspace "$(ls -d *.xcworkspace | head -n 1)")
-          else
-            project_args=(-project LiveContainer.xcodeproj)
-          fi
-          xcodebuild archive -archivePath "$PWD/probe.xcarchive" -scheme LiveContainer "${project_args[@]}" -sdk iphoneos -arch arm64 -configuration Release > "$RUNNER_TEMP/probe-archive.log" 2>&1 || {
-            grep -nE 'error:|fatal error|Undefined symbols' "$RUNNER_TEMP/probe-archive.log" | tail -n 60 || true
-            tail -n 100 "$RUNNER_TEMP/probe-archive.log"
-            exit 1
-          }
-      - name: Package and validate isolated guest
-        run: |
-          set -euo pipefail
-          mkdir Payload
-          ditto probe.xcarchive/Products/Applications/LiveContainer.app Payload/LiveContainer.app
-          zip -q -r source.ipa Payload
-          python3 Scripts/package-nested-bloombox-probe.py source.ipa
-          shasum -a 256 BloomBox-Dev-Nested-Probe-v2.ipa > BloomBox-Dev-Nested-Probe-v2.sha256
-      - name: Upload probe IPA
-        uses: actions/upload-artifact@v4
+          app="Payload/BloomBoxDevProbeV3.app"
+          mkdir -p "$app"
+          xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.0 -fobjc-arc -O2 -Wall -Wextra -Wno-unused-parameter -framework UIKit -framework Foundation Experiments/NestedProbeV3/main.m -o "$app/BloomBoxDevProbeV3"
+          cp Experiments/NestedProbeV3/Info.plist "$app/Info.plist"
+          plutil -lint "$app/Info.plist"
+          codesign --force --sign - --timestamp=none "$app"
+          xcrun otool -L "$app/BloomBoxDevProbeV3"
+          xcrun vtool -show-build "$app/BloomBoxDevProbeV3"
+          zip -q -r BloomBox-Dev-Nested-Probe-v3.ipa Payload
+          python3 - <<'PY'
+          import plistlib
+          from zipfile import ZipFile
+          root = "Payload/BloomBoxDevProbeV3.app/"
+          with ZipFile("BloomBox-Dev-Nested-Probe-v3.ipa") as z:
+              assert z.testzip() is None
+              assert not any("/Frameworks/" in n or "/PlugIns/" in n for n in z.namelist())
+              info = plistlib.loads(z.read(root + "Info.plist"))
+              assert info["CFBundleIdentifier"] == "com.bloombox.dev.nestedprobe.v3"
+              assert info["CFBundleExecutable"] == "BloomBoxDevProbeV3"
+              assert b"BloomBoxDevProbeV3.log" in z.read(root + info["CFBundleExecutable"])
+          PY
+          shasum -a 256 BloomBox-Dev-Nested-Probe-v3.ipa > BloomBox-Dev-Nested-Probe-v3.sha256
+      - uses: actions/upload-artifact@v4
         with:
-          name: BloomBox-Dev-Nested-Probe-v2
+          name: BloomBox-Dev-Nested-Probe-v3
           path: |
-            BloomBox-Dev-Nested-Probe-v2.ipa
-            BloomBox-Dev-Nested-Probe-v2.sha256
+            BloomBox-Dev-Nested-Probe-v3.ipa
+            BloomBox-Dev-Nested-Probe-v3.sha256
           if-no-files-found: error
-      - name: Upload archive diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: probe-archive-log
-          path: ${{ runner.temp }}/probe-archive.log
-          if-no-files-found: ignore

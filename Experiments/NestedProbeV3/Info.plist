@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>com.bloombox.dev.nestedprobe.v3</string>
+<key>CFBundleExecutable</key><string>BloomBoxDevProbeV3</string>
+<key>CFBundleName</key><string>BloomBox Dev V3</string>
+<key>CFBundleDisplayName</key><string>BloomBox Dev V3</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+<key>CFBundleShortVersionString</key><string>0.3.0</string>
+<key>CFBundleVersion</key><string>3</string>
+<key>MinimumOSVersion</key><string>16.0</string>
+<key>CFBundleSupportedPlatforms</key><array><string>iPhoneOS</string></array>
+<key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
+<key>UILaunchScreen</key><dict/>
+<key>UIApplicationSceneManifest</key><dict>
+<key>UIApplicationSupportsMultipleScenes</key><false/>
+<key>UISceneConfigurations</key><dict><key>UIWindowSceneSessionRoleApplication</key><array><dict>
+<key>UISceneConfigurationName</key><string>Probe</string>
+<key>UISceneDelegateClassName</key><string>BBDevProbeV3Scene</string>
+</dict></array></dict></dict>
+<key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
+</dict></plist>
