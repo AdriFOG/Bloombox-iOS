@@ -769,7 +769,53 @@ static void exceptionHandler(NSException *exception) {
     }
 }
 
+// Dedicated diagnostic startup. Do not call the normal container initializer,
+// which migrates data and queries the outer process' real App Group.
+static int BloomBoxNestedProbeStart(void) {
+    const char *home = getenv("HOME");
+    if (!home || home[0] != '/') return 71;
+    NSString *raw = [NSString stringWithUTF8String:home];
+    if (!raw) return 71;
+    NSURL *guest = [[NSURL fileURLWithPath:raw isDirectory:YES] URLByResolvingSymlinksInPath];
+    NSArray<NSString *> *parts = guest.path.pathComponents;
+    if (parts.count < 4 || ![parts[parts.count - 2] isEqualToString:@"Application"] ||
+        ![parts[parts.count - 3] isEqualToString:@"Data"]) {
+        NSLog(@"[BloomBoxDev/v2] rejected non-guest home");
+        return 72;
+    }
+    for (NSString *variable in @[@"LC_HOME_PATH", @"LP_HOME_PATH"]) {
+        const char *value = getenv(variable.UTF8String);
+        if (!value || !value[0]) continue;
+        NSString *outer = [NSString stringWithUTF8String:value];
+        if (!outer) return 72;
+        if ([guest.path isEqualToString:[[NSURL fileURLWithPath:outer isDirectory:YES] URLByResolvingSymlinksInPath].path]) return 72;
+    }
+    NSURL *root = [guest URLByAppendingPathComponent:@"Library/BloomBoxDevProbeV2" isDirectory:YES];
+    if (![root.path isEqualToString:[root URLByResolvingSymlinksInPath].path]) return 73;
+    NSError *error = nil;
+    if (![NSFileManager.defaultManager createDirectoryAtURL:root withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions: @0700} error:&error]) return 73;
+    NSURL *log = [root URLByAppendingPathComponent:@"boot.log"];
+    if (![@"01 guest home validated\n02 private storage ready\n03 loading SwiftUI\n" writeToURL:log atomically:YES encoding:NSUTF8StringEncoding error:&error]) return 74;
+    NSString *framework = [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"Frameworks/LiveContainerSwiftUI.framework/LiveContainerSwiftUI"];
+    if (!framework.length || ![NSFileManager.defaultManager fileExistsAtPath:framework]) return 75;
+    void *handle = dlopen(framework.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
+    if (!handle) {
+        NSLog(@"[BloomBoxDev/v2] SwiftUI dlopen failed: %s", dlerror());
+        return 75;
+    }
+    int (*entry)(const char *) = dlsym(handle, "BloomBoxNestedProbeUIV2");
+    if (!entry) {
+        NSLog(@"[BloomBoxDev/v2] isolated SwiftUI entry missing");
+        return 76;
+    }
+    NSLog(@"[BloomBoxDev/v2] starting isolated SwiftUI entry");
+    return entry(root.fileSystemRepresentation);
+}
+
 int LiveContainerMain(int argc, char *argv[]) {
+    if ([NSBundle.mainBundle.infoDictionary[@"BloomBoxNestedProbeMode"] isEqual:@2]) {
+        return BloomBoxNestedProbeStart();
+    }
     lcMainBundle = [NSBundle mainBundle];
     lcUserDefaults = NSUserDefaults.standardUserDefaults;
     

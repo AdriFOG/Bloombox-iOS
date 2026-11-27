@@ -1,0 +1,55 @@
+name: BloomBox nested launch probe
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/nested-bloombox-probe.yml
+      - Experiments/NestedProbeV4/**
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compile:
+    if: github.head_ref == 'experimental/nested-bloombox-probe' || github.ref == 'refs/heads/experimental/nested-bloombox-probe'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile UIKit and deferred SwiftUI probe
+        run: |
+          set -euo pipefail
+          app="Payload/BloomBoxDevProbeV4.app"
+          fw="$app/Frameworks/BBDevSwiftUIV4.framework"
+          mkdir -p "$fw"
+          sdk="$(xcrun --sdk iphoneos --show-sdk-path)"
+          xcrun --sdk iphoneos swiftc -sdk "$sdk" -target arm64-apple-ios16.0 -swift-version 5 -O -emit-library -module-name BBDevSwiftUIV4 -Xlinker -install_name -Xlinker @rpath/BBDevSwiftUIV4.framework/BBDevSwiftUIV4 Experiments/NestedProbeV4/ProbeDesktop.swift -o "$fw/BBDevSwiftUIV4"
+          cp Experiments/NestedProbeV4/FrameworkInfo.plist "$fw/Info.plist"
+          xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.0 -fobjc-arc -O2 -Wall -Wextra -Wno-unused-parameter -framework UIKit -framework Foundation -Wl,-rpath,@executable_path/Frameworks -Wl,-rpath,/usr/lib/swift Experiments/NestedProbeV4/main.m -o "$app/BloomBoxDevProbeV4"
+          cp Experiments/NestedProbeV4/Info.plist "$app/Info.plist"
+          plutil -lint "$app/Info.plist" "$fw/Info.plist"
+          codesign --force --sign - --timestamp=none "$fw"
+          codesign --force --sign - --timestamp=none "$app"
+          xcrun otool -L "$app/BloomBoxDevProbeV4"
+          xcrun otool -L "$fw/BBDevSwiftUIV4"
+          xcrun nm -gU "$fw/BBDevSwiftUIV4" | grep ' _BBDevMakeSwiftUIV4$'
+          zip -q -r BloomBox-Dev-Nested-Probe-v4.ipa Payload
+          python3 - <<'PY'
+          import plistlib
+          from zipfile import ZipFile
+          root = "Payload/BloomBoxDevProbeV4.app/"
+          with ZipFile("BloomBox-Dev-Nested-Probe-v4.ipa") as z:
+              assert z.testzip() is None
+              info = plistlib.loads(z.read(root + "Info.plist"))
+              assert info["CFBundleIdentifier"] == "com.bloombox.dev.nestedprobe.v4"
+              assert info["CFBundleExecutable"] == "BloomBoxDevProbeV4"
+              assert b"BloomBoxDevProbeV4.log" in z.read(root + info["CFBundleExecutable"])
+              assert root+"Frameworks/BBDevSwiftUIV4.framework/BBDevSwiftUIV4" in z.namelist()
+              assert not any("LiveContainer" in n or "/PlugIns/" in n for n in z.namelist())
+          PY
+          shasum -a 256 BloomBox-Dev-Nested-Probe-v4.ipa > BloomBox-Dev-Nested-Probe-v4.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BloomBox-Dev-Nested-Probe-v4
+          path: |
+            BloomBox-Dev-Nested-Probe-v4.ipa
+            BloomBox-Dev-Nested-Probe-v4.sha256
+          if-no-files-found: error
