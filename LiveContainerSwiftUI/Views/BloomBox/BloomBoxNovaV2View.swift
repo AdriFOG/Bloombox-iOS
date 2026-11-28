@@ -1197,6 +1197,7 @@ struct BloomBoxNovaV2View: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(height: 66)
+        .bloomBoxTourAnchor("dock")
         .accessibilityIdentifier("bloombox.nova.dock")
     }
 

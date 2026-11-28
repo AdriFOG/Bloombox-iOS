@@ -56,10 +56,16 @@ struct BloomBoxTourTopic: Identifiable {
               "Discover compatible extensions. Review what each tweak changes before adding it to an app; incompatibilities are possible.", target: "manzana:tweakstore", destination: "tweaks"),
         .init("profiles", "person.crop.circle", "Perfiles y contenedores", "Profiles and containers",
               "Los perfiles conservan su configuración y las apps pueden usar contenedores de datos separados. Consulta los ajustes de la app antes de cambiar de contenedor.",
-              "Profiles retain their settings and apps can use separate data containers. Review app settings before switching containers."),
+              "Profiles retain their settings and apps can use separate data containers. Review app settings before switching containers.", target: "profiles", destination: "profiles"),
         .init("context", "hand.tap", "Menú de una app", "App options",
               "Mantén presionado un icono para abrir sus opciones. Puedes gestionar sus datos, icono, JIT y otras opciones según la app, o moverla después.",
               "Press and hold an icon to open its options. Manage data, artwork, JIT and other options when available, or move the app afterward."),
+        .init("appdata", "externaldrive", "Datos, copias y contenedores", "App data and backups",
+              "Desde las opciones de una app consulta sus contenedores, almacenamiento y copias de seguridad disponibles. No borres datos sin confirmar que tienes una copia.",
+              "From an app’s options, review available containers, storage and backups. Do not delete data without checking that you have a backup."),
+        .init("audio", "waveform", "Audio y acceso a red", "Audio and network access",
+              "En las opciones de una app compatible puedes revisar el audio simultáneo, acceso a red y otras preferencias individuales.",
+              "In a compatible app’s options, review simultaneous audio, network access and other per-app preferences."),
         .init("desktop", "slider.horizontal.3", "Personaliza el escritorio", "Customize Home",
               "Mantén presionado un espacio vacío para editar el escritorio. Cambia el fondo, iconos, páginas y otras opciones disponibles en tu launcher.",
               "Press and hold an empty area to edit Home. Change wallpaper, icons, pages and other options available in your launcher.", destination: "desktop"),
@@ -78,15 +84,24 @@ struct BloomBoxTourTopic: Identifiable {
         .init("launchers", "circle.grid.3x3", "iOS, Nova e híbrido", "iOS, Nova and hybrid",
               "Desde Interfaz puedes elegir el escritorio que prefieras. La elección se conserva por perfil y no elimina tus apps.",
               "Choose your preferred launcher from Interface. Your choice is saved per profile and does not delete apps.", destination: "interface"),
+        .init("home", "house", "Volver al escritorio", "Return to Home",
+              "Puedes regresar de GameBox al escritorio sin cambiar tu launcher preferido ni tus aplicaciones.",
+              "Return from GameBox to Home without changing your preferred launcher or installed apps.", destination: "home"),
         .init("gamebox", "gamecontroller.fill", "GameBox", "GameBox",
               "GameBox es la interfaz de consola de BloomBox, con carátulas, fondos y controles para juegos compatibles.",
               "GameBox is BloomBox's console interface, with artwork, backgrounds and controls for compatible games.", target: "gamebox", destination: "gamebox"),
+        .init("controller", "gamecontroller", "Controles de juego", "Game controllers",
+              "GameBox puede abrirse al conectar un mando compatible si activaste esa opción. Ajusta la preferencia desde Interfaz.",
+              "GameBox can open when a compatible controller connects if you enabled that option. Adjust it from Interface.", destination: "interface"),
         .init("media", "music.note", "MediaBloom", "MediaBloom",
               "MediaBloom es una app independiente para música y video. Consulta sus funciones e integración por separado; no se instala con este recorrido.",
               "MediaBloom is a separate app for music and video. Explore its features and integration separately; this tour does not install it."),
         .init("settings", "gearshape", "Ajustes y seguridad", "Settings and safety",
               "Consulta la cuenta Apple, firmas, JIT y ajustes disponibles. Instala únicamente archivos de confianza; BloomBox no garantiza que sean seguros.",
               "Review Apple Account, signing, JIT and available settings. Only install files you trust; BloomBox cannot guarantee their safety.", destination: "settings"),
+        .init("account", "person.crop.circle.badge.checkmark", "Cuenta Apple y renovación", "Apple Account and renewal",
+              "Si SideStore está integrado, puedes consultar tu cuenta Apple en Ajustes y revisar las fechas de caducidad. El recorrido no solicita contraseñas.",
+              "If SideStore is integrated, review your Apple Account in Settings and check expiry dates. The tour never asks for passwords.", destination: "settings"),
         .init("diagnostics", "waveform.path.ecg", "Diagnóstico y recuperación", "Diagnostics and recovery",
               "En Interfaz encontrarás Diagnósticos y recuperación. Si una sesión falla, consulta el registro antes de volver a intentar.",
               "Find Diagnostics and recovery in Interface. If a session fails, review the log before trying again.", destination: "diagnostics")
@@ -142,6 +157,7 @@ struct BloomBoxTourOverlay: View {
     let index: Int
     let center: Bool
     let canExplore: Bool
+    let seenTopics: Set<String>
     let onSelect: (Int) -> Void
     let onBack: () -> Void
     let onNext: () -> Void
@@ -175,11 +191,10 @@ struct BloomBoxTourOverlay: View {
         GeometryReader { geo in
             let hole = highlight(in: geo)
             ZStack {
-                Color.black.opacity(0.57).ignoresSafeArea().allowsHitTesting(false)
-                    .mask {
-                        // The spotlight only affects the shade, not the actual app.
-                        BloomBoxTourShade(hole: hole).fill(style: FillStyle(eoFill: true))
-                    }
+                // Use exactly the same geometry for the shade and its spotlight.
+                BloomBoxTourShade(hole: hole)
+                    .fill(Color.black.opacity(0.57), style: FillStyle(eoFill: true))
+                    .allowsHitTesting(false)
                 Rectangle().fill(Color.clear).contentShape(Rectangle())
                     .onTapGesture {}.accessibilityHidden(true)
                 if let hole {
@@ -280,6 +295,9 @@ struct BloomBoxTourOverlay: View {
                                 Image(systemName: item.element.icon).frame(width: 28).foregroundStyle(accent)
                                 Text(item.element.title).font(.subheadline)
                                 Spacer()
+                                if !seenTopics.isEmpty && !seenTopics.contains(item.element.id) {
+                                    Text(en ? "New" : "Nuevo").font(.caption2.weight(.semibold)).foregroundStyle(accent)
+                                }
                                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
                             }.padding(.vertical, 12).contentShape(Rectangle())
                         }.buttonStyle(.plain)

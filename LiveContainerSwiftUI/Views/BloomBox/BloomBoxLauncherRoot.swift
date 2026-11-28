@@ -35,6 +35,8 @@ struct BloomBoxLauncherRootView: View {
     @State private var tourCenter = false
     @State private var tourResume = false
     @State private var tourAfterWizard = false
+    @State private var tourProfiles = false
+    @AppStorage("BloomBoxTourSeenTopicsV1", store: LCUtils.appGroupUserDefault) private var tourSeenTopics = ""
     @AppStorage("BloomBoxWizardInitialCompletedV1", store: LCUtils.appGroupUserDefault)
     private var wizardCompleted = false
     @AppStorage("BloomBoxAutoGameBoxOnController", store: LCUtils.appGroupUserDefault)
@@ -186,6 +188,16 @@ struct BloomBoxLauncherRootView: View {
                 destinationContent
             }
         }
+        .sheet(isPresented: $tourProfiles) {
+            NavigationView {
+                BloomBoxProfileManagementView()
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button(BloomBoxL10n.isEnglish ? "Done" : "Listo") { tourProfiles = false }
+                        }
+                    }
+            }.navigationViewStyle(.stack)
+        }
         .sheet(isPresented: $showDiagnostics) {
             NavigationView {
                 BloomBoxDiagnosticsView()
@@ -270,25 +282,29 @@ struct BloomBoxLauncherRootView: View {
 
     private var canExploreTour: Bool {
         guard let destination = currentTourTopic.destination else { return false }
-        return mode == "ios" || ["interface", "settings", "diagnostics"].contains(destination)
+        return mode == "ios" || ["interface", "settings", "diagnostics", "profiles", "home"].contains(destination)
     }
 
     @ViewBuilder private func tourLayer(_ anchors: [String: [Anchor<CGRect>]]) -> some View {
         if ready && wizardCompleted && !showFirstRunWizard && !showRecoveryNotice &&
-            !showDestination && !showModeSheet && !showDiagnostics {
+            !showDestination && !showModeSheet && !showDiagnostics && !tourProfiles {
             if tourVisible {
                 BloomBoxTourOverlay(anchors: anchors, index: tourStep, center: tourCenter,
-                    canExplore: canExploreTour,
+                    canExplore: canExploreTour, seenTopics: Set(tourSeenTopics.split(separator: ",").map(String.init)),
                     onSelect: { index in tourStep = index; tourCenter = false; tourCompleted = false },
                     onBack: { tourStep = max(0, tourStep - 1) },
                     onNext: {
+                        rememberTourTopic(currentTourTopic.id)
                         UISelectionFeedbackGenerator().selectionChanged()
                         if tourStep >= BloomBoxTourTopic.all.count - 1 {
                             tourCompleted = true; tourVisible = false; tourResume = false
                         } else { tourStep = max(0, tourStep + 1) }
                     },
                     onPause: { tourVisible = false; tourResume = false },
-                    onSkip: { tourCompleted = true; tourVisible = false; tourResume = false },
+                    onSkip: {
+                        tourSeenTopics = BloomBoxTourTopic.all.map(\.id).joined(separator: ",")
+                        tourCompleted = true; tourVisible = false; tourResume = false
+                    },
                     onCenter: { tourCenter = true },
                     onExplore: exploreTour)
             } else if tourResume {
@@ -311,6 +327,12 @@ struct BloomBoxLauncherRootView: View {
         }
     }
 
+    private func rememberTourTopic(_ id: String) {
+        var seen = Set(tourSeenTopics.split(separator: ",").map(String.init))
+        seen.insert(id)
+        tourSeenTopics = seen.sorted().joined(separator: ",")
+    }
+
     private func exploreTour() {
         guard canExploreTour, let destination = currentTourTopic.destination else { return }
         tourVisible = false; tourResume = true
@@ -319,6 +341,8 @@ struct BloomBoxLauncherRootView: View {
         case "settings": sharedModel.selectedTab = .settings
         case "diagnostics": showDiagnostics = true
         case "gamebox": mode = "gamebox"
+        case "home": mode = "ios"
+        case "profiles": tourProfiles = true
         default:
             NotificationCenter.default.post(name: BloomBoxTourEvents.explore, object: destination)
         }

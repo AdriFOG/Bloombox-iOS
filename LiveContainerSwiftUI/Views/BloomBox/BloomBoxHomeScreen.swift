@@ -354,6 +354,7 @@ struct BloomBoxHomeScreen: View {
                 .shadow(color: profileAccent.opacity(0.28), radius: 15, y: 5)
         }
         .buttonStyle(.plain)
+        .bloomBoxTourAnchor("gamebox")
         .position(x: startX + gameBoxShortcutDrag.width,
                   y: startY + gameBoxShortcutDrag.height)
         .simultaneousGesture(
@@ -371,7 +372,6 @@ struct BloomBoxHomeScreen: View {
             Button(englishUI ? "Hide GameBox button" : "Ocultar botón GameBox",
                    systemImage: "eye.slash") { showGameBoxShortcut = false }
         }
-        .bloomBoxTourAnchor("gamebox")
         .accessibilityIdentifier("bloombox.home.gamebox.shortcut")
         .accessibilityLabel(englishUI ? "Open GameBox, drag to move" :
                             "Abrir GameBox, arrastra para mover")
