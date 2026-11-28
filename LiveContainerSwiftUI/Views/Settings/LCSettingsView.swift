@@ -84,6 +84,13 @@ struct LCSettingsView: View {
     var body: some View {
         NavigationView {
             Form {
+                Section {
+                    Button {
+                        NotificationCenter.default.post(name: BloomBoxTourEvents.center, object: nil)
+                    } label: {
+                        Label(BloomBoxL10n.isEnglish ? "Learning center" : "Centro de aprendizaje", systemImage: "graduationcap.fill")
+                    }
+                }
                 if UserDefaults.sideStoreExist(), sharedModel.multiLCStatus != 2 {
                     Section {
                         NavigationLink {

@@ -29,6 +29,12 @@ struct BloomBoxLauncherRootView: View {
     @State private var showDiagnostics = false
     @State private var showRecoveryNotice = false
     @State private var showFirstRunWizard = false
+    @AppStorage("BloomBoxTourStepV1", store: LCUtils.appGroupUserDefault) private var tourStep = 0
+    @AppStorage("BloomBoxTourCompletedV1", store: LCUtils.appGroupUserDefault) private var tourCompleted = false
+    @State private var tourVisible = false
+    @State private var tourCenter = false
+    @State private var tourResume = false
+    @State private var tourAfterWizard = false
     @AppStorage("BloomBoxWizardInitialCompletedV1", store: LCUtils.appGroupUserDefault)
     private var wizardCompleted = false
     @AppStorage("BloomBoxAutoGameBoxOnController", store: LCUtils.appGroupUserDefault)
@@ -57,6 +63,7 @@ struct BloomBoxLauncherRootView: View {
         Group {
             if ready {
                 LCAppListView(openInterface: { showModeSheet = true })
+                    .environment(\.bloomBoxTourCollect, tourVisible && !tourCenter)
                     .preferredColorScheme(.dark)
             } else {
                 Color.black.ignoresSafeArea()
@@ -75,9 +82,16 @@ struct BloomBoxLauncherRootView: View {
                 .transition(.opacity)
             }
         }
-        .fullScreenCover(isPresented: $showFirstRunWizard) {
+        .overlayPreferenceValue(BloomBoxTourAnchors.self) { anchors in
+            tourLayer(anchors)
+        }
+        .fullScreenCover(isPresented: $showFirstRunWizard, onDismiss: {
+            if tourAfterWizard && !showRecoveryNotice && !tourCompleted { tourVisible = true }
+            tourAfterWizard = false
+        }) {
             BloomBoxWizardFlowView(isPreview: false) {
                 wizardCompleted = true
+                tourAfterWizard = true
                 showFirstRunWizard = false
                 mode = BloomBoxLaunchPreferences.runtimeMode(for: preferredExperience)
                 showRecoveryNotice = BloomBoxCrashJournal.shared.previousInterrupted
@@ -102,6 +116,13 @@ struct BloomBoxLauncherRootView: View {
                             launcherOption(title: "GameBox v2", detail: BloomBoxL10n.t("Interfaz de consola con carátulas, fondos y cristal."),
                                            icon: "gamecontroller.fill", value: "gamebox")
                         }
+                        Button {
+                            tourCenter = true; tourVisible = true; tourResume = false; showModeSheet = false
+                        } label: {
+                            Label(BloomBoxL10n.isEnglish ? "Learning center" : "Centro de aprendizaje", systemImage: "graduationcap.fill")
+                                .font(.headline).padding(20).frame(maxWidth: .infinity, alignment: .leading)
+                                .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 20))
+                        }.buttonStyle(.plain)
                         NavigationLink(destination: BloomBoxDiagnosticsView()) {
                             Label("Diagnósticos y recuperación", systemImage: "waveform.path.ecg")
                                 .font(.headline)
@@ -232,8 +253,74 @@ struct BloomBoxLauncherRootView: View {
             mode = BloomBoxLaunchPreferences.runtimeMode(for: selection)
             showProfileIntro(force: true)
         }
+        .onReceive(NotificationCenter.default.publisher(for: BloomBoxTourEvents.center)) { _ in
+            guard wizardCompleted, !showRecoveryNotice else { return }
+            tourCenter = true; tourVisible = true; tourResume = false
+            showDestination = false; sharedModel.selectedTab = .apps
+        }
         .onReceive(NotificationCenter.default.publisher(for: .GCControllerDidConnect)) { _ in
             routeConnectedControllerIfAllowed()
+        }
+    }
+
+    private var currentTourTopic: BloomBoxTourTopic {
+        let topics = BloomBoxTourTopic.all
+        return topics[min(max(0, tourStep), topics.count - 1)]
+    }
+
+    private var canExploreTour: Bool {
+        guard let destination = currentTourTopic.destination else { return false }
+        return mode == "ios" || ["interface", "settings", "diagnostics"].contains(destination)
+    }
+
+    @ViewBuilder private func tourLayer(_ anchors: [String: [Anchor<CGRect>]]) -> some View {
+        if ready && wizardCompleted && !showFirstRunWizard && !showRecoveryNotice &&
+            !showDestination && !showModeSheet && !showDiagnostics {
+            if tourVisible {
+                BloomBoxTourOverlay(anchors: anchors, index: tourStep, center: tourCenter,
+                    canExplore: canExploreTour,
+                    onSelect: { index in tourStep = index; tourCenter = false; tourCompleted = false },
+                    onBack: { tourStep = max(0, tourStep - 1) },
+                    onNext: {
+                        UISelectionFeedbackGenerator().selectionChanged()
+                        if tourStep >= BloomBoxTourTopic.all.count - 1 {
+                            tourCompleted = true; tourVisible = false; tourResume = false
+                        } else { tourStep = max(0, tourStep + 1) }
+                    },
+                    onPause: { tourVisible = false; tourResume = false },
+                    onSkip: { tourCompleted = true; tourVisible = false; tourResume = false },
+                    onCenter: { tourCenter = true },
+                    onExplore: exploreTour)
+            } else if tourResume {
+                VStack {
+                    HStack(spacing: 8) {
+                        Button {
+                            tourVisible = true; tourCenter = false; tourResume = false
+                        } label: {
+                            Label(BloomBoxL10n.isEnglish ? "Continue guide" : "Continuar guía", systemImage: "graduationcap")
+                                .font(.caption.weight(.semibold))
+                        }
+                        Button { tourResume = false } label: {
+                            Image(systemName: "xmark.circle.fill").font(.subheadline)
+                        }.accessibilityLabel(BloomBoxL10n.isEnglish ? "Hide guide" : "Ocultar guía")
+                    }.buttonStyle(.plain).padding(11)
+                        .background(.regularMaterial, in: Capsule())
+                    Spacer()
+                }.padding(.top, 8).frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    private func exploreTour() {
+        guard canExploreTour, let destination = currentTourTopic.destination else { return }
+        tourVisible = false; tourResume = true
+        switch destination {
+        case "interface": showModeSheet = true
+        case "settings": sharedModel.selectedTab = .settings
+        case "diagnostics": showDiagnostics = true
+        case "gamebox": mode = "gamebox"
+        default:
+            NotificationCenter.default.post(name: BloomBoxTourEvents.explore, object: destination)
         }
     }
 
@@ -256,7 +343,7 @@ struct BloomBoxLauncherRootView: View {
         // Do not relaunch an interrupted GameBox session or steal focus from a guest.
         guard autoGameBoxOnController, ready, wizardCompleted,
               !showFirstRunWizard, !showRecoveryNotice,
-              !showDestination, !showModeSheet, mode != "gamebox",
+              !showDestination, !showModeSheet, !tourVisible, mode != "gamebox",
               UIApplication.shared.applicationState == .active,
               !GCController.controllers().isEmpty else { return }
         mode = "gamebox"
