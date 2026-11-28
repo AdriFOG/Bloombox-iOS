@@ -54,7 +54,10 @@ assert "BloomBoxLabReset.prepareForHostStart()" in app
 assert app.index("BloomBoxLabReset.prepareForHostStart()") < app.index("let fm = FileManager()")
 assert '["Applications", "Data", "Tweaks", "BloomBox Files", "Manzana Files"]' in lab
 assert 'resolved.path == target.standardizedFileURL.path' in lab
-assert 'if !sharedStoragePresent, LCSharedUtils.appGroupID() == "Unknown"' in lab
+adapter = (views / "BloomBoxAdapters/LiveContainerPreferencesAdapter.swift").read_text()
+assert 'guard !hasSharedStorage, LCSharedUtils.appGroupID() == "Unknown"' in adapter
+assert 'LiveContainerPreferencesAdapter.privateFallbackDefaults' in lab
+assert "LCUtils" not in lab and "LCSharedUtils" not in lab and "LCPath" not in lab
 assert "removePersistentDomain" not in lab and "SecItemDelete" not in lab
 assert "defaults.removeObject(forKey: pendingKey)" in lab
 print("PASS: secret Lab, private reset, explicit confirmation and shared storage protection")

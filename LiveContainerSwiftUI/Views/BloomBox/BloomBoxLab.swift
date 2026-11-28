@@ -43,10 +43,7 @@ enum BloomBoxLabReset {
     private static let privateSupportNames = ["LiveBoard", "BloomBoxNovaV2", "Manzana"]
 
     static var sharedStoragePresent: Bool {
-        let privateDocs = LCPath.docPath.standardizedFileURL.resolvingSymlinksInPath()
-        let groupDocs = LCPath.lcGroupDocPath.standardizedFileURL.resolvingSymlinksInPath()
-        return privateDocs.path != groupDocs.path || LCSharedUtils.appGroupPath() != nil ||
-            LCSharedUtils.appGroupID() != "Unknown"
+        LiveContainerPreferencesAdapter.hasSharedStorage
     }
 
     static func schedule(_ scope: Scope) {
@@ -65,7 +62,7 @@ enum BloomBoxLabReset {
         // shared suite, or a reset in one copy could restart another copy.
         if !defaults.bool(forKey: migratedKey) {
             for key in onboardingKeys where defaults.object(forKey: key) == nil {
-                if let value = LCUtils.appGroupUserDefault.object(forKey: key) {
+                if let value = LiveContainerPreferencesAdapter.defaults.object(forKey: key) {
                     defaults.set(value, forKey: key)
                 }
             }
@@ -79,7 +76,7 @@ enum BloomBoxLabReset {
         do {
             if scope == .factory {
                 let fm = FileManager.default
-                let docs = LCPath.docPath
+                let docs = LiveContainerPreferencesAdapter.privateDocuments
                 // Check and delete only explicitly owned paths beneath HOME.
                 try removePrivateChildren(privateDocumentNames, root: docs)
                 if let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
@@ -92,8 +89,8 @@ enum BloomBoxLabReset {
                 }
                 // "Unknown" is the private fallback suite used when no group
                 // is available. Never clear a real or ambiguous group suite.
-                if !sharedStoragePresent, LCSharedUtils.appGroupID() == "Unknown" {
-                    clearPreferences(LCUtils.appGroupUserDefault, domain: "Unknown")
+                if let privateDefaults = LiveContainerPreferencesAdapter.privateFallbackDefaults {
+                    clearPreferences(privateDefaults, domain: "Unknown")
                 }
                 if scope == .preferences,
                    let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
