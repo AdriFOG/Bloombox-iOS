@@ -33,6 +33,12 @@ def verify() -> None:
         relative = path.relative_to(ROOT).as_posix()
         text = path.read_text(encoding="utf-8")
         if relative not in allowed:
+            # Credits are static acknowledgments, not calls into the signer.
+            # Allow only the exact quoted display name and upstream URL here;
+            # unquoted SideSign identifiers and every other file remain guarded.
+            if path.name == "BloomBoxCredits.swift":
+                text = text.replace('"SideSign"', '""').replace(
+                    '"https://github.com/SideStore/SideSign"', '""')
             hits = [token.pattern for token in tokens if token.search(text)]
             assert not hits, (
                 f"New BloomBox UI directly accesses LiveContainer/SideStore internals: "

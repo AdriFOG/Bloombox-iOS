@@ -1,3 +1,4 @@
+#include <math.h>
 //
 //  AppSceneView.m
 //  LiveContainer
@@ -155,6 +156,16 @@
         @"lcHomePath": NSHomeDirectory(),
     }.mutableCopy;
     
+    NSDictionary *inspection = [NSUserDefaults.standardUserDefaults dictionaryForKey:@"BloomBoxInspectorPendingV1"];
+    NSString *session = inspection[@"id"];
+    if ([inspection[@"selected"] isEqualToString:_bundleId] &&
+        [inspection[@"shared"] boolValue] &&
+        fabs([NSDate date].timeIntervalSince1970 - [inspection[@"time"] doubleValue]) < 300 &&
+        [session isKindOfClass:NSString.class] && session.length == 36 &&
+        [[NSUUID alloc] initWithUUIDString:session]) {
+        userInfo[@"bloomBoxInspectorSession"] = session;
+        [NSUserDefaults.standardUserDefaults removeObjectForKey:@"BloomBoxInspectorPendingV1"];
+    }
     NSString* launchAppUrlScheme = [NSUserDefaults.standardUserDefaults stringForKey:@"launchAppUrlScheme"];
     [NSUserDefaults.lcUserDefaults removeObjectForKey:@"launchAppUrlScheme"];
     if(launchAppUrlScheme) {

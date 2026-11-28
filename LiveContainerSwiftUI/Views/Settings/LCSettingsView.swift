@@ -73,6 +73,9 @@ struct LCSettingsView: View {
     @EnvironmentObject private var sharedModel : SharedModel
     
     @State private var isViewAppeared = false
+    @State private var labTaps = 0
+    @State private var lastLabTap = Date.distantPast
+    @State private var showBloomBoxLab = false
     
     let storeName = LCUtils.getStoreName()
     
@@ -84,6 +87,18 @@ struct LCSettingsView: View {
     var body: some View {
         NavigationView {
             Form {
+                Section {
+                    Button {
+                        NotificationCenter.default.post(name: BloomBoxTourEvents.center, object: nil)
+                    } label: {
+                        Label(BloomBoxL10n.isEnglish ? "Learning center" : "Centro de aprendizaje", systemImage: "graduationcap.fill")
+                    }
+                    NavigationLink {
+                        BloomBoxInspectorView(apps: LiveContainerDiagnosticsAdapter.inspectorApps(sharedModel.apps))
+                    } label: {
+                        Label("BloomBox Inspector", systemImage: "magnifyingglass")
+                    }
+                }
                 if UserDefaults.sideStoreExist(), sharedModel.multiLCStatus != 2 {
                     Section {
                         NavigationLink {
@@ -306,24 +321,13 @@ struct LCSettingsView: View {
                 }
                 
                 Section {
-                    HStack {
-                        Image("GitHub")
-                        Button("LiveContainer/LiveContainer") {
-                            openGitHub()
-                        }
+                    NavigationLink {
+                        BloomBoxCreditsView()
+                    } label: {
+                        Label(BloomBoxL10n.isEnglish ? "Credits and acknowledgments" : "Créditos y agradecimientos",
+                              systemImage: "heart.text.square")
                     }
-                    HStack {
-                        Image("Twitter")
-                        Button("khanhduytran0") {
-                            openTwitter()
-                        }
-                    }
-                    HStack {
-                        Image("GitHub")
-                        Button("Huge_Black") {
-                            openGitHub2()
-                        }
-                    }
+                    .accessibilityIdentifier("bloombox.settings.credits")
                 } header: {
                     Text("lc.settings.about".loc)
                 } footer: {
@@ -333,8 +337,17 @@ struct LCSettingsView: View {
                 VStack{
                     Text(LCUtils.getVersionInfo())
                         .foregroundStyle(.gray)
-                        .onTapGesture(count: 5) {
-                            sharedModel.developerMode = true
+                        .onTapGesture {
+                            let now = Date()
+                            if now.timeIntervalSince(lastLabTap) > 1.5 { labTaps = 0 }
+                            lastLabTap = now
+                            labTaps += 1
+                            if labTaps == 5 { sharedModel.developerMode = true }
+                            if labTaps >= 7 {
+                                labTaps = 0
+                                showBloomBoxLab = true
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            }
                         }
                 }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -466,6 +479,7 @@ struct LCSettingsView: View {
             )
         }
         .navigationViewStyle(StackNavigationViewStyle())
+        .sheet(isPresented: $showBloomBoxLab) { BloomBoxLabView() }
         .onAppear() {
             if !isViewAppeared {
                 guard sharedModel.selectedTab == .settings, let link = sharedModel.deepLink else { return }

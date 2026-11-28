@@ -255,6 +255,20 @@ class LCAppModel: ObservableObject, Hashable {
     }
 
     func runApp(multitask: Bool? = nil, containerFolderName : String? = nil, bundleIdOverride : String? = nil, urlStr : String? = nil, forceJIT: Bool? = nil) async throws{
+        let key = appInfo is BuiltInSideStoreAppInfo ? "" : (appInfo.relativeBundlePath ?? "")
+        let inspection = BloomBoxInspectorStore.begin(key: key, name: appInfo.displayName() ?? "App")
+        do {
+            try await runAppInspected(multitask: multitask, containerFolderName: containerFolderName,
+                bundleIdOverride: bundleIdOverride, urlStr: urlStr, forceJIT: forceJIT, inspection: inspection)
+            BloomBoxInspectorStore.record(inspection, "host.request.returned")
+        } catch {
+            BloomBoxInspectorStore.record(inspection, "host.request.failed")
+            throw error
+        }
+    }
+
+    private func runAppInspected(multitask: Bool?, containerFolderName: String?, bundleIdOverride: String?,
+                                 urlStr: String?, forceJIT: Bool?, inspection: String?) async throws {
         if isDataBackupInProgress {
             throw "Espera a que termine la copia de datos antes de abrir esta app."
         }
@@ -264,6 +278,7 @@ class LCAppModel: ObservableObject, Hashable {
         // Applies to normal launches, library launches, and deep links.
         if await delegate?.approveEmulatorLaunch(app: self, forceJIT: forceJIT) == false { return }
 
+        BloomBoxInspectorStore.record(inspection, "host.container.resolve")
         ensurePrimaryContainer()
         // Resolve BloomBox's active profile before any launch path (Home,
         // GameBox, guest list or deep link). Profile 1 keeps its existing
@@ -336,6 +351,8 @@ class LCAppModel: ObservableObject, Hashable {
         // Keep the JIT target alive in a full-screen guest when normal presentation is requested.
         let fullScreenJIT = builtInJIT && !preferredMultitask
         let multitask = preferredMultitask || fullScreenJIT
+        BloomBoxInspectorStore.record(inspection, wantsJIT ? "host.jit.requested" : "host.jit.not_requested")
+        BloomBoxInspectorStore.record(inspection, multitask ? "host.liveprocess.selected" : "host.direct.selected")
         
         if MultitaskManager.isMultitasking() || multitask,
            let currentDataFolder {
@@ -441,7 +458,11 @@ class LCAppModel: ObservableObject, Hashable {
                 isAppRunning = false
             }}
         }
+        BloomBoxInspectorStore.record(inspection, "host.sign.begin")
         try await signApp(force: false)
+        BloomBoxInspectorStore.record(inspection, "host.sign.completed")
+        BloomBoxInspectorStore.arm(inspection, selected: bundleIdOverride ?? appInfo.relativeBundlePath,
+                                   useShared: multitask)
         
         if let bundleIdOverride {
             UserDefaults.standard.set(bundleIdOverride, forKey: "selected")
@@ -469,6 +490,7 @@ class LCAppModel: ObservableObject, Hashable {
                             continuation.resume(throwing: "Failed to obtain PID from LiveProcess")
                             return
                         }
+                        BloomBoxInspectorStore.record(inspection, "host.liveprocess.pid_received")
                         Task {
                             if let scriptData = launchScript, !scriptData.isEmpty {
                                 await self.delegate?.jitLaunch(withPID: pidNumber.intValue, withScript: scriptData, appName: self.appInfo.displayName())
@@ -495,6 +517,7 @@ class LCAppModel: ObservableObject, Hashable {
                 let fileURL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0].appendingPathComponent("preloadLibraries.txt")
                 try fileContents?.write(to: fileURL)
             }
+            BloomBoxInspectorStore.record(inspection, "host.direct.handoff")
             LCSharedUtils.launchToGuestApp(withClassicMode: classicMode)
         }
         

@@ -354,6 +354,7 @@ struct BloomBoxHomeScreen: View {
                 .shadow(color: profileAccent.opacity(0.28), radius: 15, y: 5)
         }
         .buttonStyle(.plain)
+        .bloomBoxTourAnchor("gamebox")
         .position(x: startX + gameBoxShortcutDrag.width,
                   y: startY + gameBoxShortcutDrag.height)
         .simultaneousGesture(
@@ -804,6 +805,41 @@ struct BloomBoxHomeScreen: View {
                 }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: BloomBoxTourEvents.focus)) { note in
+            guard !isNova, let intent = note.object as? String else { return }
+            librarySearchFocused = false
+            libraryQuery = ""
+            switch intent {
+            case "library":
+                page = (visiblePageIndices.first ?? 0) + 1
+            case "install", "context", "modules", "jit":
+                let key = intent == "install" ? Self.installKey :
+                    (intent == "context" ? Self.appStoreKey : Self.modulesKey)
+                page = libraryPageIndex
+                libraryQuery = title(key)
+            case "settings": page = 0
+            case "basicfinish", "done": page = (visiblePageIndices.first ?? 0) + 1
+            default: break
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: BloomBoxTourEvents.explore)) { note in
+            guard let destination = note.object as? String, !installInProgress, huskStartingGame == nil else { return }
+            switch destination {
+            case "install": openInstall()
+            case "appstore": appStorePresented = true
+            case "apkstore": portStorePresented = true
+            case "files": androidFilesPresented = true
+            case "modules": modulesPresented = true
+            case "jit": jitSetup = true
+            case "tweaks": storeFocusedApp = nil; tweakStorePresented = true
+            case "themes": themesPresented = true
+            case "library": if !isNova { page = libraryPageIndex }
+            case "news": if !isNova { page = 0 }
+            case "desktop": if !isNova { desktopSettings = true }
+            case "widgets": if !isNova { showWidgetGallery = true }
+            default: break
+            }
+        }
         .overlay(alignment: .bottom) {
             if ramPlus.needsAttention && startupNoticesEnabled {
                 Button { modulesPresented = true } label: {
@@ -1123,7 +1159,9 @@ struct BloomBoxHomeScreen: View {
             }
             .navigationViewStyle(.stack)
         }
-        .sheet(isPresented: $jitSetup) { LiveBoardJITSetup() }
+        .sheet(isPresented: $jitSetup, onDismiss: {
+            NotificationCenter.default.post(name: BloomBoxTourEvents.returned, object: "jit")
+        }) { LiveBoardJITSetup() }
         .sheet(isPresented: $tweakStorePresented, onDismiss: { storeFocusedApp = nil }) {
             BloomBoxTweakStore(apps: currentGuests, focusedApp: storeFocusedApp)
         }
@@ -1170,7 +1208,10 @@ struct BloomBoxHomeScreen: View {
             }
             .navigationViewStyle(.stack)
         }
-        .sheet(isPresented: $modulesPresented, onDismiss: performModuleAction) {
+        .sheet(isPresented: $modulesPresented, onDismiss: {
+            performModuleAction()
+            NotificationCenter.default.post(name: BloomBoxTourEvents.returned, object: "modules")
+        }) {
             BloomBoxModulesPanel(apps: LiveContainerHomeAdapter.moduleGuests(currentGuests, sharedModel: sharedModel)) { destination in
                 pendingModuleDestination = destination
                 modulesPresented = false
@@ -1455,6 +1496,7 @@ struct BloomBoxHomeScreen: View {
                             } label: {
                                 HStack(spacing: 14) {
                                     miniatureIcon(key, size: 43)
+                                        .bloomBoxTourAnchor(key)
                                     Text(BloomBoxL10n.t(title(key)))
                                         .font(.system(size: 17))
                                     Spacer()
@@ -1611,6 +1653,7 @@ struct BloomBoxHomeScreen: View {
             }
         }
         .onDrag { NSItemProvider(object: key as NSString) }
+        .bloomBoxTourAnchor(key)
         .accessibilityLabel(BloomBoxL10n.isEnglish ? "Open \(BloomBoxL10n.t(title(key)))" : "Abrir \(title(key))")
     }
 
@@ -3172,6 +3215,7 @@ struct BloomBoxHomeScreen: View {
         }
         .buttonStyle(LiveBoardHomePressStyle(reduceMotion: reduceMotion))
         .contextMenu { placementMenu(key) }
+        .bloomBoxTourAnchor(key)
         .accessibilityLabel(BloomBoxL10n.t(isThemes ? "Temas" : title(key)))
     }
 
@@ -3360,6 +3404,7 @@ struct BloomBoxHomeScreen: View {
         .frame(width: panelWidth, height: panelHeight)
         .bloomBoxHomeDockGlass(radius: 33)
         .contentShape(RoundedRectangle(cornerRadius: 33))
+        .bloomBoxTourAnchor("dock")
         .accessibilityIdentifier("home.dock")
     }
 
@@ -3383,6 +3428,7 @@ struct BloomBoxHomeScreen: View {
                         .frame(width: 27, height: 40)
                         .contentShape(Rectangle())
                 }
+                .bloomBoxTourAnchor(index == 0 ? "news" : "page-\(index)")
                 .accessibilityLabel(index == 0 ? "Widgets" : (englishUI ? "Page \(index)" : "Página \(index)"))
                 // Do not attach a drop target to navigation buttons; it can
                 // consume taps. Use the widget's "Mover a página" menu instead.
@@ -3397,6 +3443,7 @@ struct BloomBoxHomeScreen: View {
                     .foregroundStyle(.white.opacity(page == libraryPageIndex ? 1 : 0.55))
                     .frame(width: 21, height: 32)
             }
+            .bloomBoxTourAnchor("library")
             .accessibilityLabel(BloomBoxL10n.t("Biblioteca de apps"))
             if editing {
                 Button { pageManager = true } label: {

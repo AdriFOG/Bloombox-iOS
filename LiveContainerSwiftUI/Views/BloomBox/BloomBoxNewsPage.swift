@@ -39,6 +39,7 @@ struct BloomBoxNewsPage: View {
                             .background(.thinMaterial, in: Circle())
                     }
                     .accessibilityLabel(english ? "Install APK, IPA or TIPA" : "Instalar APK, IPA o TIPA")
+                    .bloomBoxTourAnchor("manzana:install")
                     .accessibilityIdentifier("bloombox.news.install")
                     Button(action: openSettings) {
                         Image(systemName: "paintbrush.pointed.fill")
@@ -50,6 +51,7 @@ struct BloomBoxNewsPage: View {
                     .accessibilityIdentifier("bloombox.news.settings")
                 }
                 BloomBoxProfileSwitcherWidget()
+                    .bloomBoxTourAnchor("profiles")
                 BloomBoxNewsQuickAccess(onOpen: openShortcut)
                 BloomBoxGameBoxNewsWidget(onOpen: openGameBox, gameNames: gameNames)
                 BloomBoxRemoteNewsSection()
@@ -189,6 +191,7 @@ private struct BloomBoxNewsQuickAccess: View {
                             VStack(spacing: 5) {
                                 BloomBoxNewsAppIcon(shortcut: item)
                                     .frame(width: 60, height: 60)
+                                    .bloomBoxTourAnchor("news:" + item.id)
                                 Text(item.title(english: english))
                                     .font(.system(size: 11, weight: .medium))
                                     .lineLimit(1)

@@ -819,6 +819,38 @@ struct BloomBoxNovaV2View: View {
         }
         .foregroundStyle(Color.white)
         .background(panel.ignoresSafeArea())
+        .onReceive(NotificationCenter.default.publisher(for: BloomBoxTourEvents.focus)) { note in
+            guard let intent = note.object as? String else { return }
+            switch intent {
+            case "library":
+                if drawer { settleDrawer(open: false) }
+                page = max(0, page)
+            case "install", "context", "modules", "jit":
+                page = max(0, page)
+                let key = intent == "install" ? "manzana:install" :
+                    (intent == "context" ? "manzana:appstore" : "manzana:modules")
+                openDrawer(focus: false)
+                query = displayName(key)
+            case "settings":
+                settleDrawer(open: false)
+                animate { page = -1 }
+            case "basicfinish", "done":
+                settleDrawer(open: false)
+                page = max(0, page)
+                query = ""
+            default: break
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: BloomBoxTourEvents.explore)) { note in
+            guard let destination = note.object as? String else { return }
+            switch destination {
+            case "library": openDrawer(focus: false)
+            case "news": animate { page = -1 }
+            case "desktop": animate { settings = true }
+            case "widgets": animate { editing = true; widgetsExpanded = true; widgetQuery = "" }
+            default: break
+            }
+        }
         .onAppear {
             guard !loaded else { return }
             restoreWorkspace()
@@ -1048,6 +1080,7 @@ struct BloomBoxNovaV2View: View {
                                 .frame(width: 32, height: 22)
                         }
                         .buttonStyle(.plain)
+                        .bloomBoxTourAnchor("library")
                         .accessibilityLabel(t("Open app drawer", "Abrir cajón de apps"))
                     }.padding(.horizontal, 12)
                 }
@@ -1157,7 +1190,7 @@ struct BloomBoxNovaV2View: View {
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(currentPage == -1 ? accent : Color.gray)
                         .frame(minWidth: 22, minHeight: 22)
-                }.buttonStyle(.plain).accessibilityLabel(t("News", "Noticias"))
+                }.buttonStyle(.plain).bloomBoxTourAnchor("news").accessibilityLabel(t("News", "Noticias"))
                 ForEach(workspace.pages.indices, id: \.self) { index in
                     Button { animate { page = index } } label: {
                         Capsule().fill(currentPage == index ? accent : Color.gray)
@@ -1186,6 +1219,7 @@ struct BloomBoxNovaV2View: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(height: 66)
+        .bloomBoxTourAnchor("dock")
         .accessibilityIdentifier("bloombox.nova.dock")
     }
 
@@ -1470,6 +1504,7 @@ struct BloomBoxNovaV2View: View {
                             .foregroundStyle(Color.white)
                             .background(raised, in: Capsule())
                     }.buttonStyle(.plain)
+                        .bloomBoxTourAnchor("manzana:install")
                     Button { drawerSettings = true } label: {
                         Label(t("Drawer settings", "Ajustes del cajón"), systemImage: "gearshape")
                             .font(.caption.weight(.medium))
@@ -1704,6 +1739,7 @@ struct BloomBoxNovaV2View: View {
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: workspace.iconShape == 0 ? size * 0.20 : workspace.iconShape == 1 ? size / 2 : 2))
+        .bloomBoxTourAnchor(key)
     }
 
     private func activate(_ key: String) {

@@ -23,6 +23,9 @@ struct LiveContainerSwiftUIApp : SwiftUI.App {
     }
     
     init() {
+        // Apply only a confirmed, private reset, before any guest models
+        // or launcher layout are read from disk.
+        BloomBoxLabReset.prepareForHostStart()
         let fm = FileManager()
         var tempAppDataFolderNames : [String] = []
         var tempTweakFolderNames : [String] = []

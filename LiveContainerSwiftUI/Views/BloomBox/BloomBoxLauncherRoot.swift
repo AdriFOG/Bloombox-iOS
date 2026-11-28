@@ -29,7 +29,19 @@ struct BloomBoxLauncherRootView: View {
     @State private var showDiagnostics = false
     @State private var showRecoveryNotice = false
     @State private var showFirstRunWizard = false
-    @AppStorage("BloomBoxWizardInitialCompletedV1", store: LCUtils.appGroupUserDefault)
+    @AppStorage("BloomBoxTourStepV1", store: UserDefaults.standard) private var tourStep = 0
+    @AppStorage("BloomBoxTourCompletedV1", store: UserDefaults.standard) private var tourCompleted = false
+    // 0 = unclassified legacy install, 1 = required introduction, 2 = completed/exempt.
+    @AppStorage("BloomBoxBasicGuideStateV2", store: UserDefaults.standard) private var basicGuideState = 0
+    @AppStorage("BloomBoxBasicGuideStepV2", store: UserDefaults.standard) private var basicGuideStep = 0
+    @State private var tourVisible = false
+    @State private var tourCenter = false
+    @State private var tourResume = false
+    @State private var tourAfterWizard = false
+    @State private var tourProfiles = false
+    @State private var basicVisit: String?
+    @AppStorage("BloomBoxTourSeenTopicsV1", store: UserDefaults.standard) private var tourSeenTopics = ""
+    @AppStorage("BloomBoxWizardInitialCompletedV1", store: UserDefaults.standard)
     private var wizardCompleted = false
     @AppStorage("BloomBoxAutoGameBoxOnController", store: LCUtils.appGroupUserDefault)
     private var autoGameBoxOnController = true
@@ -57,6 +69,9 @@ struct BloomBoxLauncherRootView: View {
         Group {
             if ready {
                 LCAppListView(openInterface: { showModeSheet = true })
+                    .environment(\.bloomBoxTourCollect, tourBlocksInput && !tourCenter)
+                    .allowsHitTesting(!tourBlocksInput)
+                    .accessibilityHidden(tourBlocksInput)
                     .preferredColorScheme(.dark)
             } else {
                 Color.black.ignoresSafeArea()
@@ -75,13 +90,30 @@ struct BloomBoxLauncherRootView: View {
                 .transition(.opacity)
             }
         }
-        .fullScreenCover(isPresented: $showFirstRunWizard) {
+        .overlayPreferenceValue(BloomBoxTourAnchors.self) { anchors in
+            tourLayer(anchors)
+                .allowsHitTesting(tourBlocksInput)
+        }
+        .overlay(alignment: .top) {
+            if tourLayerAvailable && tourResume && !tourVisible {
+                tourResumeButton
+            }
+        }
+        .fullScreenCover(isPresented: $showFirstRunWizard, onDismiss: {
+            tourAfterWizard = false
+            startBasicGuideIfNeeded()
+        }) {
             BloomBoxWizardFlowView(isPreview: false) {
+                basicGuideStep = 0
+                basicGuideState = 1
                 wizardCompleted = true
+                tourAfterWizard = true
+                mode = "ios"
+                introProfile = nil
+                tourVisible = true
+                tourCenter = false
+                tourResume = false
                 showFirstRunWizard = false
-                mode = BloomBoxLaunchPreferences.runtimeMode(for: preferredExperience)
-                showRecoveryNotice = BloomBoxCrashJournal.shared.previousInterrupted
-                showProfileIntro()
             }
             .preferredColorScheme(BloomBoxWizardSystemAppearance.current)
         }
@@ -102,6 +134,14 @@ struct BloomBoxLauncherRootView: View {
                             launcherOption(title: "GameBox v2", detail: BloomBoxL10n.t("Interfaz de consola con carátulas, fondos y cristal."),
                                            icon: "gamecontroller.fill", value: "gamebox")
                         }
+                        Button {
+                            showModeSheet = false
+                            openLearningCenter()
+                        } label: {
+                            Label(BloomBoxL10n.isEnglish ? "Learning center" : "Centro de aprendizaje", systemImage: "graduationcap.fill")
+                                .font(.headline).padding(20).frame(maxWidth: .infinity, alignment: .leading)
+                                .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 20))
+                        }.buttonStyle(.plain)
                         NavigationLink(destination: BloomBoxDiagnosticsView()) {
                             Label("Diagnósticos y recuperación", systemImage: "waveform.path.ecg")
                                 .font(.headline)
@@ -159,11 +199,22 @@ struct BloomBoxLauncherRootView: View {
         }
         .sheet(isPresented: $showDestination, onDismiss: {
             sharedModel.selectedTab = .apps
+            finishBasicVisit("settings")
         }) {
             VStack(spacing: 0) {
                 HStack { Spacer(); Button(BloomBoxL10n.isEnglish ? "Done" : "Listo") { showDestination = false }.padding() }
                 destinationContent
             }
+        }
+        .sheet(isPresented: $tourProfiles) {
+            NavigationView {
+                BloomBoxProfileManagementView()
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button(BloomBoxL10n.isEnglish ? "Done" : "Listo") { tourProfiles = false }
+                        }
+                    }
+            }.navigationViewStyle(.stack)
         }
         .sheet(isPresented: $showDiagnostics) {
             NavigationView {
@@ -209,9 +260,21 @@ struct BloomBoxLauncherRootView: View {
                 showFirstRunWizard = true
             } else {
                 showRecoveryNotice = BloomBoxCrashJournal.shared.previousInterrupted
+                // Do not force onboarding on people who were already using BloomBox
+                // before the guided-tour feature. Resume early tour builds, however.
+                if basicGuideState == 0 {
+                    let defaults = UserDefaults.standard
+                    let triedPreviousTour = defaults.object(forKey: "BloomBoxTourCompletedV1") != nil ||
+                        defaults.object(forKey: "BloomBoxTourStepV1") != nil
+                    basicGuideState = triedPreviousTour ? 1 : 2
+                }
+                startBasicGuideIfNeeded()
                 routeConnectedControllerIfAllowed()
                 showProfileIntro()
             }
+        }
+        .onChange(of: showRecoveryNotice) { showing in
+            if !showing { startBasicGuideIfNeeded() }
         }
         .onChange(of: scenePhase) { phase in
             if phase == .active {
@@ -232,14 +295,218 @@ struct BloomBoxLauncherRootView: View {
             mode = BloomBoxLaunchPreferences.runtimeMode(for: selection)
             showProfileIntro(force: true)
         }
+        .task(id: shouldActivateBasicGuide) {
+            guard shouldActivateBasicGuide else { return }
+            await Task.yield()
+            guard !Task.isCancelled, shouldActivateBasicGuide else { return }
+            startBasicGuideIfNeeded()
+        }
+        .task(id: basicFocusIntent) {
+            guard let intent = basicFocusIntent else { return }
+            do { try await Task.sleep(nanoseconds: 220_000_000) } catch { return }
+            guard !Task.isCancelled, basicFocusIntent == intent else { return }
+            NotificationCenter.default.post(name: BloomBoxTourEvents.focus, object: intent)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: BloomBoxTourEvents.returned)) { note in
+            if let destination = note.object as? String { finishBasicVisit(destination) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: BloomBoxTourEvents.center)) { _ in
+            guard wizardCompleted, !showRecoveryNotice else { return }
+            showDestination = false; sharedModel.selectedTab = .apps
+            openLearningCenter()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .GCControllerDidConnect)) { _ in
             routeConnectedControllerIfAllowed()
         }
     }
 
+    private var requiresBasicGuide: Bool { basicGuideState == 1 }
+
+    private var tourLayerAvailable: Bool {
+        ready && wizardCompleted && !showFirstRunWizard && !showRecoveryNotice &&
+            !showDestination && !showModeSheet && !showDiagnostics && !tourProfiles
+    }
+
+    private var shouldActivateBasicGuide: Bool {
+        requiresBasicGuide && tourLayerAvailable && scenePhase == .active &&
+            basicVisit == nil && !tourVisible
+    }
+
+    private var tourBlocksInput: Bool { tourLayerAvailable && tourVisible }
+
+    private var currentTourTopic: BloomBoxTourTopic {
+        let topics = requiresBasicGuide ? BloomBoxTourTopic.basic : BloomBoxTourTopic.all
+        let step = requiresBasicGuide ? basicGuideStep : tourStep
+        return topics[min(max(0, step), topics.count - 1)]
+    }
+
+    private var canExploreTour: Bool {
+        if requiresBasicGuide { return currentTourTopic.id != "basicfinish" }
+        guard let destination = currentTourTopic.destination else { return false }
+        return mode == "ios" || ["interface", "settings", "diagnostics", "profiles", "home"].contains(destination)
+    }
+
+    private var basicFocusIntent: String? {
+        guard requiresBasicGuide, tourLayerAvailable, tourVisible, scenePhase == .active else { return nil }
+        return currentTourTopic.id
+    }
+
+    private func startBasicGuideIfNeeded() {
+        guard requiresBasicGuide, tourLayerAvailable, basicVisit == nil else { return }
+        introProfile = nil
+        // The basic tour teaches the app launcher, not the console. Keep the
+        // saved experience preference intact and restore it when finished.
+        if mode == "gamebox" { mode = "ios" }
+        basicVisit = nil
+        tourCenter = false
+        tourResume = false
+        tourVisible = true
+    }
+
+    private func openLearningCenter() {
+        if requiresBasicGuide {
+            startBasicGuideIfNeeded()
+        } else {
+            tourCenter = true
+            tourResume = false
+            tourVisible = true
+        }
+    }
+
+    private func closeTour(skipped: Bool = false) {
+        guard !requiresBasicGuide else { return }
+        // Clear both presentation and interaction in the same transaction.
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            tourVisible = false
+            tourResume = false
+            tourCenter = false
+            if skipped { tourCompleted = true }
+        }
+    }
+
+    private func nextTourStep() {
+        rememberTourTopic(currentTourTopic.id)
+        UISelectionFeedbackGenerator().selectionChanged()
+        if requiresBasicGuide {
+            if basicGuideStep >= BloomBoxTourTopic.basic.count - 1 {
+                var transaction = Transaction(animation: nil)
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    tourVisible = false
+                    tourResume = false
+                    tourCenter = false
+                    basicGuideState = 2
+                }
+                NotificationCenter.default.post(name: BloomBoxTourEvents.focus, object: "done")
+                mode = BloomBoxLaunchPreferences.runtimeMode(for: preferredExperience)
+            } else {
+                basicGuideStep += 1
+            }
+        } else if tourStep >= BloomBoxTourTopic.all.count - 1 {
+            tourCompleted = true
+            closeTour()
+        } else {
+            tourStep = max(0, tourStep + 1)
+        }
+    }
+
+    @ViewBuilder private func tourLayer(_ anchors: [String: [Anchor<CGRect>]]) -> some View {
+        if tourBlocksInput {
+            BloomBoxTourOverlay(anchors: anchors,
+                index: requiresBasicGuide ? basicGuideStep : tourStep,
+                center: !requiresBasicGuide && tourCenter,
+                required: requiresBasicGuide,
+                canExplore: canExploreTour,
+                seenTopics: Set(tourSeenTopics.split(separator: ",").map(String.init)),
+                onSelect: { index in
+                    guard !requiresBasicGuide else { return }
+                    tourStep = index; tourCenter = false; tourCompleted = false
+                },
+                onBack: {
+                    if requiresBasicGuide { basicGuideStep = max(0, basicGuideStep - 1) }
+                    else { tourStep = max(0, tourStep - 1) }
+                },
+                onNext: nextTourStep,
+                onPause: { closeTour() },
+                onSkip: { closeTour(skipped: true) },
+                onCenter: { if !requiresBasicGuide { tourCenter = true } },
+                onExplore: exploreTour)
+                .transition(.identity)
+        }
+    }
+
+    private var tourResumeButton: some View {
+        HStack(spacing: 8) {
+            Button {
+                if let destination = basicVisit { finishBasicVisit(destination) }
+                else { tourVisible = true; tourCenter = false; tourResume = false }
+            } label: {
+                Label(BloomBoxL10n.isEnglish ? "Continue guide" : "Continuar guía", systemImage: "graduationcap")
+                    .font(.caption.weight(.semibold))
+            }
+            if !requiresBasicGuide {
+                Button { tourResume = false } label: {
+                    Image(systemName: "xmark.circle.fill").font(.subheadline)
+                }.accessibilityLabel(BloomBoxL10n.isEnglish ? "Hide guide" : "Ocultar guía")
+            }
+        }.buttonStyle(.plain).padding(11)
+            .background(.regularMaterial, in: Capsule())
+            .padding(.top, 8)
+    }
+
+    private func rememberTourTopic(_ id: String) {
+        var seen = Set(tourSeenTopics.split(separator: ",").map(String.init))
+        seen.insert(id)
+        tourSeenTopics = seen.sorted().joined(separator: ",")
+    }
+
+    private func finishBasicVisit(_ destination: String) {
+        guard requiresBasicGuide, basicVisit == destination else { return }
+        basicVisit = nil
+        tourResume = false
+        nextTourStep()
+        tourVisible = requiresBasicGuide
+    }
+
+    private func exploreTour() {
+        if requiresBasicGuide {
+            let id = currentTourTopic.id
+            if id == "context" { nextTourStep(); return }
+            guard let destination = currentTourTopic.destination else { return }
+            if id == "library" {
+                NotificationCenter.default.post(name: BloomBoxTourEvents.explore, object: destination)
+                nextTourStep()
+                return
+            }
+            // Real feature screens run without the launcher touch gate.
+            // Dismissal resumes the required walkthrough; the capsule is
+            // a recovery path if a system picker cannot be presented.
+            basicVisit = destination
+            tourVisible = false
+            tourResume = true
+            if destination == "settings" { sharedModel.selectedTab = .settings }
+            else { NotificationCenter.default.post(name: BloomBoxTourEvents.explore, object: destination) }
+            return
+        }
+        guard canExploreTour, let destination = currentTourTopic.destination else { return }
+        tourVisible = false; tourResume = true
+        switch destination {
+        case "interface": showModeSheet = true
+        case "settings": sharedModel.selectedTab = .settings
+        case "diagnostics": showDiagnostics = true
+        case "gamebox": mode = "gamebox"
+        case "home": mode = "ios"
+        case "profiles": tourProfiles = true
+        default:
+            NotificationCenter.default.post(name: BloomBoxTourEvents.explore, object: destination)
+        }
+    }
+
     private func showProfileIntro(force: Bool = false) {
         guard ready, wizardCompleted, !showFirstRunWizard, !showRecoveryNotice,
-              !showDestination, !showModeSheet,
+              !requiresBasicGuide, !tourVisible, !showDestination, !showModeSheet,
               UIApplication.shared.applicationState == .active else { return }
         // Once per real process launch. Profile switches explicitly force their
         // own greeting; reopening the existing process never does.
@@ -256,7 +523,7 @@ struct BloomBoxLauncherRootView: View {
         // Do not relaunch an interrupted GameBox session or steal focus from a guest.
         guard autoGameBoxOnController, ready, wizardCompleted,
               !showFirstRunWizard, !showRecoveryNotice,
-              !showDestination, !showModeSheet, mode != "gamebox",
+              !showDestination, !showModeSheet, !tourVisible, !requiresBasicGuide, mode != "gamebox",
               UIApplication.shared.applicationState == .active,
               !GCController.controllers().isEmpty else { return }
         mode = "gamebox"
