@@ -31,8 +31,8 @@ struct BloomBoxTourTopic: Identifiable {
               "Abre la biblioteca de apps o, en Nova, desliza hacia arriba para abrir el cajón. Desde ahí encuentras las apps instaladas y las herramientas de BloomBox.",
               "Open the App Library or swipe up in Nova to open the drawer. Find installed apps and BloomBox tools there.", target: "library", destination: "library"),
         .init("install", "square.and.arrow.down", "Instalar IPA", "Install IPA",
-              "Usa Instalar app para elegir un IPA o TIPA de Archivos. También puedes abrir un archivo compatible desde Archivos y elegir BloomBox.",
-              "Use Install app to select an IPA or TIPA from Files. You can also open a compatible file in Files and choose BloomBox.", target: "manzana:install", destination: "install"),
+              "Usa Instalar app para elegir un IPA o TIPA de Archivos. También puedes compartirlo a BloomBox o consultar App Store y ApkStore para apps compatibles.",
+              "Use Install app to select an IPA or TIPA from Files. You can also share it to BloomBox or browse App Store and ApkStore for compatible apps.", target: "manzana:install", destination: "install"),
         .init("sidestore", "square.stack.3d.up", "SideStore y firmas", "SideStore and signing",
               "Si tu edición incluye SideStore, puedes usarlo para instalar o renovar apps firmadas en iOS. La cuenta Apple y la renovación se administran aparte.",
               "If your edition includes SideStore, use it to install or refresh signed iOS apps. Apple Account and signing are managed separately.", target: "manzana:sidestore"),
@@ -46,8 +46,8 @@ struct BloomBoxTourTopic: Identifiable {
               "Abre Archivos para elegir iOS o Android y administrar los datos disponibles de tus aplicaciones. Ten cuidado al borrar archivos.",
               "Open Files to choose iOS or Android and manage available app data. Be careful when deleting files.", target: "manzana:androidfiles", destination: "files"),
         .init("modules", "square.stack.3d.up", "Módulos y RAM+", "Modules and RAM+",
-              "Consulta los módulos, sus requisitos y el estado de RAM+. Solicitar una función no garantiza que iOS conceda el permiso.",
-              "Review modules, requirements and RAM+ status. Requesting a feature does not guarantee that iOS grants permission.", target: "manzana:modules", destination: "modules"),
+              "Abre Módulos desde el escritorio o la biblioteca. Selecciona el módulo que necesites, revisa sus requisitos y sigue sus indicaciones para instalarlo o activarlo. iOS puede limitar los permisos.",
+              "Open Modules from Home or the app library. Choose a module, review its requirements and follow its instructions to install or enable it. iOS may limit permissions.", target: "manzana:modules", destination: "modules"),
         .init("jit", "bolt.fill", "Activar JIT", "JIT setup",
               "Algunas apps, emuladores y juegos lo necesitan. Configura el proveedor y revisa el estado de conexión antes de iniciar un título compatible.",
               "Some apps, emulators and games need it. Configure the provider and review connection status before launching a compatible title.", target: "manzana:modules", destination: "jit"),
@@ -106,6 +106,14 @@ struct BloomBoxTourTopic: Identifiable {
               "En Interfaz encontrarás Diagnósticos y recuperación. Si una sesión falla, consulta el registro antes de volver a intentar.",
               "Find Diagnostics and recovery in Interface. If a session fails, review the log before trying again.", destination: "diagnostics")
     ]
+
+    // Keep these IDs stable so the required introduction can be resumed.
+    static let basicIDs = ["library", "install", "context", "modules", "jit", "settings"]
+    static let basic: [Self] = basicIDs.compactMap { id in
+        all.first { $0.id == id }
+    } + [Self("basicfinish", "checkmark.seal.fill", "¡Todo listo!", "You're ready!",
+        "Ya conoces lo esencial. Los demás tutoriales están en Ajustes → Centro de aprendizaje. No necesitas instalar nada para terminar.",
+        "You now know the essentials. Find other tutorials in Settings → Learning center. You do not need to install anything to finish.")]
 }
 
 enum BloomBoxTourEvents {
@@ -131,10 +139,11 @@ struct BloomBoxTourAnchors: PreferenceKey {
 private struct BloomBoxTourAnchorModifier: ViewModifier {
     @Environment(\.bloomBoxTourCollect) private var collect
     let key: String
-    @ViewBuilder func body(content: Content) -> some View {
-        if collect {
-            content.anchorPreference(key: BloomBoxTourAnchors.self, value: .bounds) { [key: [$0]] }
-        } else { content }
+    func body(content: Content) -> some View {
+        // Stable structural identity when the tour opens or closes.
+        content.anchorPreference(key: BloomBoxTourAnchors.self, value: .bounds) {
+            collect ? [key: [$0]] : [:]
+        }
     }
 }
 extension View {
@@ -156,6 +165,7 @@ struct BloomBoxTourOverlay: View {
     let anchors: [String: [Anchor<CGRect>]]
     let index: Int
     let center: Bool
+    let required: Bool
     let canExplore: Bool
     let seenTopics: Set<String>
     let onSelect: (Int) -> Void
@@ -169,7 +179,7 @@ struct BloomBoxTourOverlay: View {
     @Environment(\.colorScheme) private var scheme
 
     private var en: Bool { BloomBoxL10n.isEnglish }
-    private var topics: [BloomBoxTourTopic] { BloomBoxTourTopic.all }
+    private var topics: [BloomBoxTourTopic] { required ? BloomBoxTourTopic.basic : BloomBoxTourTopic.all }
     private var safeIndex: Int { min(max(index, 0), topics.count - 1) }
     private var topic: BloomBoxTourTopic { topics[safeIndex] }
     private var accent: Color { BloomBoxWizardPalette.color(BloomBoxProfileStore.active.accentHex) }
@@ -211,8 +221,8 @@ struct BloomBoxTourOverlay: View {
                 BloomBoxTourShade(hole: hole)
                     .fill(Color.black.opacity(0.57), style: FillStyle(eoFill: true))
                     .allowsHitTesting(false)
-                Rectangle().fill(Color.clear).contentShape(Rectangle())
-                    .onTapGesture {}.accessibilityHidden(true)
+                // The host gates its own interactions while the guide is visible.
+                // No full-screen transparent gesture catcher to survive dismissal.
                 if let hole {
                     RoundedRectangle(cornerRadius: 15)
                         .strokeBorder(accent, lineWidth: 2)
@@ -244,7 +254,8 @@ struct BloomBoxTourOverlay: View {
     private var topicPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(en ? "BLOOMBOX GUIDE" : "GUÍA DE BLOOMBOX").font(.caption2.bold()).foregroundStyle(.secondary)
+                Text(required ? (en ? "QUICK START" : "INICIO RÁPIDO") : (en ? "BLOOMBOX GUIDE" : "GUÍA DE BLOOMBOX"))
+                    .font(.caption2.bold()).foregroundStyle(.secondary)
                 Spacer()
                 Text("\(safeIndex + 1) / \(topics.count)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             }
@@ -258,12 +269,14 @@ struct BloomBoxTourOverlay: View {
                         .frame(maxWidth: .infinity)
                 }.buttonStyle(.bordered).tint(accent)
             }
-            HStack {
-                Button(en ? "Topics" : "Temas", action: onCenter)
-                Spacer()
-                Button(en ? "Pause" : "Pausar", action: onPause)
-                Button(en ? "Skip tour" : "Omitir", action: onSkip)
-            }.font(.caption.weight(.semibold))
+            if !required {
+                HStack {
+                    Button(en ? "Topics" : "Temas", action: onCenter)
+                    Spacer()
+                    Button(en ? "Pause" : "Pausar", action: onPause)
+                    Button(en ? "Skip tour" : "Omitir", action: onSkip)
+                }.font(.caption.weight(.semibold))
+            }
             HStack {
                 Button(action: onBack) { Image(systemName: "chevron.left").frame(minWidth: 44, minHeight: 36) }
                     .disabled(safeIndex == 0).accessibilityLabel(en ? "Back" : "Atrás")
@@ -281,7 +294,7 @@ struct BloomBoxTourOverlay: View {
         VStack(alignment: .leading, spacing: 8) {
             Label(topic.title, systemImage: topic.icon).font(.headline)
             Text(topic.detail).font(.subheadline).fixedSize(horizontal: false, vertical: true)
-            if topic.destination != nil && !canExplore {
+            if !required && topic.destination != nil && !canExplore {
                 Text(en ? "Return to Home to explore this feature." : "Regresa al escritorio para explorar esta función.")
                     .font(.caption).foregroundStyle(.secondary)
             }

@@ -23,3 +23,17 @@ assert 'BloomBoxTourEvents.center' in settings
 assert 'BloomBoxTourSeenTopicsV1' in host
 assert 'launchLibraryKey(' not in tour and 'requestLaunch(' not in tour
 print(f"PASS: {len(topics)} bilingual topics, {len(destinations)} wired destinations")
+
+# Mandatory guide has its own persisted progress; optional dismissal cannot
+# complete it. The launcher controls hit testing, not a transparent overlay.
+assert 'basicIDs = ["library", "install", "context", "modules", "jit", "settings"]' in tour
+assert 'Self("basicfinish"' in tour
+assert 'BloomBoxBasicGuideStateV2' in host and 'BloomBoxBasicGuideStepV2' in host
+assert 'basicGuideState = 1' in host and 'basicGuideState = 2' in host
+assert 'startBasicGuideIfNeeded()' in host
+assert '.allowsHitTesting(!tourBlocksInput)' in host
+assert '.allowsHitTesting(tourBlocksInput)' in host
+assert 'Rectangle().fill(Color.clear).contentShape(Rectangle())' not in tour
+assert 'guard !requiresBasicGuide else { return }' in host
+assert 'if !required {' in tour
+print("PASS: required quick start, persistent progress and touch-safe dismissal")
