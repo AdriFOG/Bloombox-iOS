@@ -61,3 +61,14 @@ assert "LCUtils" not in lab and "LCSharedUtils" not in lab and "LCPath" not in l
 assert "removePersistentDomain" not in lab and "SecItemDelete" not in lab
 assert "defaults.removeObject(forKey: pendingKey)" in lab
 print("PASS: secret Lab, private reset, explicit confirmation and shared storage protection")
+
+assert '.task(id: shouldActivateBasicGuide)' in host
+assert 'basicVisit == nil && !tourVisible' in host
+inspector = (bloom / "BloomBoxInspector.swift").read_text()
+native = (root / "LiveContainer/LCBootstrap.m").read_text()
+model = (root / "LiveContainerSwiftUI/Models/LCAppModel.swift").read_text()
+assert 'BloomBoxInspectorView' in settings and 'BloomBoxInspectorStore.begin' in model
+assert 'BBInspectorMark("native.main.enter")' in native and 'native.memory.sample' in native
+assert 'O_NOFOLLOW' in native and 'prefix(40)' in inspector
+assert 'ShareLink(item: exportURL)' in inspector and 'try report(id).write' in inspector
+print("PASS: isolated inspector, bounded native logging and persistent guide activation")

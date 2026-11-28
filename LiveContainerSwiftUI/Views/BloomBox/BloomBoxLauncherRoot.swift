@@ -100,18 +100,20 @@ struct BloomBoxLauncherRootView: View {
             }
         }
         .fullScreenCover(isPresented: $showFirstRunWizard, onDismiss: {
-            if tourAfterWizard { startBasicGuideIfNeeded() }
             tourAfterWizard = false
+            startBasicGuideIfNeeded()
         }) {
             BloomBoxWizardFlowView(isPreview: false) {
                 basicGuideStep = 0
                 basicGuideState = 1
                 wizardCompleted = true
                 tourAfterWizard = true
+                mode = "ios"
+                introProfile = nil
+                tourVisible = true
+                tourCenter = false
+                tourResume = false
                 showFirstRunWizard = false
-                mode = BloomBoxLaunchPreferences.runtimeMode(for: preferredExperience)
-                showRecoveryNotice = BloomBoxCrashJournal.shared.previousInterrupted
-                showProfileIntro()
             }
             .preferredColorScheme(BloomBoxWizardSystemAppearance.current)
         }
@@ -293,6 +295,12 @@ struct BloomBoxLauncherRootView: View {
             mode = BloomBoxLaunchPreferences.runtimeMode(for: selection)
             showProfileIntro(force: true)
         }
+        .task(id: shouldActivateBasicGuide) {
+            guard shouldActivateBasicGuide else { return }
+            await Task.yield()
+            guard !Task.isCancelled, shouldActivateBasicGuide else { return }
+            startBasicGuideIfNeeded()
+        }
         .task(id: basicFocusIntent) {
             guard let intent = basicFocusIntent else { return }
             do { try await Task.sleep(nanoseconds: 220_000_000) } catch { return }
@@ -319,6 +327,11 @@ struct BloomBoxLauncherRootView: View {
             !showDestination && !showModeSheet && !showDiagnostics && !tourProfiles
     }
 
+    private var shouldActivateBasicGuide: Bool {
+        requiresBasicGuide && tourLayerAvailable && scenePhase == .active &&
+            basicVisit == nil && !tourVisible
+    }
+
     private var tourBlocksInput: Bool { tourLayerAvailable && tourVisible }
 
     private var currentTourTopic: BloomBoxTourTopic {
@@ -334,12 +347,13 @@ struct BloomBoxLauncherRootView: View {
     }
 
     private var basicFocusIntent: String? {
-        guard requiresBasicGuide, tourVisible else { return nil }
+        guard requiresBasicGuide, tourLayerAvailable, tourVisible, scenePhase == .active else { return nil }
         return currentTourTopic.id
     }
 
     private func startBasicGuideIfNeeded() {
-        guard requiresBasicGuide, wizardCompleted, !showFirstRunWizard, !showRecoveryNotice else { return }
+        guard requiresBasicGuide, tourLayerAvailable, basicVisit == nil else { return }
+        introProfile = nil
         // The basic tour teaches the app launcher, not the console. Keep the
         // saved experience preference intact and restore it when finished.
         if mode == "gamebox" { mode = "ios" }
@@ -492,7 +506,7 @@ struct BloomBoxLauncherRootView: View {
 
     private func showProfileIntro(force: Bool = false) {
         guard ready, wizardCompleted, !showFirstRunWizard, !showRecoveryNotice,
-              !showDestination, !showModeSheet,
+              !requiresBasicGuide, !tourVisible, !showDestination, !showModeSheet,
               UIApplication.shared.applicationState == .active else { return }
         // Once per real process launch. Profile switches explicitly force their
         // own greeting; reopening the existing process never does.

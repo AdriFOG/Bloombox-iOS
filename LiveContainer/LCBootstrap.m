@@ -17,6 +17,65 @@
 #include "../litehook/src/litehook.h"
 #import "Tweaks/Tweaks.h"
 #include <mach-o/ldsyms.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <time.h>
+#include <stdio.h>
+#include <math.h>
+
+static int bbInspectorFD = -1;
+static void BBInspectorMark(const char *stage) {
+    if (bbInspectorFD < 0) return;
+    struct stat st;
+    if (fstat(bbInspectorFD, &st) != 0 || st.st_size > 128 * 1024) return;
+    task_vm_info_data_t info = {0};
+    mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+    kern_return_t status = task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&info, &count);
+    char line[256];
+    int n = snprintf(line, sizeof(line), "%lld pid=%d %s footprint_bytes=%llu\n",
+        (long long)time(NULL), getpid(), stage,
+        status == KERN_SUCCESS ? (unsigned long long)info.phys_footprint : 0ULL);
+    if (n > 0 && n < (int)sizeof(line)) (void)write(bbInspectorFD, line, (size_t)n);
+}
+
+static void BBInspectorOpen(NSString *selected, BOOL child, NSString *groupPath) {
+    if (!selected.length) return;
+    NSString *session = nil;
+    NSString *root = nil;
+    if (child) {
+        const char *token = getenv("BB_INSPECTOR_SESSION");
+        if (token) session = @(token);
+        unsetenv("BB_INSPECTOR_SESSION");
+        if (groupPath) root = [groupPath stringByAppendingPathComponent:@"Library/BloomBoxInspector"];
+    } else {
+        NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+        NSDictionary *pending = [defaults dictionaryForKey:@"BloomBoxInspectorPendingV1"];
+        if ([pending[@"selected"] isEqualToString:selected] &&
+            ![pending[@"shared"] boolValue] &&
+            fabs([NSDate date].timeIntervalSince1970 - [pending[@"time"] doubleValue]) < 300) {
+            session = pending[@"id"];
+            [defaults removeObjectForKey:@"BloomBoxInspectorPendingV1"];
+        }
+        root = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/BloomBoxInspector"];
+    }
+    if (!root || ![session isKindOfClass:NSString.class] || session.length != 36 ||
+        ![[NSUUID alloc] initWithUUIDString:session]) return;
+    NSString *path = [root stringByAppendingPathComponent:[session stringByAppendingString:@".log"]];
+    bbInspectorFD = open(path.fileSystemRepresentation, O_WRONLY | O_APPEND | O_NOFOLLOW | O_CLOEXEC);
+    BBInspectorMark(child ? "native.liveprocess.enter" : "native.direct.enter");
+}
+
+static void BBInspectorSampleMemory(void) {
+    if (bbInspectorFD < 0) return;
+    static dispatch_source_t sampler;
+    sampler = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0));
+    dispatch_source_set_timer(sampler, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC),
+                              5 * NSEC_PER_SEC, NSEC_PER_SEC);
+    dispatch_source_set_event_handler(sampler, ^{ BBInspectorMark("native.memory.sample"); });
+    dispatch_resume(sampler);
+}
+
 
 extern char **environ;
 static int (*appMain)(int, char**, char**);
@@ -335,6 +394,7 @@ NSString *LCRunGuestExtension(NSDictionary *request, int argc, char *argv[], cha
 }
 
 static NSString* invokeAppMain(NSString *selectedApp, NSString *selectedContainer, int argc, char *argv[]) {
+    BBInspectorMark("native.bootstrap.begin");
     NSString *appError = nil;
     if([[lcUserDefaults objectForKey:@"LCWaitForDebugger"] boolValue]) {
         sleep(100);
@@ -411,6 +471,7 @@ static NSString* invokeAppMain(NSString *selectedApp, NSString *selectedContaine
         return @"App not found";
     }
     
+    BBInspectorMark("native.bundle.found");
     // find container in Info.plist
     NSString* dataUUID = selectedContainer;
     if(!dataUUID) {
@@ -452,6 +513,7 @@ static NSString* invokeAppMain(NSString *selectedApp, NSString *selectedContaine
 
     // If JIT is enabled, bypass library validation so we can load arbitrary binaries
     bool isJitEnabled = checkJITEnabled();
+    BBInspectorMark(isJitEnabled ? "native.jit.enabled" : "native.jit.unavailable");
     if (isJitEnabled) {
         init_bypassDyldLibValidation();
     }
@@ -523,6 +585,7 @@ static NSString* invokeAppMain(NSString *selectedApp, NSString *selectedContaine
     }
     
     
+    BBInspectorMark("native.container.resolved");
     NSString *newTmpPath = [newHomePath stringByAppendingPathComponent:@"tmp"];
     remove(newTmpPath.UTF8String);
     symlink(getenv("TMPDIR"), newTmpPath.UTF8String);
@@ -665,6 +728,7 @@ static NSString* invokeAppMain(NSString *selectedApp, NSString *selectedContaine
         tweakLoaderLoaded = true;
     }
     
+    BBInspectorMark("native.dlopen.begin");
     // Preload executable to bypass RT_NOLOAD
     appMainImageIndex = _dyld_image_count();
     __block void *appHandle = 0;
@@ -684,6 +748,7 @@ static NSString* invokeAppMain(NSString *selectedApp, NSString *selectedContaine
     const char *dlerr = dlerror();
     
     if (!appHandle || (uint64_t)appHandle > 0xf00000000000) {
+        BBInspectorMark("native.dlopen.failed");
         if (dlerr) {
             appError = @(dlerr);
         } else {
@@ -716,6 +781,7 @@ static NSString* invokeAppMain(NSString *selectedApp, NSString *selectedContaine
         }
     }
     
+    BBInspectorMark("native.dlopen.completed");
     // Fix dynamic properties of some apps
     [NSUserDefaults performSelector:@selector(initialize)];
 
@@ -726,6 +792,7 @@ static NSString* invokeAppMain(NSString *selectedApp, NSString *selectedContaine
         *path = oldPath;
         return appError;
     }
+    BBInspectorMark("native.bundle.loaded");
     NSLog(@"[LCBootstrap] loaded bundle");
 
     // Find main()
@@ -737,7 +804,10 @@ static NSString* invokeAppMain(NSString *selectedApp, NSString *selectedContaine
         return appError;
     }
 
+    BBInspectorMark("native.entrypoint.found");
     // Go!
+    BBInspectorMark("native.main.enter");
+    BBInspectorSampleMemory();
     NSLog(@"[LCBootstrap] jumping to main %p", appMain);
     int ret;
     if(!is32bit) {
@@ -747,6 +817,7 @@ static NSString* invokeAppMain(NSString *selectedApp, NSString *selectedContaine
         char *argv32[] = {(char*)appExecPath, (char*)*path, NULL};
         ret = appMain(sizeof(argv32)/sizeof(*argv32) - 1, argv32, environ);
     }
+    BBInspectorMark(ret == 0 ? "native.main.returned.zero" : "native.main.returned.nonzero");
     if (isLiveProcess && !isSharedBundle && ret == 0) {
         // A normal-looking return can hide private-container permission
         // problems as well as an invalid IPA. Distinguish this from a crash.
@@ -760,6 +831,7 @@ static NSString* invokeAppMain(NSString *selectedApp, NSString *selectedContaine
 }
 
 static void exceptionHandler(NSException *exception) {
+    BBInspectorMark("native.objc.exception");
     NSString *error = [NSString stringWithFormat:@"%@\nCall stack: %@", exception.reason, exception.callStackSymbols];
     if(isLiveProcess) {
         NSExtensionContext *context = [NSClassFromString(@"LiveProcessHandler") extensionContext];
@@ -912,8 +984,10 @@ int LiveContainerMain(int argc, char *argv[]) {
             lcLaunchURL = launchUrl;
             [lcUserDefaults removeObjectForKey:@"launchAppUrlScheme"];
         }
+        if (!isSideStore) BBInspectorOpen(selectedApp, isLiveProcess, lcAppGroupPath);
         NSString *appError = invokeAppMain(selectedApp, selectedContainer, argc, argv);
         if (appError) {
+            BBInspectorMark("native.bootstrap.returned_error");
             // A previously installed guest can disappear or have a damaged
             // Info.plist after a restore or an interrupted installation.
             // Do not turn an inaccessible guest into an inaccessible BloomBox.

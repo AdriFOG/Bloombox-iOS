@@ -93,6 +93,11 @@ struct LCSettingsView: View {
                     } label: {
                         Label(BloomBoxL10n.isEnglish ? "Learning center" : "Centro de aprendizaje", systemImage: "graduationcap.fill")
                     }
+                    NavigationLink {
+                        BloomBoxInspectorView(apps: LiveContainerDiagnosticsAdapter.inspectorApps(sharedModel.apps))
+                    } label: {
+                        Label("BloomBox Inspector", systemImage: "magnifyingglass")
+                    }
                 }
                 if UserDefaults.sideStoreExist(), sharedModel.multiLCStatus != 2 {
                     Section {

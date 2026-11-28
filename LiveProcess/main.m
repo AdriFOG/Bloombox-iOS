@@ -153,6 +153,11 @@ int LiveProcessMain(int argc, char *argv[]) {
         return status;
     }
     
+    NSString *inspection = appInfo[@"bloomBoxInspectorSession"];
+    if ([inspection isKindOfClass:NSString.class] && inspection.length == 36 &&
+        [[NSUUID alloc] initWithUUIDString:inspection]) {
+        setenv("BB_INSPECTOR_SESSION", inspection.UTF8String, 1);
+    }
     NSLog(@"[BloomBox] LiveProcess guest request received (details redacted).");
     // Set LiveContainer's home path
     if (getenv("HOME")) setenv("LP_HOME_PATH", getenv("HOME"), 1);
