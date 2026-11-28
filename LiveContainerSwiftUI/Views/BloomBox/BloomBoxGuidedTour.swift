@@ -176,15 +176,31 @@ struct BloomBoxTourOverlay: View {
 
     private func highlight(in geo: GeometryProxy) -> CGRect? {
         guard !center, let key = topic.target else { return nil }
-        let bounds = CGRect(origin: .zero, size: geo.size)
-        let rects = (anchors[key] ?? []).map { geo[$0] }.filter {
-            $0.width > 8 && $0.height > 8 && $0.width.isFinite && $0.height.isFinite &&
-            bounds.contains(CGPoint(x: $0.midX, y: $0.midY)) &&
-            $0.intersection(bounds).width >= $0.width * 0.8 &&
-            $0.intersection(bounds).height >= $0.height * 0.8
+        let bounds = CGRect(origin: CGPoint.zero, size: geo.size)
+        let candidates: [Anchor<CGRect>] = anchors[key] ?? []
+        var best: CGRect?
+        var bestArea = CGFloat.greatestFiniteMagnitude
+        for candidate in candidates {
+            let rect: CGRect = geo[candidate]
+            let width = rect.width
+            let height = rect.height
+            guard width.isFinite, height.isFinite, width > 8, height > 8 else { continue }
+            let midpoint = CGPoint(x: rect.midX, y: rect.midY)
+            guard bounds.contains(midpoint) else { continue }
+            let visible = rect.intersection(bounds)
+            let minimumWidth: CGFloat = width * 0.8
+            let minimumHeight: CGFloat = height * 0.8
+            guard !visible.isNull, visible.width >= minimumWidth,
+                  visible.height >= minimumHeight else { continue }
+            let area: CGFloat = width * height
+            if area < bestArea {
+                best = rect
+                bestArea = area
+            }
         }
-        guard let rect = rects.min(by: { $0.width * $0.height < $1.width * $1.height }) else { return nil }
-        return rect.insetBy(dx: -5, dy: -5).intersection(bounds)
+        guard let best else { return nil }
+        let expanded = best.insetBy(dx: -5, dy: -5)
+        return expanded.intersection(bounds)
     }
 
     var body: some View {
