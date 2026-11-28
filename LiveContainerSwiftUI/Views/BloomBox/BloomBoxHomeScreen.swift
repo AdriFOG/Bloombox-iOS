@@ -805,6 +805,23 @@ struct BloomBoxHomeScreen: View {
                 }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: BloomBoxTourEvents.focus)) { note in
+            guard !isNova, let intent = note.object as? String else { return }
+            librarySearchFocused = false
+            libraryQuery = ""
+            switch intent {
+            case "library":
+                page = (visiblePageIndices.first ?? 0) + 1
+            case "install", "context", "modules", "jit":
+                let key = intent == "install" ? Self.installKey :
+                    (intent == "context" ? Self.appStoreKey : Self.modulesKey)
+                page = libraryPageIndex
+                libraryQuery = title(key)
+            case "settings": page = 0
+            case "basicfinish", "done": page = (visiblePageIndices.first ?? 0) + 1
+            default: break
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: BloomBoxTourEvents.explore)) { note in
             guard let destination = note.object as? String, !installInProgress, huskStartingGame == nil else { return }
             switch destination {
@@ -1142,7 +1159,9 @@ struct BloomBoxHomeScreen: View {
             }
             .navigationViewStyle(.stack)
         }
-        .sheet(isPresented: $jitSetup) { LiveBoardJITSetup() }
+        .sheet(isPresented: $jitSetup, onDismiss: {
+            NotificationCenter.default.post(name: BloomBoxTourEvents.returned, object: "jit")
+        }) { LiveBoardJITSetup() }
         .sheet(isPresented: $tweakStorePresented, onDismiss: { storeFocusedApp = nil }) {
             BloomBoxTweakStore(apps: currentGuests, focusedApp: storeFocusedApp)
         }
@@ -1189,7 +1208,10 @@ struct BloomBoxHomeScreen: View {
             }
             .navigationViewStyle(.stack)
         }
-        .sheet(isPresented: $modulesPresented, onDismiss: performModuleAction) {
+        .sheet(isPresented: $modulesPresented, onDismiss: {
+            performModuleAction()
+            NotificationCenter.default.post(name: BloomBoxTourEvents.returned, object: "modules")
+        }) {
             BloomBoxModulesPanel(apps: LiveContainerHomeAdapter.moduleGuests(currentGuests, sharedModel: sharedModel)) { destination in
                 pendingModuleDestination = destination
                 modulesPresented = false
@@ -1474,6 +1496,7 @@ struct BloomBoxHomeScreen: View {
                             } label: {
                                 HStack(spacing: 14) {
                                     miniatureIcon(key, size: 43)
+                                        .bloomBoxTourAnchor(key)
                                     Text(BloomBoxL10n.t(title(key)))
                                         .font(.system(size: 17))
                                     Spacer()

@@ -191,6 +191,7 @@ private struct BloomBoxNewsQuickAccess: View {
                             VStack(spacing: 5) {
                                 BloomBoxNewsAppIcon(shortcut: item)
                                     .frame(width: 60, height: 60)
+                                    .bloomBoxTourAnchor("news:" + item.id)
                                 Text(item.title(english: english))
                                     .font(.system(size: 11, weight: .medium))
                                     .lineLimit(1)

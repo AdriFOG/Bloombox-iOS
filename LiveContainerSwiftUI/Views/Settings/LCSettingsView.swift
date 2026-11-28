@@ -73,6 +73,9 @@ struct LCSettingsView: View {
     @EnvironmentObject private var sharedModel : SharedModel
     
     @State private var isViewAppeared = false
+    @State private var labTaps = 0
+    @State private var lastLabTap = Date.distantPast
+    @State private var showBloomBoxLab = false
     
     let storeName = LCUtils.getStoreName()
     
@@ -340,8 +343,17 @@ struct LCSettingsView: View {
                 VStack{
                     Text(LCUtils.getVersionInfo())
                         .foregroundStyle(.gray)
-                        .onTapGesture(count: 5) {
-                            sharedModel.developerMode = true
+                        .onTapGesture {
+                            let now = Date()
+                            if now.timeIntervalSince(lastLabTap) > 1.5 { labTaps = 0 }
+                            lastLabTap = now
+                            labTaps += 1
+                            if labTaps == 5 { sharedModel.developerMode = true }
+                            if labTaps >= 7 {
+                                labTaps = 0
+                                showBloomBoxLab = true
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            }
                         }
                 }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -473,6 +485,7 @@ struct LCSettingsView: View {
             )
         }
         .navigationViewStyle(StackNavigationViewStyle())
+        .sheet(isPresented: $showBloomBoxLab) { BloomBoxLabView() }
         .onAppear() {
             if !isViewAppeared {
                 guard sharedModel.selectedTab == .settings, let link = sharedModel.deepLink else { return }

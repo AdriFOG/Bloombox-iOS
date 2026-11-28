@@ -98,7 +98,7 @@ struct BloomBoxTourTopic: Identifiable {
               "MediaBloom is a separate app for music and video. Explore its features and integration separately; this tour does not install it."),
         .init("settings", "gearshape", "Ajustes y seguridad", "Settings and safety",
               "Consulta la cuenta Apple, firmas, JIT y ajustes disponibles. Instala únicamente archivos de confianza; BloomBox no garantiza que sean seguros.",
-              "Review Apple Account, signing, JIT and available settings. Only install files you trust; BloomBox cannot guarantee their safety.", destination: "settings"),
+              "Review Apple Account, signing, JIT and available settings. Only install files you trust; BloomBox cannot guarantee their safety.", target: "news:settings", destination: "settings"),
         .init("account", "person.crop.circle.badge.checkmark", "Cuenta Apple y renovación", "Apple Account and renewal",
               "Si SideStore está integrado, puedes consultar tu cuenta Apple en Ajustes y revisar las fechas de caducidad. El recorrido no solicita contraseñas.",
               "If SideStore is integrated, review your Apple Account in Settings and check expiry dates. The tour never asks for passwords.", destination: "settings"),
@@ -119,6 +119,8 @@ struct BloomBoxTourTopic: Identifiable {
 enum BloomBoxTourEvents {
     static let center = Notification.Name("BloomBoxTourCenterV1")
     static let explore = Notification.Name("BloomBoxTourExploreV1")
+    static let focus = Notification.Name("BloomBoxTourFocusV2")
+    static let returned = Notification.Name("BloomBoxTourReturnedV2")
 }
 
 private struct BloomBoxTourCollectKey: EnvironmentKey {
@@ -156,7 +158,7 @@ private struct BloomBoxTourShade: Shape {
     let hole: CGRect?
     func path(in rect: CGRect) -> Path {
         var path = Path(rect)
-        if let hole { path.addRoundedRect(in: hole, cornerSize: CGSize(width: 15, height: 15)) }
+        if let hole { path.addEllipse(in: hole) }
         return path
     }
 }
@@ -177,6 +179,7 @@ struct BloomBoxTourOverlay: View {
     let onExplore: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var scheme
+    @State private var practiceCompleted = false
 
     private var en: Bool { BloomBoxL10n.isEnglish }
     private var topics: [BloomBoxTourTopic] { required ? BloomBoxTourTopic.basic : BloomBoxTourTopic.all }
@@ -185,7 +188,9 @@ struct BloomBoxTourOverlay: View {
     private var accent: Color { BloomBoxWizardPalette.color(BloomBoxProfileStore.active.accentHex) }
 
     private func highlight(in geo: GeometryProxy) -> CGRect? {
-        guard !center, let key = topic.target else { return nil }
+        guard !center else { return nil }
+        let key = required && topic.id == "context" ? "manzana:appstore" : topic.target
+        guard let key else { return nil }
         let bounds = CGRect(origin: CGPoint.zero, size: geo.size)
         let candidates: [Anchor<CGRect>] = anchors[key] ?? []
         var best: CGRect?
@@ -209,8 +214,10 @@ struct BloomBoxTourOverlay: View {
             }
         }
         guard let best else { return nil }
-        let expanded = best.insetBy(dx: -5, dy: -5)
-        return expanded.intersection(bounds)
+        let side = min(max(max(best.width, best.height) + 16, 46), 124)
+        let circle = CGRect(x: best.midX - side / 2, y: best.midY - side / 2,
+                            width: side, height: side)
+        return circle.intersection(bounds)
     }
 
     var body: some View {
@@ -224,23 +231,17 @@ struct BloomBoxTourOverlay: View {
                 // The host gates its own interactions while the guide is visible.
                 // No full-screen transparent gesture catcher to survive dismissal.
                 if let hole {
-                    RoundedRectangle(cornerRadius: 15)
-                        .strokeBorder(accent, lineWidth: 2)
+                    Circle()
+                        .strokeBorder(accent, lineWidth: 3)
+                        .shadow(color: accent.opacity(0.8), radius: 8)
                         .frame(width: hole.width, height: hole.height)
                         .position(x: hole.midX, y: hole.midY)
                         .allowsHitTesting(false).accessibilityHidden(true)
-                    if canExplore {
-                        Button(action: onExplore) {
-                            Color.clear.contentShape(Rectangle())
-                        }.buttonStyle(.plain)
-                            .frame(width: hole.width, height: hole.height)
-                            .position(x: hole.midX, y: hole.midY)
-                            .accessibilityLabel(en ? "Explore " + topic.title : "Explorar " + topic.title)
-                    }
+                    if canExplore { spotlightAction(hole) }
                 }
                 VStack(spacing: 0) {
                     if hole == nil || (hole?.midY ?? 0) < geo.size.height / 2 { Spacer(minLength: 0) }
-                    if center { centerPanel } else { topicPanel }
+                    if center { centerPanel } else { topicPanel(hasTarget: hole != nil) }
                     if let hole, hole.midY >= geo.size.height / 2 { Spacer(minLength: 0) }
                 }
                 .frame(maxWidth: 480)
@@ -248,10 +249,33 @@ struct BloomBoxTourOverlay: View {
             }
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: safeIndex)
         }
+        .onChange(of: safeIndex) { _ in practiceCompleted = false }
         .accessibilityIdentifier("bloombox.tour.overlay")
     }
 
-    private var topicPanel: some View {
+    @ViewBuilder private func spotlightAction(_ hole: CGRect) -> some View {
+        if required && topic.id == "context" {
+            Circle().fill(Color.clear).contentShape(Circle())
+                .frame(width: hole.width, height: hole.height)
+                .onLongPressGesture(minimumDuration: 0.6) {
+                    practiceCompleted = true
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                }
+                .accessibilityLabel(en ? "Practice app options" : "Practicar opciones de app")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { practiceCompleted = true }
+                .position(x: hole.midX, y: hole.midY)
+        } else {
+            Button(action: onExplore) {
+                Circle().fill(Color.clear).contentShape(Circle())
+            }.buttonStyle(.plain)
+                .frame(width: hole.width, height: hole.height)
+                .position(x: hole.midX, y: hole.midY)
+                .accessibilityLabel(en ? "Open " + topic.title : "Abrir " + topic.title)
+        }
+    }
+
+    private func topicPanel(hasTarget: Bool) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(required ? (en ? "QUICK START" : "INICIO RÁPIDO") : (en ? "BLOOMBOX GUIDE" : "GUÍA DE BLOOMBOX"))
@@ -263,7 +287,34 @@ struct BloomBoxTourOverlay: View {
             ScrollView {
                 explanation
             }.frame(maxHeight: 132)
-            if canExplore {
+            if required && canExplore {
+                if topic.id == "context" && practiceCompleted {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Label(en ? "App options · practice" : "Opciones de app · práctica", systemImage: "hand.tap")
+                            .font(.caption.weight(.semibold))
+                        Label(en ? "Manage data" : "Administrar datos", systemImage: "folder")
+                        Label(en ? "App settings" : "Ajustes de app", systemImage: "gearshape")
+                        Label(en ? "Remove app" : "Eliminar app", systemImage: "trash")
+                    }.font(.caption).frame(maxWidth: .infinity, alignment: .leading)
+                    Text(en ? "This is a demonstration. Nothing was changed." : "Esta es una demostración. No se cambió nada.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                } else if hasTarget {
+                    Label(topic.id == "context"
+                          ? (en ? "Hold the circled icon" : "Mantén presionado el icono marcado")
+                          : (en ? "Tap the circled control" : "Toca el control marcado"),
+                          systemImage: "hand.tap.fill")
+                        .font(.caption.weight(.semibold)).foregroundStyle(accent)
+                } else {
+                    Button {
+                        if topic.id == "context" { practiceCompleted = true }
+                        else { onExplore() }
+                    } label: {
+                        Label(topic.id == "context" ? (en ? "Practice options" : "Practicar opciones") :
+                            (en ? "Open feature" : "Abrir función"), systemImage: "arrow.up.right")
+                            .frame(maxWidth: .infinity)
+                    }.buttonStyle(.bordered).tint(accent)
+                }
+            } else if canExplore {
                 Button(action: onExplore) {
                     Label(en ? "Explore feature" : "Explorar función", systemImage: "arrow.up.right")
                         .frame(maxWidth: .infinity)
@@ -281,10 +332,12 @@ struct BloomBoxTourOverlay: View {
                 Button(action: onBack) { Image(systemName: "chevron.left").frame(minWidth: 44, minHeight: 36) }
                     .disabled(safeIndex == 0).accessibilityLabel(en ? "Back" : "Atrás")
                 Spacer()
-                Button(action: onNext) {
-                    Text(safeIndex == topics.count - 1 ? (en ? "Finish" : "Finalizar") : (en ? "Next" : "Siguiente"))
-                        .fontWeight(.semibold).frame(minWidth: 100, minHeight: 30)
-                }.buttonStyle(.borderedProminent).tint(accent)
+                if !required || !canExplore || (topic.id == "context" && practiceCompleted) {
+                    Button(action: onNext) {
+                        Text(safeIndex == topics.count - 1 ? (en ? "Finish" : "Finalizar") : (en ? "Next" : "Siguiente"))
+                            .fontWeight(.semibold).frame(minWidth: 100, minHeight: 30)
+                    }.buttonStyle(.borderedProminent).tint(accent)
+                }
             }
         }
         .padding(17).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))

@@ -748,6 +748,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             else { Task { await startInstallApp(file) } }
         }, onDismiss: {
             choosingIPA = false
+            NotificationCenter.default.post(name: BloomBoxTourEvents.returned, object: "install")
         })
         .sheet(item: $receivedIPA) { request in
             let isAPK = request.url.pathExtension.lowercased() == "apk"
@@ -970,6 +971,9 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         // Also cover installs that never trigger a scene transition (for
         // example an installer presented from BloomBox News).
         // Directory listings are cheap; LCAppInfo is read only for new folders.
+        .onChange(of: manageLibrary) { showing in
+            if !showing { NotificationCenter.default.post(name: BloomBoxTourEvents.returned, object: "install") }
+        }
         .onReceive(Timer.publish(every: 1.5, on: .main, in: .common).autoconnect()) { _ in
             guard scenePhase == .active, !manageLibrary, liveBoardMode == "ios" else { return }
             refreshInstalledGuestsFromDisk()

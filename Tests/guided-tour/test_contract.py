@@ -37,3 +37,24 @@ assert 'Rectangle().fill(Color.clear).contentShape(Rectangle())' not in tour
 assert 'guard !requiresBasicGuide else { return }' in host
 assert 'if !required {' in tour
 print("PASS: required quick start, persistent progress and touch-safe dismissal")
+
+assert 'path.addEllipse(in: hole)' in tour and 'spotlightAction(hole)' in tour
+assert 'onLongPressGesture(minimumDuration: 0.6)' in tour
+assert 'BloomBoxTourEvents.focus' in home and 'BloomBoxTourEvents.focus' in nova
+assert 'finishBasicVisit' in host and 'BloomBoxTourEvents.returned' in host
+assert 'basicVisit = destination' in host
+assert 'store: UserDefaults.standard' in host
+print("PASS: circular spotlight, hands-on guide and return handling")
+
+lab = (bloom / "BloomBoxLab.swift").read_text()
+app = (root / "LiveContainerSwiftUI/App/LiveContainerSwiftUIApp.swift").read_text()
+assert "labTaps >= 7" in settings
+assert 'confirmation != "RESET"' in lab
+assert "BloomBoxLabReset.prepareForHostStart()" in app
+assert app.index("BloomBoxLabReset.prepareForHostStart()") < app.index("let fm = FileManager()")
+assert '["Applications", "Data", "Tweaks", "BloomBox Files", "Manzana Files"]' in lab
+assert 'resolved.path == target.standardizedFileURL.path' in lab
+assert 'if !sharedStoragePresent, LCSharedUtils.appGroupID() == "Unknown"' in lab
+assert "removePersistentDomain" not in lab and "SecItemDelete" not in lab
+assert "defaults.removeObject(forKey: pendingKey)" in lab
+print("PASS: secret Lab, private reset, explicit confirmation and shared storage protection")

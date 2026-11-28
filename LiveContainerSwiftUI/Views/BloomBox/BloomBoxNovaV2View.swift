@@ -819,6 +819,28 @@ struct BloomBoxNovaV2View: View {
         }
         .foregroundStyle(Color.white)
         .background(panel.ignoresSafeArea())
+        .onReceive(NotificationCenter.default.publisher(for: BloomBoxTourEvents.focus)) { note in
+            guard let intent = note.object as? String else { return }
+            switch intent {
+            case "library":
+                if drawer { settleDrawer(open: false) }
+                page = max(0, page)
+            case "install", "context", "modules", "jit":
+                page = max(0, page)
+                let key = intent == "install" ? "manzana:install" :
+                    (intent == "context" ? "manzana:appstore" : "manzana:modules")
+                openDrawer(focus: false)
+                query = displayName(key)
+            case "settings":
+                settleDrawer(open: false)
+                animate { page = -1 }
+            case "basicfinish", "done":
+                settleDrawer(open: false)
+                page = max(0, page)
+                query = ""
+            default: break
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: BloomBoxTourEvents.explore)) { note in
             guard let destination = note.object as? String else { return }
             switch destination {
@@ -1482,6 +1504,7 @@ struct BloomBoxNovaV2View: View {
                             .foregroundStyle(Color.white)
                             .background(raised, in: Capsule())
                     }.buttonStyle(.plain)
+                        .bloomBoxTourAnchor("manzana:install")
                     Button { drawerSettings = true } label: {
                         Label(t("Drawer settings", "Ajustes del cajón"), systemImage: "gearshape")
                             .font(.caption.weight(.medium))
