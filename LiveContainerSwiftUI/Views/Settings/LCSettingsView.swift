@@ -321,24 +321,13 @@ struct LCSettingsView: View {
                 }
                 
                 Section {
-                    HStack {
-                        Image("GitHub")
-                        Button("LiveContainer/LiveContainer") {
-                            openGitHub()
-                        }
+                    NavigationLink {
+                        BloomBoxCreditsView()
+                    } label: {
+                        Label(BloomBoxL10n.isEnglish ? "Credits and acknowledgments" : "Créditos y agradecimientos",
+                              systemImage: "heart.text.square")
                     }
-                    HStack {
-                        Image("Twitter")
-                        Button("khanhduytran0") {
-                            openTwitter()
-                        }
-                    }
-                    HStack {
-                        Image("GitHub")
-                        Button("Huge_Black") {
-                            openGitHub2()
-                        }
-                    }
+                    .accessibilityIdentifier("bloombox.settings.credits")
                 } header: {
                     Text("lc.settings.about".loc)
                 } footer: {

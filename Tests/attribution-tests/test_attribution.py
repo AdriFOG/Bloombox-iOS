@@ -32,3 +32,14 @@ for path in COVERED:
     assert "LICENSE-ADDITIONAL-TERMS.md" in content, path
     assert "`" + path + "`" in TERMS, path
 print("PASS: AGPL intact, required author credit scoped, upstream licenses preserved.")
+
+# The in-app credits must retain the original-work notice and major upstream references.
+credits = (ROOT / "LiveContainerSwiftUI/Views/BloomBox/BloomBoxCredits.swift").read_text(encoding="utf-8")
+settings = (ROOT / "LiveContainerSwiftUI/Views/Settings/LCSettingsView.swift").read_text(encoding="utf-8")
+assert "BloomBoxCreditsView()" in settings and "bloombox.settings.credits" in settings
+assert ATTRIBUTION in credits and "https://github.com/adri23rep-stack/BloomBox" in credits
+for name in ("LiveContainer", "SideStore", "StikJIT", "Husk", "Strata", "GetMoreRam", "StosSign", "SideSign", "MeloNX", "Nintendo Switch-ish", "OpenPortsGames", "siboot", "SideInstaller", "Open Minis", "LocalDevVPN"):
+    assert name in credits, name
+assert "THIRD_PARTY_NOTICES.md" in credits and "LICENSE-ADDITIONAL-TERMS.md" in credits
+assert "Créditos" in credits and "Credits" in credits
+print("PASS: in-app bilingual credits and upstream attribution.")
